@@ -100,7 +100,7 @@ func main() {
 	}
 
 	var rows []row
-	var top1, top3, srcHit, n int
+	var top1, top3, srcHit, srcDeclared, n int
 	var tokenSum int
 	var latencies []int64
 	for _, tc := range cases {
@@ -143,15 +143,13 @@ func main() {
 				r.ForbiddenHit = true
 			}
 		}
-		for _, c := range res.Citations {
-			for _, want := range tc.ExpectedSources {
-				if c.URI == want {
-					r.ExpectedSourceHit = true
-				}
+		if len(tc.ExpectedSources) > 0 {
+			srcDeclared++
+			uris := collectResponseURIs(res)
+			if sourceHit(uris, tc.ExpectedSources) {
+				r.ExpectedSourceHit = true
+				srcHit++
 			}
-		}
-		if r.ExpectedSourceHit {
-			srcHit++
 		}
 		seen := map[string]int{}
 		for _, e := range res.Examples {
@@ -167,7 +165,8 @@ func main() {
 		"taskCount":            n,
 		"top1SymbolRecall":     ratio(top1, n),
 		"top3SymbolRecall":     ratio(top3, n),
-		"expectedSourceRecall": ratio(srcHit, n),
+		"expectedSourceTasks":  srcDeclared,
+		"expectedSourceRecall": ratio(srcHit, srcDeclared),
 		"avgEstimatedTokens":   avgInt(tokenSum, n),
 		"medianLatencyMs":      percentile(latencies, 0.5),
 		"p95LatencyMs":         percentile(latencies, 0.95),
@@ -331,6 +330,46 @@ func docSyms(root, path, body string, syms []store.SymbolInput) store.UpsertInpu
 		Authority: store.AuthorityOfficialDocs, Hash: root + "-" + path,
 		Chunks: chunkBody(body), Symbols: syms,
 	}
+}
+
+func collectResponseURIs(res *implctx.Response) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(u string) {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			return
+		}
+		if _, ok := seen[u]; ok {
+			return
+		}
+		seen[u] = struct{}{}
+		out = append(out, u)
+	}
+	for _, c := range res.Citations {
+		add(c.URI)
+	}
+	for _, e := range res.Examples {
+		add(e.URI)
+	}
+	for _, s := range res.RelevantSymbols {
+		add(s.URI)
+	}
+	return out
+}
+
+func sourceHit(have, want []string) bool {
+	if len(want) == 0 {
+		return true
+	}
+	for _, w := range want {
+		for _, h := range have {
+			if h == w {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func symbolIn(have, want []string, topN int) bool {

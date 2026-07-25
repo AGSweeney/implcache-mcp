@@ -15,6 +15,9 @@ tasks:
     language: cpp
     preferred_roots: [example-network-service, example-network-sdk]
     expected_symbols: [Connect, Disconnect, RetryPolicy]
+    expected_sources:
+      - project://example-network-service/client.cpp
+      - project://example-network-sdk/retry.h
     forbidden_symbols: [FakeAutoReconnect]
     max_context_tokens: 2000
 
@@ -24,6 +27,7 @@ tasks:
     language: go
     preferred_roots: [example-database-tool, sqlite-reference]
     expected_symbols: [user_version, BeginTx]
+    expected_sources: [project://example-database-tool/migrate.go]
     max_context_tokens: 1800
 
   - id: add-device-driver
@@ -32,6 +36,9 @@ tasks:
     language: cpp
     preferred_roots: [demo-embedded-project, example-device-sdk]
     expected_symbols: [SpiTransfer, ConfigurePin]
+    expected_sources:
+      - project://demo-embedded-project/drivers/gpio.cpp
+      - project://example-device-sdk/spi.md
     max_context_tokens: 2400
 
   - id: add-mcp-tool
@@ -40,6 +47,7 @@ tasks:
     language: go
     preferred_roots: [example-mcp-server, mcp-sdk-docs]
     expected_symbols: [AddTool, CallToolResult]
+    expected_sources: [project://example-mcp-server/main.go]
     max_context_tokens: 2000
 
   - id: init-device-session
@@ -48,6 +56,9 @@ tasks:
     language: cpp
     preferred_roots: [example-device-sdk, example-control-app]
     expected_symbols: [OpenSession, CloseSession]
+    expected_sources:
+      - project://example-device-sdk/session.h
+      - project://example-control-app/app.cpp
     max_context_tokens: 2000
 
   - id: configure-logging
@@ -56,6 +67,7 @@ tasks:
     language: go
     preferred_roots: [example-logging-sdk, example-control-app]
     expected_symbols: [SetLogLevel, AttachSink]
+    expected_sources: [project://example-logging-sdk/log.go]
     max_context_tokens: 1800
 
   - id: validate-config
@@ -64,6 +76,7 @@ tasks:
     language: go
     preferred_roots: [example-config-sdk]
     expected_symbols: [LoadConfig, ValidateSchema]
+    expected_sources: [project://example-config-sdk/config.go]
     forbidden_symbols: [SkipValidationAlways]
     max_context_tokens: 1800
 
@@ -73,6 +86,7 @@ tasks:
     language: cpp
     preferred_roots: [example-control-app, example-concurrency-sdk]
     expected_symbols: [SubmitJob, ShutdownPool]
+    expected_sources: [project://example-concurrency-sdk/pool.h]
     max_context_tokens: 2000
 
   - id: bind-http-route
@@ -81,6 +95,9 @@ tasks:
     language: go
     preferred_roots: [example-http-service, example-http-sdk]
     expected_symbols: [HandlePath, WriteJSON]
+    expected_sources:
+      - project://example-http-service/routes.go
+      - project://example-http-sdk/http.go
     max_context_tokens: 2000
 
   - id: persist-cache-entry
@@ -89,6 +106,7 @@ tasks:
     language: cpp
     preferred_roots: [example-cache-sdk, example-control-app]
     expected_symbols: [PutEntry, GetEntry]
+    expected_sources: [project://example-cache-sdk/cache.h]
     max_context_tokens: 1800
 
   - id: parse-protocol-frame
@@ -97,4 +115,5 @@ tasks:
     language: cpp
     preferred_roots: [example-protocol-sdk]
     expected_symbols: [DecodeFrame, EncodeFrame]
+    expected_sources: [project://example-protocol-sdk/frame.h]
     max_context_tokens: 2000
