@@ -382,6 +382,19 @@ Enable with `-http` + `-enable-librarian` (usually also `-enable-http-mutations 
 
 Production assets live in `embedui/dist`. Optional rebuild: see [frontend/README.md](../frontend/README.md).
 
+### Screenshots
+
+| Page | Preview |
+|------|---------|
+| Dashboard | ![Librarian Dashboard](images/librarian/librarian-dashboard.png) |
+| Sources | ![Librarian Sources](images/librarian/librarian-sources.png) |
+| Add Source | ![Librarian Add Source](images/librarian/librarian-add-source.png) |
+| Jobs | ![Librarian Jobs](images/librarian/librarian-jobs.png) |
+| Library | ![Librarian Library](images/librarian/librarian-library.png) |
+| Document viewer | ![Librarian Document Viewer](images/librarian/librarian-document-viewer.png) |
+| Search Lab | ![Librarian Search Lab](images/librarian/librarian-search-lab.png) |
+| Health | ![Librarian Health](images/librarian/librarian-health.png) |
+
 **REST** base: `http://127.0.0.1:8080/api/v1`
 
 | Area | Examples |
