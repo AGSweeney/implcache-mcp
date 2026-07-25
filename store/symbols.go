@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Match type labels for symbol lookup (deterministic retrieval stages).
@@ -23,6 +24,8 @@ const (
 	MatchToken            = "token"
 	MatchFuzzy            = "fuzzy"
 )
+
+const MaxSymbolNameRunes = 256
 
 // Symbol is a stored code symbol.
 type Symbol struct {
@@ -131,6 +134,9 @@ func NamespaceOfSymbol(name string) string {
 // FindSymbols looks up symbols with staged exact → qualified → prefix/suffix matching.
 func (s *Store) FindSymbols(ctx context.Context, name string, roots []string, limit int) ([]Symbol, error) {
 	raw := strings.TrimSpace(name)
+	if utf8.RuneCountInString(raw) > MaxSymbolNameRunes {
+		return nil, fmt.Errorf("symbol name exceeds %d characters", MaxSymbolNameRunes)
+	}
 	norm := NormalizeSymbol(raw)
 	if norm == "" {
 		return nil, fmt.Errorf("symbol name is required")

@@ -9,7 +9,7 @@ go build -o implcache-mcp .
 go build -o ingestcli ./cmd/ingestcli
 ```
 
-Module: `implcache-mcp` (Go 1.25+). Default reported version is `dev` (override with `-ldflags "-X main.version=…"`). SQLite is pure Go (`modernc.org/sqlite`); **no CGO** required for build/test. Schema `PRAGMA user_version` is currently **6**.
+Module: `implcache-mcp` (Go 1.25+). Default reported version is `dev` (override with `-ldflags "-X main.version=…"`). SQLite is pure Go (`modernc.org/sqlite`); **no CGO** required for build/test. Schema `PRAGMA user_version` is currently **7**.
 
 ### Race detector
 
@@ -125,7 +125,7 @@ Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still ch
 | Area | Notes |
 |------|--------|
 | Symbol extraction | Heuristic regex for Go, C/C++/C#, Python, JS/TS, Java. Optional tree-sitter still future work. Unknown languages do not fall through to noisy C regex. |
-| Search model | FTS5 + authority ranking by default. Optional **sparse term-vector** similarity (`-enable-semantic` / `semantic: true`) supplements FTS — not neural embeddings. Pure keyword search can still miss related concepts. |
+| Search model | FTS5 + authority ranking by default. Optional **sparse term-presence cosine** (`-enable-semantic` / `semantic: true`) supplements FTS through v7 indexed term postings — not neural embeddings or TF-IDF. Pure keyword search can still miss related concepts. |
 | Freshness | Independent of authority. Official docs without version/date → `unknown`. `webSearchRecommended` uses coverage + freshness. |
 | Fingerprints | `contextFingerprint` is over the post-trim response (+ citation content hashes). |
 | Token estimates | `estimatedTokens` is roughly `utf8_runes/4` on the serialized JSON. Use for budgeting only — approximate, not exact. |
@@ -133,6 +133,7 @@ Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still ch
 | Recipes | Quality depends on human review of `vomit` / `saveRecipe` output. Ranking already demotes generated entries vs human-reviewed and project code. |
 | Concurrency | SQLite **WAL** helps readers; multiple writers still need care (single writer process, or serialize admin ingest). See concurrent smoke tests; prefer one admin writer. |
 | Go version | Module requires **Go 1.25+** — note for downstream consumers. |
+| Semantic index | V7 indexed `(root_name, term, chunk_id)` postings replace leading-wildcard vector scans. Term presence cosine remains intentionally simpler than TF-IDF until corpus evidence justifies added maintenance cost. |
 
 ## Database files
 
@@ -152,6 +153,20 @@ go run ./cmd/evaltasks -db ./implcache.db
 ```
 
 `evaltasks` reports estimated tokens and expected-API recall for a small task set. It requires ingested data. Do not invent benchmark numbers in docs or reports.
+
+Compare sparse semantic search against FTS-only for a corpus:
+
+```bash
+go run ./cmd/evaltasks -db ./implcache.db
+go run ./cmd/evaltasks -db ./implcache.db -semantic
+go test ./store -run TestSemanticPostingQueryPlan -count=1
+```
+
+On the sanitized 12-task seed corpus, semantic off/on both produced top-1 and
+top-3 symbol recall of 1.0 and expected-source recall of 1.0. Semantic search
+increased average estimated response size from 646.7 to 653.3 tokens; observed
+median latency was 2–3 ms and p95 was 3 ms. It is therefore still
+opt-in: the seed corpus does not demonstrate a retrieval-quality improvement.
 
 ## Typical ops loop
 

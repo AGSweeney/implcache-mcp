@@ -4,7 +4,10 @@
 
 package store
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestToFTSQuerySafeLiterals(t *testing.T) {
 	cases := []struct {
@@ -55,5 +58,21 @@ func TestSearchPunctuationQueries(t *testing.T) {
 		if len(hits) == 0 {
 			t.Fatalf("query %q: no hits", q)
 		}
+	}
+}
+
+func TestSearchRejectsOversizedQueries(t *testing.T) {
+	st, err := Open(t.TempDir() + "/limits.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := t.Context()
+	if _, err := st.SearchOpts(ctx, SearchOptions{Query: strings.Repeat("a", MaxQueryRunes+1)}); err == nil {
+		t.Fatal("expected rune-limit error")
+	}
+	tokens := strings.TrimSpace(strings.Repeat("word ", MaxFTSQueryTokens+1))
+	if _, err := st.SearchOpts(ctx, SearchOptions{Query: tokens}); err == nil || !strings.Contains(err.Error(), "searchable tokens") {
+		t.Fatalf("token-limit error=%v", err)
 	}
 }

@@ -122,28 +122,43 @@ func ExtractSymbols(path string, body string) []store.SymbolInput {
 func normalizeTemplateAngles(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
-	depth := 0
 	for i := 0; i < len(s); i++ {
 		ch := s[i]
-		if depth == 0 {
-			if ch == '<' && i > 0 {
-				prev := s[i-1]
-				if (prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') ||
-					prev == '_' || prev == '>' || (prev >= '0' && prev <= '9') {
-					depth = 1
-					b.WriteString("<>")
-					continue
-				}
-			}
+		if ch != '<' || i == 0 {
 			b.WriteByte(ch)
 			continue
 		}
-		switch ch {
-		case '<':
-			depth++
-		case '>':
-			depth--
+		prev := s[i-1]
+		if !((prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') ||
+			prev == '_' || prev == '>' || (prev >= '0' && prev <= '9')) {
+			b.WriteByte(ch)
+			continue
 		}
+		// Do not consume a suffix unless a balancing '>' exists. In particular,
+		// an unclosed comparison such as `a<b;` must not discard subsequent
+		// definitions from symbol extraction.
+		depth := 1
+		end := -1
+		for j := i + 1; j < len(s); j++ {
+			switch s[j] {
+			case '<':
+				depth++
+			case '>':
+				depth--
+				if depth == 0 {
+					end = j
+				}
+			}
+			if end >= 0 {
+				break
+			}
+		}
+		if end < 0 {
+			b.WriteByte(ch)
+			continue
+		}
+		b.WriteString("<>")
+		i = end
 	}
 	return b.String()
 }
@@ -163,7 +178,7 @@ func extractCFamily(body string, origLines, normLines []string, lang string, add
 		return s
 	}
 
-	if lang == "cpp" || lang == "c" || lang == "csharp" || lang == "" {
+	if lang == "cpp" || lang == "c" || lang == "" {
 		for _, m := range reCppMethodDef.FindAllStringSubmatchIndex(body, -1) {
 			name := body[m[2]:m[3]]
 			line := 1 + strings.Count(body[:m[2]], "\n")
@@ -189,6 +204,19 @@ func extractCFamily(body string, origLines, normLines []string, lang string, add
 			}
 			line := 1 + strings.Count(body[:m[2]], "\n")
 			add(name, KindDeclaration, sigAt(line), line)
+			mark(name)
+		}
+	}
+	if lang == "csharp" {
+		for _, m := range reCSharpType.FindAllStringSubmatchIndex(body, -1) {
+			name := body[m[2]:m[3]]
+			line := 1 + strings.Count(body[:m[2]], "\n")
+			add(name, KindType, sigAt(line), line)
+		}
+		for _, m := range reCSharpMethod.FindAllStringSubmatchIndex(body, -1) {
+			name := body[m[2]:m[3]]
+			line := 1 + strings.Count(body[:m[2]], "\n")
+			add(name, KindMethod, sigAt(line), line)
 			mark(name)
 		}
 	}

@@ -5,6 +5,7 @@
 package ingest
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -212,5 +213,57 @@ typedef int StatusCode;
 	}
 	if got["LOG_MSG"] != KindMacro {
 		t.Fatalf("LOG_MSG kind=%s", got["LOG_MSG"])
+	}
+}
+
+func TestExtractionEdgeCases(t *testing.T) {
+	t.Run("unclosed comparison preserves later definition", func(t *testing.T) {
+		syms := ExtractSymbols("compare.cpp", "bool Less(int a, int b) { return a<b;\n}\nvoid LaterDefinition() {}\n")
+		got := map[string]bool{}
+		for _, s := range syms {
+			got[s.Name] = true
+		}
+		if !got["LaterDefinition"] {
+			t.Fatalf("comparison normalization discarded later symbol: %+v", syms)
+		}
+	})
+	t.Run("csharp access modifiers", func(t *testing.T) {
+		syms := ExtractSymbols("NetworkClient.cs", "public class NetworkClient {\n  public async Task ConnectAsync(string host) { }\n}\n")
+		got := map[string]string{}
+		for _, s := range syms {
+			got[s.Name] = s.Kind
+		}
+		if got["NetworkClient"] != KindType || got["ConnectAsync"] != KindMethod {
+			t.Fatalf("csharp symbols=%+v", syms)
+		}
+	})
+	t.Run("javascript control flow is not a method", func(t *testing.T) {
+		syms := ExtractSymbols("client.ts", "export class Client {\n  connect() {}\n}\nif (ready) {\n  connect();\n}\n")
+		for _, s := range syms {
+			if s.Name == "if" {
+				t.Fatalf("control flow extracted as symbol: %+v", syms)
+			}
+		}
+	})
+}
+
+func TestExtractionPrefersDefinitionsWhenCapped(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < 90; i++ {
+		b.WriteString("void Defined")
+		b.WriteString(strconv.Itoa(i))
+		b.WriteString("() {}\n")
+		b.WriteString("void Use")
+		b.WriteString(strconv.Itoa(i))
+		b.WriteString("() { RandomCall(); }\n")
+	}
+	syms := ExtractSymbols("many.cpp", b.String())
+	if len(syms) != 80 {
+		t.Fatalf("symbols=%d want 80", len(syms))
+	}
+	for _, s := range syms {
+		if s.Kind == KindCall {
+			t.Fatalf("lower priority call retained under cap: %+v", s)
+		}
 	}
 }

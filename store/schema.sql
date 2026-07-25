@@ -2,7 +2,7 @@
 -- Use of this source code is governed by an MIT-style
 -- license that can be found in the LICENSE file.
 
--- Schema mirror for a fresh database after all migrations (PRAGMA user_version = 6).
+-- Schema mirror for a fresh database after all migrations (PRAGMA user_version = 7).
 -- Source of truth for stepwise upgrades remains migrate.go.
 
 CREATE TABLE documents (
@@ -140,4 +140,12 @@ CREATE TABLE chunk_term_vectors (
     terms TEXT NOT NULL DEFAULT '',
     updated_at INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX idx_chunk_term_vectors_terms ON chunk_term_vectors(terms);
+
+CREATE TABLE chunk_term_postings (
+    chunk_id INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+    root_name TEXT NOT NULL DEFAULT '',
+    term TEXT NOT NULL,
+    PRIMARY KEY(chunk_id, term)
+);
+CREATE INDEX idx_chunk_term_postings_root_term
+    ON chunk_term_postings(root_name, term, chunk_id);

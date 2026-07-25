@@ -71,9 +71,9 @@ Use absolute paths. Reload MCP after rebuilding.
 
 **Symbol matching** (`find_symbol`): staged exact → normalized → qualified → unqualified → prefix/suffix/token → bounded fuzzy. Definitions outrank declarations and calls. Extractors: Go, C/C++/C#, Python, JS/TS, Java.
 
-**Optional semantic search**: `-enable-semantic` (or tool arg `semantic: true`) supplements FTS with sparse term-vector similarity — not embeddings.
+**Optional semantic search**: `-enable-semantic` (or tool arg `semantic: true`) supplements FTS with sparse top-term presence cosine. Its v7 inverted term postings index avoids wildcard vector scans; it is not embeddings or TF-IDF.
 
-**Schema**: SQLite `PRAGMA user_version = 6` (see [docs/DATA_MODEL.md](docs/DATA_MODEL.md)). Pre-1.0; contracts may evolve.
+**Schema**: SQLite `PRAGMA user_version = 7` (see [docs/DATA_MODEL.md](docs/DATA_MODEL.md)). Pre-1.0; contracts may evolve.
 
 ---
 

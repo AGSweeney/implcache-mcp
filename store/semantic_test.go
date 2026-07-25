@@ -7,6 +7,7 @@ package store
 import (
 	"context"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -81,6 +82,69 @@ func TestSemanticSearchFindsRelatedChunk(t *testing.T) {
 	}
 }
 
+func TestSemanticSearchEndToEndRankingLimitAndRoot(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "semantic-e2e.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	docs := []UpsertInput{
+		{
+			URI: "project://example-network-sdk/reconnect.md", Title: "Reconnect",
+			SourceType: SourceMarkdown, Path: "reconnect.md", RootName: "example-network-sdk",
+			Authority: AuthorityOfficialDocs, Hash: "network",
+			Chunks: []Chunk{{Body: "Reconnect handling uses exponential backoff and resets retry state after network recovery.", StartLine: 1, EndLine: 2}},
+		},
+		{
+			URI: "project://example-network-sdk/migration.md", Title: "Migrations",
+			SourceType: SourceMarkdown, Path: "migration.md", RootName: "example-network-sdk",
+			Authority: AuthorityOfficialDocs, Hash: "migration",
+			Chunks: []Chunk{{Body: "Database migration uses PRAGMA user_version and transactions.", StartLine: 1, EndLine: 2}},
+		},
+		{
+			URI: "project://other-sdk/plugin.md", Title: "Plugin",
+			SourceType: SourceMarkdown, Path: "plugin.md", RootName: "other-sdk",
+			Authority: AuthorityOfficialDocs, Hash: "plugin",
+			Chunks: []Chunk{{Body: "Plugin menu command registration and callback setup.", StartLine: 1, EndLine: 2}},
+		},
+	}
+	for _, doc := range docs {
+		if _, err := st.UpsertDocument(ctx, doc); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	enabled, err := st.SearchOpts(ctx, SearchOptions{
+		Query: "network retry reconnect", Limit: 1, Roots: []string{"example-network-sdk"}, Semantic: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(enabled) != 1 || !strings.HasSuffix(enabled[0].URI, "/reconnect.md") {
+		t.Fatalf("semantic ranking/limit got %+v", enabled)
+	}
+	if enabled[0].RootName != "example-network-sdk" {
+		t.Fatalf("root leaked: %+v", enabled[0])
+	}
+
+	disabled, err := st.SearchOpts(ctx, SearchOptions{
+		Query: "network retry reconnect", Limit: 10, Roots: []string{"example-network-sdk"}, Semantic: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, hit := range disabled {
+		if hit.MatchKind == MatchKindSemantic {
+			t.Fatalf("semantic-disabled result: %+v", hit)
+		}
+		if hit.RootName != "example-network-sdk" {
+			t.Fatalf("disabled root leaked: %+v", hit)
+		}
+	}
+}
+
 func TestSemanticOffByDefault(t *testing.T) {
 	dir := t.TempDir()
 	st, err := Open(filepath.Join(dir, "s.db"))
@@ -105,5 +169,184 @@ func TestSemanticOffByDefault(t *testing.T) {
 		if h.MatchKind == MatchKindSemantic {
 			t.Fatal("semantic hits must not appear when Semantic=false")
 		}
+	}
+}
+
+func TestTermVectorsFollowDocumentLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "vectors.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	uri := "project://example-network-sdk/reconnect.md"
+
+	_, err = st.UpsertDocument(ctx, UpsertInput{
+		URI: uri, Title: "Reconnect Handling",
+		SourceType: SourceMarkdown, Path: "reconnect.md", RootName: "example-network-sdk",
+		Authority: AuthorityOfficialDocs, Hash: "v1",
+		Chunks: []Chunk{
+			{Heading: "Reconnect Handling", Body: "A network client reconnects with bounded exponential backoff.", StartLine: 1, EndLine: 3},
+			{Heading: "Retry Policy", Body: "Use RetryPolicy and reset the retry counter after success.", StartLine: 4, EndLine: 6},
+			{Heading: "", Body: "", StartLine: 7, EndLine: 7},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	count, err := st.TermVectorCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 3 {
+		t.Fatalf("term vectors=%d want 3", count)
+	}
+	postings, err := st.TermPostingCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if postings == 0 {
+		t.Fatal("expected postings for non-empty vectors")
+	}
+	var matched int
+	if err := st.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM chunks c JOIN chunk_term_vectors v ON v.chunk_id = c.id
+		WHERE c.document_id = (SELECT id FROM documents WHERE uri = ?) AND v.terms != ''`, uri).Scan(&matched); err != nil {
+		t.Fatal(err)
+	}
+	if matched != 2 {
+		t.Fatalf("meaningful chunks with vectors=%d want 2", matched)
+	}
+
+	// Replacement deletes obsolete chunks and their vectors, then writes the
+	// vector for the replacement chunk.
+	_, err = st.UpsertDocument(ctx, UpsertInput{
+		URI: uri, Title: "Reconnect Handling",
+		SourceType: SourceMarkdown, Path: "reconnect.md", RootName: "example-network-sdk",
+		Authority: AuthorityOfficialDocs, Hash: "v2",
+		Chunks: []Chunk{{Heading: "Reconnect", Body: "Reconnect with RetryPolicy backoff.", StartLine: 1, EndLine: 2}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	count, err = st.TermVectorCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("term vectors after replacement=%d want 1", count)
+	}
+	postings, err = st.TermPostingCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if postings != len(strings.Fields(BuildTermVector("Reconnect", "Reconnect with RetryPolicy backoff."))) {
+		t.Fatalf("postings after replacement=%d", postings)
+	}
+	deleted, err := st.DeleteDocument(ctx, uri)
+	if err != nil || !deleted {
+		t.Fatalf("delete: deleted=%v err=%v", deleted, err)
+	}
+	count, err = st.TermVectorCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("term vectors after delete=%d want 0", count)
+	}
+	postings, err = st.TermPostingCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if postings != 0 {
+		t.Fatalf("postings after delete=%d want 0", postings)
+	}
+}
+
+func TestSemanticPostingQueryPlan(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "plan.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	_, err = st.UpsertDocument(ctx, UpsertInput{
+		URI: "project://example-network-sdk/retry.md", Title: "Retry",
+		SourceType: SourceMarkdown, Path: "retry.md", RootName: "example-network-sdk",
+		Authority: AuthorityOfficialDocs, Hash: "plan",
+		Chunks: []Chunk{{Body: "network retry reconnect exponential backoff", StartLine: 1, EndLine: 1}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := st.db.QueryContext(ctx, `
+		EXPLAIN QUERY PLAN
+		SELECT p.chunk_id FROM chunk_term_postings p
+		WHERE p.root_name = ? AND p.term IN (?)`, "example-network-sdk", "reconnect")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var details []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		details = append(details, detail)
+	}
+	if len(details) == 0 {
+		t.Fatal("missing semantic query plan")
+	}
+	found := false
+	for _, detail := range details {
+		if strings.Contains(detail, "idx_chunk_term_postings_root_term") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("posting lookup did not use root/term index: %v", details)
+	}
+}
+
+func TestSemanticPostingCandidatesHandleManyTermsAndDecoys(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "candidates.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	for i := 0; i < 250; i++ {
+		_, err := st.UpsertDocument(ctx, UpsertInput{
+			URI: "project://sdk/decoy-" + strconv.Itoa(i) + ".md", Title: "Decoy",
+			SourceType: SourceMarkdown, RootName: "sdk", Authority: AuthorityOfficialDocs,
+			Hash:   "decoy-" + strconv.Itoa(i),
+			Chunks: []Chunk{{Body: "commonterm unrelated detail " + strconv.Itoa(i)}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err = st.UpsertDocument(ctx, UpsertInput{
+		URI: "project://sdk/target.md", Title: "Target", SourceType: SourceMarkdown,
+		RootName: "sdk", Authority: AuthorityOfficialDocs, Hash: "target",
+		Chunks: []Chunk{{Body: "commonterm alphaone betatwo gammathree deltafour epsilfive zetasix eta seven"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hits, err := st.semanticCandidates(ctx,
+		"commonterm alphaone betatwo gammathree deltafour epsilfive zetasix eta seven",
+		[]string{"sdk"}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || !strings.HasSuffix(hits[0].URI, "/target.md") {
+		t.Fatalf("many-term candidate ranking got %+v", hits)
 	}
 }

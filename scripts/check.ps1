@@ -44,9 +44,10 @@ if ($gcc) {
   go test -race ./...
 } else {
   Write-Host "skipping -race (no gcc-compatible compiler found); concurrent smoke tests still run via go test"
-  Write-Host "note: MSVC cl.exe is not enough — Go -race needs MinGW/gcc or clang"
+  Write-Host "note: MSVC cl.exe is not enough; Go -race needs MinGW/gcc or clang"
 }
 
 Write-Host "== eval =="
 go run ./cmd/evaltasks -seed-demo | Out-Null
+go run ./cmd/evaltasks -seed-demo -semantic | Out-Null
 Write-Host "OK"

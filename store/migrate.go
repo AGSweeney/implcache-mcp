@@ -9,7 +9,7 @@ import (
 	"fmt"
 )
 
-const currentSchemaVersion = 6
+const currentSchemaVersion = 7
 
 const schemaV1 = `
 CREATE TABLE documents (
@@ -177,7 +177,20 @@ CREATE TABLE IF NOT EXISTS chunk_term_vectors (
     terms TEXT NOT NULL DEFAULT '',
     updated_at INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS idx_chunk_term_vectors_terms ON chunk_term_vectors(terms);
+`
+
+// schemaV7 replaces the leading-wildcard vector scan with an inverted index.
+// root_name is denormalized from chunks so root-scoped semantic candidates use
+// one indexed lookup without joining documents to discover their root.
+const schemaV7 = `
+CREATE TABLE IF NOT EXISTS chunk_term_postings (
+    chunk_id INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+    root_name TEXT NOT NULL DEFAULT '',
+    term TEXT NOT NULL,
+    PRIMARY KEY(chunk_id, term)
+);
+CREATE INDEX IF NOT EXISTS idx_chunk_term_postings_root_term
+    ON chunk_term_postings(root_name, term, chunk_id);
 `
 
 // testMigrationHook, when set, runs inside migrateOne after DDL/backfill and
@@ -245,6 +258,11 @@ func applyMigrationTx(tx *sql.Tx, version int) error {
 			return err
 		}
 		return backfillChunkTermVectorsTx(tx)
+	case 7:
+		if _, err := tx.Exec(schemaV7); err != nil {
+			return err
+		}
+		return backfillChunkTermPostingsTx(tx)
 	default:
 		return fmt.Errorf("unknown schema version %d", version)
 	}

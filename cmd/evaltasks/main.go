@@ -41,6 +41,7 @@ func main() {
 	dbPath := flag.String("db", "", "sqlite db (required unless -seed-demo)")
 	tasksPath := flag.String("tasks", "", "YAML task file (default: embedded demo tasks)")
 	seedDemo := flag.Bool("seed-demo", false, "create a temporary demo corpus and evaluate against it")
+	semantic := flag.Bool("semantic", false, "enable optional sparse term-vector search during evaluation")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -112,6 +113,7 @@ func main() {
 			Technology:       tc.Technology,
 			PreferredRoots:   tc.PreferredRoots,
 			MaxContextTokens: tc.MaxContextTokens,
+			Semantic:         *semantic,
 		})
 		r := row{ID: tc.ID, LatencyMS: time.Since(start).Milliseconds()}
 		latencies = append(latencies, r.LatencyMS)

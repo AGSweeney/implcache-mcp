@@ -101,6 +101,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			PreferredRoots:   preferred,
 			RootGroup:        args.RootGroup,
 			MaxContextTokens: args.MaxContextTokens,
+			MaxResults:       opt.MaxResults,
 			Semantic:         opt.EnableSemantic || args.Semantic,
 		})
 		if err != nil {

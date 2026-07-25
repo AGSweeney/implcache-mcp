@@ -22,6 +22,9 @@ var (
 	reJSArrow    = regexp.MustCompile(`(?m)^[ \t]*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>`)
 	reJSAssignFn = regexp.MustCompile(`(?m)^[ \t]*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\b`)
 
+	reCSharpType   = regexp.MustCompile(`(?m)^[ \t]*(?:(?:public|protected|private|internal|abstract|sealed|static|partial)\s+)*(?:class|struct|interface|enum|record)\s+([A-Za-z_][\w]*)\b`)
+	reCSharpMethod = regexp.MustCompile(`(?m)^[ \t]*(?:(?:public|protected|private|internal|static|virtual|override|abstract|async|sealed|extern|new)\s+)+[\w.<>,\[\]?\s]+\s+([A-Za-z_][\w]*)\s*\([^;]*\)\s*(?:where\s+[\w\s,:<>]+)?\{`)
+
 	reJavaType   = regexp.MustCompile(`(?m)^[ \t]*(?:public|protected|private|abstract|final|static|\s)*(?:class|interface|enum|record)\s+([A-Za-z_][\w]*)\b`)
 	reJavaMethod = regexp.MustCompile(`(?m)^[ \t]*(?:public|protected|private|static|final|synchronized|native|abstract|default|\s)+[\w.<>,\[\]\s]+\s+([A-Za-z_][\w]*)\s*\([^;]*\)\s*(?:throws\s+[\w.,\s]+)?\s*\{`)
 	reJavaDecl   = regexp.MustCompile(`(?m)^[ \t]*(?:public|protected|private|static|final|default|\s)+[\w.<>,\[\]\s]+\s+([A-Za-z_][\w]*)\s*\([^;]*\)\s*(?:throws\s+[\w.,\s]+)?;`)

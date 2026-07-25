@@ -38,6 +38,18 @@ func TestNormalizeAndForms(t *testing.T) {
 	}
 }
 
+func TestFindSymbolsRejectsOversizedName(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "symbols.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	_, err = st.FindSymbols(context.Background(), strings.Repeat("a", MaxSymbolNameRunes+1), nil, 1)
+	if err == nil || !strings.Contains(err.Error(), "symbol name exceeds") {
+		t.Fatalf("oversized symbol error=%v", err)
+	}
+}
+
 func TestFindSymbolsStagedMatches(t *testing.T) {
 	dir := t.TempDir()
 	st, err := Open(filepath.Join(dir, "s.db"))

@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -59,5 +60,74 @@ func TestConcurrentReads(t *testing.T) {
 	close(errCh)
 	for err := range errCh {
 		t.Fatal(err)
+	}
+}
+
+func TestConcurrentUpsertAndSemanticSearch(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "rw.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	const uri = "project://example-network-sdk/retry.md"
+	write := func(version int) error {
+		_, err := st.UpsertDocument(ctx, UpsertInput{
+			URI: uri, Title: "Retry", SourceType: SourceMarkdown, Path: "retry.md",
+			RootName: "example-network-sdk", Authority: AuthorityOfficialDocs,
+			Hash:   fmt.Sprintf("v%d", version),
+			Chunks: []Chunk{{Body: fmt.Sprintf("RetryPolicy reconnect exponential backoff revision %d", version)}},
+		})
+		return err
+	}
+	if err := write(0); err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 32)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 1; i <= 20; i++ {
+			if err := write(i); err != nil {
+				errCh <- err
+				return
+			}
+		}
+	}()
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for n := 0; n < 10; n++ {
+				if _, err := st.SearchOpts(ctx, SearchOptions{
+					Query: "retry reconnect backoff", Roots: []string{"example-network-sdk"},
+					Limit: 5, Semantic: true,
+				}); err != nil {
+					errCh <- err
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatal(err)
+	}
+	vectors, err := st.TermVectorCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if vectors != 1 {
+		t.Fatalf("vectors=%d want 1", vectors)
+	}
+	postings, err := st.TermPostingCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if postings != len(strings.Fields(BuildTermVector("", "RetryPolicy reconnect exponential backoff revision 20"))) {
+		t.Fatalf("postings=%d after concurrent replacement", postings)
 	}
 }

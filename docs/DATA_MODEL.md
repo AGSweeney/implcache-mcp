@@ -1,6 +1,6 @@
 # Data model
 
-Schema version: **6** (`PRAGMA user_version`). Migrations live in `store/migrate.go` and apply forward-only on open; each step runs in a transaction with its `user_version` bump (rollback on failure). The checked-in `store/schema.sql` mirrors a fresh fully migrated database; migrations remain the source of truth for upgrades.
+Schema version: **7** (`PRAGMA user_version`). Migrations live in `store/migrate.go` and apply forward-only on open; each step runs in a transaction with its `user_version` bump (rollback on failure). The checked-in `store/schema.sql` mirrors a fresh fully migrated database; migrations remain the source of truth for upgrades.
 
 Ingest extracts symbols from Go, C/C++/C#, Python, JavaScript/TypeScript, and Java only. Runtime **freshness** (`current` / `version-specific` / `mixed` / `stale` / `unknown`) is computed separately from document **authority**. Implementation-context responses include a **`contextFingerprint`** of the final trimmed payload (see [TOOLS.md](TOOLS.md)).
 
@@ -61,9 +61,38 @@ Split bodies for FTS and partial retrieval.
 
 External-content FTS5 virtual table on `heading` + `body`, kept in sync by triggers.
 
+### `chunk_term_vectors`
+
+Optional sparse semantic-search support, one row per chunk.
+
+| Column | Notes |
+|--------|-------|
+| `chunk_id` | Primary key and FK → `chunks.id` (CASCADE) |
+| `terms` | Deterministically sorted, top-48 normalized keyword terms (empty only for text without usable terms) |
+| `updated_at` | Unix time for the vector write |
+
+Term frequency chooses the top terms, then each selected term is stored once.
+Similarity is cosine over normalized term presence; it is **not TF-IDF**, embeddings,
+or a vector database. Semantic search remains opt-in (`-enable-semantic` or
+`semantic: true`) and supplements FTS rather than replacing it.
+
+### `chunk_term_postings`
+
+An inverted index over the terms in `chunk_term_vectors`.
+
+| Column | Notes |
+|--------|-------|
+| `chunk_id` | FK → `chunks.id` (CASCADE); part of the primary key |
+| `root_name` | Denormalized root scope for indexed lookup |
+| `term` | One normalized vector term per row; part of the primary key |
+
+The `(root_name, term, chunk_id)` index selects semantic candidates without
+leading-wildcard scans. Candidate ordering favors chunks sharing more query
+terms before cosine scoring.
+
 ### `symbols`
 
-Pragmatic extractions at ingest (Go / C / C++ / Pro\* heuristics).
+Pragmatic extractions at ingest (Go, C/C++/C#, Python, JavaScript/TypeScript, Java).
 
 | Column | Notes |
 |--------|-------|
@@ -139,5 +168,11 @@ Runtime structure `store.ContextBudget` limits how much text `implctx` returns. 
 | 4 | Symbol form columns (`qualified_name`, `unqualified_name`, `namespace`, `signature_norm`); `chunks.root_name` |
 | 5 | Go backfill of symbol forms via `DeriveSymbolForms` (idempotent; fixes naive v4 SQL backfill) |
 | 6 | `chunk_term_vectors` for optional sparse semantic search (not embeddings) |
+| 7 | `chunk_term_postings` inverted index for root-scoped semantic candidates |
 
-Opening a DB always migrates to the current version (`PRAGMA user_version = 6`). `store/schema.sql` mirrors a fresh post-migration database.
+Opening a DB always migrates to the current version (`PRAGMA user_version = 7`). `store/schema.sql` mirrors a fresh post-migration database.
+
+The v6 vector table intentionally has no ordinary `terms` B-tree index: SQLite
+cannot use it for leading-wildcard `LIKE '%term%'`. V7 removes that lookup path
+entirely in favor of `idx_chunk_term_postings_root_term`; the query-plan test
+records indexed candidate selection.

@@ -67,6 +67,45 @@ func TestIngestMarkdownAndSearch(t *testing.T) {
 	}
 }
 
+func TestIngestMarkdownWritesTermVectors(t *testing.T) {
+	dir := t.TempDir()
+	md := filepath.Join(dir, "reconnect.md")
+	body := `# Reconnect Handling
+
+A network client should reconnect with bounded exponential backoff.
+
+Use RetryPolicy to calculate the delay and reset the retry counter after a successful connection.
+`
+	if err := os.WriteFile(md, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(filepath.Join(dir, "kb.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	if _, err := IngestMarkdown(ctx, st, md, false, "example-network-sdk"); err != nil {
+		t.Fatal(err)
+	}
+	n, err := st.TermVectorCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n < 1 {
+		t.Fatalf("term vectors=%d want at least one", n)
+	}
+	hits, err := st.SearchOpts(ctx, store.SearchOptions{
+		Query: "network retry reconnect", Roots: []string{"example-network-sdk"}, Semantic: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) == 0 {
+		t.Fatal("expected semantic/FTS result from markdown ingestion")
+	}
+}
+
 func TestIngestProject(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "cmd"), 0o755); err != nil {

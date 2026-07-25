@@ -91,6 +91,7 @@ const (
 	DefaultSearchLimit   = 20
 	MaxSearchLimit       = 100
 	MaxQueryRunes        = 512
+	MaxFTSQueryTokens    = 64
 	MaxSnippetTokens     = 32
 	DefaultMaxPerDoc     = 3
 	DefaultCandidateMult = 4
@@ -338,7 +339,7 @@ func (s *Store) UpsertDocument(ctx context.Context, in UpsertInput) (bool, error
 		if err != nil {
 			return false, err
 		}
-		if err := s.upsertChunkTermVector(ctx, tx, chunkID, c.Heading, c.Body); err != nil {
+		if err := s.upsertChunkTermVector(ctx, tx, chunkID, in.RootName, c.Heading, c.Body); err != nil {
 			return false, fmt.Errorf("term vector chunk %d: %w", i, err)
 		}
 	}
@@ -492,6 +493,9 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 	}
 	if utf8.RuneCountInString(query) > MaxQueryRunes {
 		return nil, fmt.Errorf("query exceeds %d characters", MaxQueryRunes)
+	}
+	if len(tokenizeQuery(query)) > MaxFTSQueryTokens {
+		return nil, fmt.Errorf("query exceeds %d searchable tokens", MaxFTSQueryTokens)
 	}
 	limit := ClampSearchLimit(opt.Limit, opt.MaxResults)
 	maxPerDoc := opt.MaxPerDoc

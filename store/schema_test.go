@@ -39,7 +39,7 @@ func TestFreshDBHasExpectedSchemaObjects(t *testing.T) {
 	tables := []string{
 		"documents", "chunks", "chunks_fts", "symbols",
 		"knowledge_entries", "knowledge_entry_sources", "aliases",
-		"root_groups", "root_group_members", "chunk_term_vectors",
+		"root_groups", "root_group_members", "chunk_term_vectors", "chunk_term_postings",
 	}
 	for _, name := range tables {
 		var n int
@@ -55,6 +55,7 @@ func TestFreshDBHasExpectedSchemaObjects(t *testing.T) {
 		"idx_symbols_name_norm",
 		"idx_symbols_unqualified",
 		"idx_chunks_root_name",
+		"idx_chunk_term_postings_root_term",
 	}
 	for _, name := range indexes {
 		var n int
@@ -87,6 +88,51 @@ func TestFreshDBHasExpectedSchemaObjects(t *testing.T) {
 			t.Fatalf("symbols missing column %s", c)
 		}
 	}
+	vectorRows, err := db.Query(`PRAGMA table_info(chunk_term_vectors)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vectorCols := map[string]bool{}
+	vectorPK := map[string]bool{}
+	for vectorRows.Next() {
+		var cid, notNull, pk int
+		var name, ctype string
+		var dflt any
+		if err := vectorRows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			vectorRows.Close()
+			t.Fatal(err)
+		}
+		vectorCols[name] = true
+		if pk > 0 {
+			vectorPK[name] = true
+		}
+	}
+	vectorRows.Close()
+	for _, c := range []string{"chunk_id", "terms", "updated_at"} {
+		if !vectorCols[c] {
+			t.Fatalf("chunk_term_vectors missing column %s", c)
+		}
+	}
+	if !vectorPK["chunk_id"] {
+		t.Fatal("chunk_term_vectors.chunk_id must be the primary key")
+	}
+	indexRows, err := db.Query(`PRAGMA index_list(chunk_term_vectors)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer indexRows.Close()
+	for indexRows.Next() {
+		var seq int
+		var name string
+		var unique, partial int
+		var origin string
+		if err := indexRows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
+			t.Fatal(err)
+		}
+		if name == "idx_chunk_term_vectors_terms" {
+			t.Fatal("leading-wildcard semantic lookup must not create an unused terms B-tree")
+		}
+	}
 	var triggers int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='trigger'`).Scan(&triggers); err != nil {
 		t.Fatal(err)
@@ -102,6 +148,7 @@ func TestFreshDBHasExpectedSchemaObjects(t *testing.T) {
 		"knowledge_entry_sources": "knowledge_entries",
 		"root_group_members":      "root_groups",
 		"chunk_term_vectors":      "chunks",
+		"chunk_term_postings":     "chunks",
 	}
 	for child, parent := range expectFK {
 		rows, err := db.Query(`PRAGMA foreign_key_list(` + child + `)`)

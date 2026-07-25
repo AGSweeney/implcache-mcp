@@ -4,7 +4,7 @@ All tools are registered by `tools.RegisterWithOptions`. Default **`-mode agent`
 
 When root scope is ambiguous, several tools return a JSON payload with `needsChoice`, `message`, and `availableRoots` (often as an error-shaped MCP result). Ask the user, then retry with an explicit root.
 
-Schema: `PRAGMA user_version = 6`. Symbol extraction at ingest supports: Go, C/C++/C#, Python, JavaScript/TypeScript, Java. Unsupported languages yield no symbols.
+Schema: `PRAGMA user_version = 7`. Symbol extraction at ingest supports: Go, C/C++/C#, Python, JavaScript/TypeScript, Java. Unsupported languages yield no symbols.
 
 ---
 
@@ -23,7 +23,7 @@ Schema: `PRAGMA user_version = 6`. Symbol extraction at ingest supports: Go, C/C
 | `preferredRoots` | string[] | no | Ordered roots to search |
 | `rootGroup` | string | no | Named root group (DB) |
 | `maxContextTokens` | int | no | Soft budget (default ~2500) |
-| `semantic` | bool | no | Supplement FTS with sparse term vectors (`-enable-semantic`) |
+| `semantic` | bool | no | Supplement FTS with sparse term vectors and indexed term postings (`-enable-semantic`) |
 
 **Returns** (`implctx.Response`), including:
 
@@ -68,7 +68,7 @@ Full-text search over chunk FTS5. Prefer `get_implementation_context` for coding
 | `query` | string | yes | FTS query |
 | `limit` | int | no | Capped by server `-max-results` (hard max 100) |
 | `rootName` | string | no | Explicit root; else inferred |
-| `semantic` | bool | no | Also score related chunks via sparse term vectors |
+| `semantic` | bool | no | Also score related chunks via sparse term vectors and indexed postings |
 
 **Returns:** `{ hits, count, roots, matchedHints }` or `{ needsChoice, message, availableRoots, … }`
 

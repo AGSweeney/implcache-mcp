@@ -27,6 +27,8 @@ type Request struct {
 	PreferredRoots   []string `json:"preferredRoots,omitempty"`
 	RootGroup        string   `json:"rootGroup,omitempty"`
 	MaxContextTokens int      `json:"maxContextTokens,omitempty"`
+	// MaxResults is a server-side retrieval ceiling supplied by the tool layer.
+	MaxResults int `json:"-"`
 	// Semantic supplements FTS with sparse term-vector similarity (server -enable-semantic).
 	Semantic bool `json:"semantic,omitempty"`
 }
@@ -200,7 +202,7 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 	hits, err := st.SearchOpts(ctx, store.SearchOptions{
 		Query:      task,
 		Limit:      budget.MaxResults * 3,
-		MaxResults: store.MaxSearchLimit,
+		MaxResults: req.MaxResults,
 		Roots:      roots,
 		MaxPerDoc:  budget.MaxPerDocument,
 		Semantic:   req.Semantic,

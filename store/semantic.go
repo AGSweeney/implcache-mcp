@@ -18,8 +18,19 @@ import (
 const MatchKindSemantic = "semantic"
 
 const maxTermVectorTerms = 48
+const (
+	semanticBackfillBatchSize = 256
+	minSemanticCandidates     = 1000
+	semanticCandidateMultiple = 50
+)
 
-// BuildTermVector returns a space-separated sparse term string for a chunk.
+// testTermPostingBackfillHook is used only to verify v7 rollback midway
+// through a posting backfill. It runs inside the migration transaction.
+var testTermPostingBackfillHook func(chunkID int64) error
+
+// BuildTermVector returns a deterministic top-N sparse term-presence vector.
+// Term frequency selects the top terms, but each selected term is serialized
+// once; scoring is therefore normalized set overlap, not TF-IDF.
 func BuildTermVector(heading, body string) string {
 	tf := map[string]int{}
 	addText := func(s string) {
@@ -137,18 +148,56 @@ func cosineSparse(a, b map[string]float64) float64 {
 	return dot
 }
 
-func (s *Store) upsertChunkTermVector(ctx context.Context, tx *sql.Tx, chunkID int64, heading, body string) error {
+func (s *Store) upsertChunkTermVector(ctx context.Context, tx *sql.Tx, chunkID int64, rootName, heading, body string) error {
 	terms := BuildTermVector(heading, body)
-	if terms == "" {
-		return nil
-	}
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO chunk_term_vectors(chunk_id, terms, updated_at)
 		VALUES (?, ?, ?)
 		ON CONFLICT(chunk_id) DO UPDATE SET terms = excluded.terms, updated_at = excluded.updated_at`,
 		chunkID, terms, time.Now().Unix(),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return upsertChunkTermPostingsTx(ctx, tx, chunkID, rootName, terms)
+}
+
+// TermVectorCount returns the number of persisted vectors. It is useful for
+// local integrity checks after ingestion or migration.
+func (s *Store) TermVectorCount(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunk_term_vectors`).Scan(&n)
+	return n, err
+}
+
+// TermPostingCount returns the number of indexed semantic terms. It is useful
+// for local integrity checks after ingestion or migration.
+func (s *Store) TermPostingCount(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunk_term_postings`).Scan(&n)
+	return n, err
+}
+
+func upsertChunkTermPostingsTx(ctx context.Context, tx *sql.Tx, chunkID int64, rootName, terms string) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM chunk_term_postings WHERE chunk_id = ?`, chunkID); err != nil {
+		return err
+	}
+	if terms == "" {
+		return nil
+	}
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO chunk_term_postings(chunk_id, root_name, term)
+		VALUES (?, ?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for _, term := range strings.Fields(terms) {
+		if _, err := stmt.ExecContext(ctx, chunkID, rootName, term); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // backfillChunkTermVectorsTx populates term vectors for existing chunks (migration v6).
@@ -187,9 +236,6 @@ func backfillChunkTermVectorsTx(tx *sql.Tx) error {
 	now := time.Now().Unix()
 	for _, r := range list {
 		terms := BuildTermVector(r.heading, r.body)
-		if terms == "" {
-			continue
-		}
 		if _, err := stmt.Exec(r.id, terms, now); err != nil {
 			return err
 		}
@@ -197,13 +243,103 @@ func backfillChunkTermVectorsTx(tx *sql.Tx) error {
 	return nil
 }
 
-// semanticCandidates returns related chunks by sparse term cosine similarity.
+// backfillChunkTermPostingsTx streams v6 vectors in batches to avoid retaining
+// an entire corpus in memory while creating the v7 inverted term index.
+func backfillChunkTermPostingsTx(tx *sql.Tx) error {
+	var afterID int64
+	for {
+		rows, err := tx.Query(`
+			SELECT v.chunk_id, c.root_name, v.terms
+			FROM chunk_term_vectors v
+			JOIN chunks c ON c.id = v.chunk_id
+			WHERE v.chunk_id > ?
+			ORDER BY v.chunk_id
+			LIMIT ?`, afterID, semanticBackfillBatchSize)
+		if err != nil {
+			return err
+		}
+		type row struct {
+			chunkID  int64
+			rootName string
+			terms    string
+		}
+		var batch []row
+		for rows.Next() {
+			var r row
+			if err := rows.Scan(&r.chunkID, &r.rootName, &r.terms); err != nil {
+				rows.Close()
+				return err
+			}
+			batch = append(batch, r)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if len(batch) == 0 {
+			return nil
+		}
+		for _, r := range batch {
+			if testTermPostingBackfillHook != nil {
+				if err := testTermPostingBackfillHook(r.chunkID); err != nil {
+					return err
+				}
+			}
+			if err := upsertChunkTermPostingsTx(context.Background(), tx, r.chunkID, r.rootName, r.terms); err != nil {
+				return err
+			}
+		}
+		afterID = batch[len(batch)-1].chunkID
+	}
+}
+
+// semanticCandidates returns related chunks by sparse term-presence cosine similarity.
 // Used only when SearchOptions.Semantic is true — supplements FTS, does not replace it.
 func (s *Store) semanticCandidates(ctx context.Context, query string, roots []string, limit int) ([]SearchHit, error) {
 	qVec := termSet(BuildTermVector("", query))
 	if len(qVec) == 0 {
 		return nil, nil
 	}
+	qTerms := make([]string, 0, len(qVec))
+	for term := range qVec {
+		qTerms = append(qTerms, term)
+	}
+	sort.Strings(qTerms)
+	if len(qTerms) == 0 {
+		return nil, nil
+	}
+	candidateLimit := limit * semanticCandidateMultiple
+	if candidateLimit < minSemanticCandidates {
+		candidateLimit = minSemanticCandidates
+	}
+
+	placeholders := make([]string, len(qTerms))
+	args := make([]any, 0, len(qTerms)+len(roots)+1)
+	for i, term := range qTerms {
+		placeholders[i] = "?"
+		args = append(args, term)
+	}
+	candidates := `
+		SELECT p.chunk_id
+		FROM chunk_term_postings p
+		WHERE p.term IN (` + strings.Join(placeholders, ",") + `)`
+	if len(roots) > 0 {
+		rootPlaceholders := make([]string, len(roots))
+		for i, root := range roots {
+			rootPlaceholders[i] = "?"
+			args = append(args, root)
+		}
+		candidates += ` AND p.root_name IN (` + strings.Join(rootPlaceholders, ",") + `)`
+	}
+	candidates += `
+		GROUP BY p.chunk_id
+		ORDER BY COUNT(*) DESC, p.chunk_id
+		LIMIT ?`
+	args = append(args, candidateLimit)
+
 	sqlText := `
 		SELECT c.id, c.document_id, d.uri, d.title,
 		       COALESCE(d.root_name, ''), COALESCE(d.path, ''),
@@ -211,44 +347,11 @@ func (s *Store) semanticCandidates(ctx context.Context, query string, roots []st
 		       COALESCE(d.technology, ''), COALESCE(d.product_version, ''),
 		       COALESCE(d.archived, 0),
 		       c.ordinal, c.heading, c.body, c.start_line, c.end_line, v.terms
-		FROM chunk_term_vectors v
+		FROM (` + candidates + `) candidates
+		JOIN chunk_term_vectors v ON v.chunk_id = candidates.chunk_id
 		JOIN chunks c ON c.id = v.chunk_id
 		JOIN documents d ON d.id = c.document_id
 		WHERE v.terms != ''`
-	args := []any{}
-	if len(roots) > 0 {
-		ph := make([]string, len(roots))
-		for i, r := range roots {
-			ph[i] = "?"
-			args = append(args, r)
-		}
-		sqlText += ` AND (c.root_name IN (` + strings.Join(ph, ",") + `)
-		       OR (c.root_name = '' AND d.root_name IN (` + strings.Join(ph, ",") + `)))`
-		// Second IN list needs its own bound args.
-		for _, r := range roots {
-			args = append(args, r)
-		}
-	}
-	// Bound candidate scan: prefer chunks sharing at least one query term via LIKE.
-	var qTerms []string
-	for t := range qVec {
-		if len(t) >= 3 {
-			qTerms = append(qTerms, t)
-		}
-	}
-	sort.Strings(qTerms)
-	var likeParts []string
-	for _, t := range qTerms {
-		likeParts = append(likeParts, `v.terms LIKE ? ESCAPE '\'`)
-		args = append(args, "%"+escapeLike(t)+"%")
-		if len(likeParts) >= 6 {
-			break
-		}
-	}
-	if len(likeParts) > 0 {
-		sqlText += ` AND (` + strings.Join(likeParts, " OR ") + `)`
-	}
-	sqlText += ` LIMIT 200`
 
 	rows, err := s.db.QueryContext(ctx, sqlText, args...)
 	if err != nil {
