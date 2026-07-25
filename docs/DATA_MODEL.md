@@ -1,6 +1,6 @@
 # Data model
 
-Schema version: **7** (`PRAGMA user_version`). `store/schema.sql` is the single canonical schema, embedded by `store/schema.go`: new databases are created directly at version 7 in one transaction. `user_version` is a schema identity check, not a migration ladder — there is no upgrade path during pre-release development.
+Schema version: **8** (`PRAGMA user_version`). `store/schema.sql` is the single canonical schema, embedded by `store/schema.go`: new databases are created directly at version 8 in one transaction. `user_version` is a schema identity check, not a migration ladder — there is no upgrade path during pre-release development.
 
 Ingest extracts symbols from Go, C/C++/C#, Python, JavaScript/TypeScript, and Java only. Runtime **freshness** (`current` / `version-specific` / `mixed` / `stale` / `unknown`) is computed separately from document **authority**. Implementation-context responses include a **`contextFingerprint`** of the final trimmed payload (see [TOOLS.md](TOOLS.md)).
 
@@ -72,16 +72,16 @@ Optional sparse semantic-search support, one row per chunk.
 | `updated_at` | Unix time for the vector write |
 
 Term frequency chooses the top terms (capped at 48), then each selected term is
-stored once as a presence set. At query time, corpus document frequency from
-`chunk_term_postings` supplies smooth IDF weights on the **query** vector
-(`log(1 + N/(df+1)) + 1`); document vectors stay presence-normalized. The result
-is IDF-weighted sparse cosine — **not** classic TF-IDF with per-chunk TF weights,
-embeddings, or a vector database. Semantic search remains opt-in
-(`-enable-semantic` or `semantic: true`) and supplements FTS rather than
-replacing it. Candidate lookup uses the most discriminative query terms
-(high IDF; DF ≤ 15% of the scoped corpus when possible) against the postings
-index, scores sparse vectors without loading chunk bodies, then hydrates only
-the top hits; final scoring still uses the full query vector.
+stored once as a presence set. At query time, persisted `term_df` / `root_chunk_stats`
+supply smooth IDF weights on the **query** vector (`log(1 + N/(df+1)) + 1`);
+document vectors stay presence-normalized. The result is IDF-weighted sparse
+cosine — **not** classic TF-IDF with per-chunk TF weights, embeddings, or a
+vector database. Semantic search remains opt-in (`-enable-semantic` or
+`semantic: true`) and supplements FTS rather than replacing it. Candidate lookup
+uses the most discriminative query terms (high IDF; DF ≤ 15% of the scoped
+corpus when possible) against the postings index, scores sparse vectors without
+loading chunk bodies, then hydrates only the top hits; final scoring still uses
+the full query vector.
 
 The tokenizer splits identifiers on camelCase/PascalCase boundaries and
 underscores *before* lowercasing, keeping both the combined identifier and its
@@ -104,6 +104,27 @@ An inverted index over the terms in `chunk_term_vectors`.
 The `(root_name, term, chunk_id)` index selects semantic candidates without
 leading-wildcard scans. Candidate ordering favors chunks sharing more query
 terms before cosine scoring.
+
+### `term_df`
+
+Per-root document frequency for each normalized semantic term. Maintained
+atomically on ingest, replace, and delete (not derived by scanning postings at
+query time).
+
+| Column | Notes |
+|--------|-------|
+| `root_name` | Corpus scope |
+| `term` | Normalized term |
+| `df` | Number of chunks in that root containing the term |
+
+### `root_chunk_stats`
+
+Per-root chunk cardinality (`N` for IDF), maintained with the same ingest/delete transactions as `term_df`.
+
+| Column | Notes |
+|--------|-------|
+| `root_name` | Primary key |
+| `chunk_count` | Chunks currently indexed under the root |
 
 ### `symbols`
 
@@ -177,8 +198,8 @@ Runtime structure `store.ContextBudget` limits how much text `implctx` returns. 
 
 One canonical schema, no migration ladder:
 
-- **Version matches** (`user_version == 7`): run a lightweight `sqlite_master` check for required objects (`documents`, `chunks`, `chunks_fts`, `symbols`, `chunk_term_vectors`, `chunk_term_postings`, `idx_chunk_term_postings_root_term`), then open. Missing objects are refused with rebuild instructions — the file is not repaired.
-- **Empty/new database**: create the full v7 schema directly from `store/schema.sql`, then set `user_version = 7`.
+- **Version matches** (`user_version == 8`): run a lightweight `sqlite_master` check for required objects (`documents`, `chunks`, `chunks_fts`, `symbols`, `chunk_term_vectors`, `chunk_term_postings`, `idx_chunk_term_postings_root_term`, `term_df`, `root_chunk_stats`), then open. Missing objects are refused with rebuild instructions — the file is not repaired.
+- **Empty/new database**: create the full v8 schema directly from `store/schema.sql`, then set `user_version = 8`.
 - **Any other version** (or an unversioned non-empty file): refuse to open without modifying the file. The error reports the database path, the found version, and the expected version, and instructs the developer to delete the database (and its `-wal`/`-shm` sidecars) and re-ingest.
 
 During development, delete and recreate databases after schema changes; no time is spent backfilling old versions or testing historical upgrades.
@@ -187,9 +208,9 @@ During development, delete and recreate databases after schema changes; no time 
 
 ### When migrations begin (post-deployment cutover)
 
-Treat **schema v7** as the baseline once any deployed database must be preserved. At that point:
+Treat the **first deployed schema version** (currently v8 in development) as the baseline once any deployed database must be preserved. At that point:
 
-1. Stop deleting incompatible databases by policy; introduce an explicit migration ladder from `user_version = 7` forward.
+1. Stop deleting incompatible databases by policy; introduce an explicit migration ladder from that baseline `user_version` forward.
 2. Keep `store/schema.sql` as the canonical *fresh* schema for new installs at the latest version.
 3. Add per-version upgrade steps that run inside transactions and leave failed opens retryable.
 4. Never silently rewrite a production file; refuse unknown future versions until a matching build is deployed.

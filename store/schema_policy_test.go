@@ -16,9 +16,9 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func TestCurrentSchemaVersionSeven(t *testing.T) {
-	if currentSchemaVersion != 7 {
-		t.Fatalf("currentSchemaVersion=%d want 7", currentSchemaVersion)
+func TestCurrentSchemaVersionEight(t *testing.T) {
+	if currentSchemaVersion != 8 {
+		t.Fatalf("currentSchemaVersion=%d want 8", currentSchemaVersion)
 	}
 }
 
@@ -77,7 +77,7 @@ func TestReopenCurrentVersionIsIdempotent(t *testing.T) {
 }
 
 func TestOpenRefusesMismatchedSchemaVersion(t *testing.T) {
-	for _, version := range []int{1, 5, 6, currentSchemaVersion + 1} {
+	for _, version := range []int{1, 5, 6, 7, currentSchemaVersion + 1} {
 		dbPath := filepath.Join(t.TempDir(), fmt.Sprintf("v%d.db", version))
 		db, err := sql.Open("sqlite", dbPath)
 		if err != nil {
@@ -157,11 +157,11 @@ func TestOpenRefusesMalformedCurrentSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Claim current schema version but omit required semantic objects.
-	if _, err := db.Exec(`
+	if _, err := db.Exec(fmt.Sprintf(`
 		CREATE TABLE documents (id INTEGER PRIMARY KEY);
 		CREATE TABLE chunks (id INTEGER PRIMARY KEY);
-		PRAGMA user_version = 7;
-	`); err != nil {
+		PRAGMA user_version = %d;
+	`, currentSchemaVersion)); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()

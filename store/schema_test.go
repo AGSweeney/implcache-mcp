@@ -40,6 +40,7 @@ func TestFreshDBHasExpectedSchemaObjects(t *testing.T) {
 		"documents", "chunks", "chunks_fts", "symbols",
 		"knowledge_entries", "knowledge_entry_sources", "aliases",
 		"root_groups", "root_group_members", "chunk_term_vectors", "chunk_term_postings",
+		"term_df", "root_chunk_stats",
 	}
 	for _, name := range tables {
 		var n int

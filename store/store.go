@@ -318,6 +318,9 @@ func (s *Store) UpsertDocument(ctx context.Context, in UpsertInput) (bool, error
 		); err != nil {
 			return false, fmt.Errorf("update document: %w", err)
 		}
+		if err := retractDocumentSemanticStats(ctx, tx, docID); err != nil {
+			return false, fmt.Errorf("retract semantic stats: %w", err)
+		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM chunks WHERE document_id = ?`, docID); err != nil {
 			return false, fmt.Errorf("clear chunks: %w", err)
 		}
@@ -338,6 +341,9 @@ func (s *Store) UpsertDocument(ctx context.Context, in UpsertInput) (bool, error
 		chunkID, err := res.LastInsertId()
 		if err != nil {
 			return false, err
+		}
+		if err := adjustRootChunkCountTx(ctx, tx, in.RootName, 1); err != nil {
+			return false, fmt.Errorf("root chunk stats: %w", err)
 		}
 		if err := s.upsertChunkTermVector(ctx, tx, chunkID, in.RootName, c.Heading, c.Body); err != nil {
 			return false, fmt.Errorf("term vector chunk %d: %w", i, err)
@@ -434,12 +440,35 @@ func (s *Store) ListDocuments(ctx context.Context, sourceType string) ([]Documen
 
 // DeleteDocument removes a document by URI.
 func (s *Store) DeleteDocument(ctx context.Context, uri string) (bool, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM documents WHERE uri = ?`, uri)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	var docID int64
+	err = tx.QueryRowContext(ctx, `SELECT id FROM documents WHERE uri = ?`, uri).Scan(&docID)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if err := retractDocumentSemanticStats(ctx, tx, docID); err != nil {
+		return false, err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM documents WHERE id = ?`, docID)
 	if err != nil {
 		return false, err
 	}
 	n, err := res.RowsAffected()
-	return n > 0, err
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // DeleteDocumentsByURIPrefix deletes all documents whose URI starts with prefix.
@@ -450,11 +479,48 @@ func (s *Store) DeleteDocumentsByURIPrefix(ctx context.Context, prefix string) (
 		return 0, fmt.Errorf("prefix is required")
 	}
 	escaped := escapeLike(prefix)
-	res, err := s.db.ExecContext(ctx, `DELETE FROM documents WHERE uri LIKE ? ESCAPE '\'`, escaped+"%")
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
-	return res.RowsAffected()
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM documents WHERE uri LIKE ? ESCAPE '\'`, escaped+"%")
+	if err != nil {
+		return 0, err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, id := range ids {
+		if err := retractDocumentSemanticStats(ctx, tx, id); err != nil {
+			return 0, err
+		}
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM documents WHERE uri LIKE ? ESCAPE '\'`, escaped+"%")
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 func escapeLike(s string) string {

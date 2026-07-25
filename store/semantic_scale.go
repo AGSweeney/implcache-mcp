@@ -88,6 +88,12 @@ func (s *Store) SeedSyntheticSemanticCorpus(ctx context.Context, root string, n 
 				_ = tx.Rollback()
 				return err
 			}
+			if err := adjustRootChunkCountTx(ctx, tx, root, 1); err != nil {
+				docStmt.Close()
+				chunkStmt.Close()
+				_ = tx.Rollback()
+				return err
+			}
 			if err := s.upsertChunkTermVector(ctx, tx, chunkID, root, "Overview", body); err != nil {
 				docStmt.Close()
 				chunkStmt.Close()

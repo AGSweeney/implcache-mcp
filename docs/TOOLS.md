@@ -4,7 +4,7 @@ All tools are registered by `tools.RegisterWithOptions`. Default **`-mode agent`
 
 When root scope is ambiguous, several tools return a JSON payload with `needsChoice`, `message`, and `availableRoots` (often as an error-shaped MCP result). Ask the user, then retry with an explicit root.
 
-Schema: `PRAGMA user_version = 7`. Symbol extraction at ingest supports: Go, C/C++/C#, Python, JavaScript/TypeScript, Java. Unsupported languages yield no symbols.
+Schema: `PRAGMA user_version = 8`. Symbol extraction at ingest supports: Go, C/C++/C#, Python, JavaScript/TypeScript, Java. Unsupported languages yield no symbols.
 
 ---
 

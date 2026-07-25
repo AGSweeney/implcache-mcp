@@ -9,7 +9,7 @@ go build -o implcache-mcp .
 go build -o ingestcli ./cmd/ingestcli
 ```
 
-Module: `implcache-mcp` (Go 1.25+). Default reported version is `dev` (override with `-ldflags "-X main.version=…"`). SQLite is pure Go (`modernc.org/sqlite`); **no CGO** required for build/test. Schema `PRAGMA user_version` is currently **7**.
+Module: `implcache-mcp` (Go 1.25+). Default reported version is `dev` (override with `-ldflags "-X main.version=…"`). SQLite is pure Go (`modernc.org/sqlite`); **no CGO** required for build/test. Schema `PRAGMA user_version` is currently **8**.
 
 ### Race detector
 
@@ -125,7 +125,7 @@ Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still ch
 | Area | Notes |
 |------|--------|
 | Symbol extraction | Heuristic regex for Go, C/C++/C#, Python, JS/TS, Java. Optional tree-sitter still future work. Unknown languages do not fall through to noisy C regex. |
-| Search model | FTS5 + authority ranking by default. Optional **IDF-weighted sparse cosine** (`-enable-semantic` / `semantic: true`) supplements FTS through v7 indexed term postings — query-side corpus IDF, not neural embeddings or classic TF-IDF. Pure keyword search can still miss related concepts. |
+| Search model | FTS5 + authority ranking by default. Optional **IDF-weighted sparse cosine** (`-enable-semantic` / `semantic: true`) supplements FTS through v8 indexed term postings and persisted `term_df` — query-side corpus IDF, not neural embeddings or classic TF-IDF. Pure keyword search can still miss related concepts. |
 | Freshness | Independent of authority. Official docs without version/date → `unknown`. `webSearchRecommended` uses coverage + freshness. |
 | Fingerprints | `contextFingerprint` is over the post-trim response (+ citation content hashes). |
 | Token estimates | `estimatedTokens` is roughly `utf8_runes/4` on the serialized JSON. Use for budgeting only — approximate, not exact. |
@@ -133,7 +133,7 @@ Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still ch
 | Recipes | Quality depends on human review of `vomit` / `saveRecipe` output. Ranking already demotes generated entries vs human-reviewed and project code. |
 | Concurrency | SQLite **WAL** helps readers; multiple writers still need care (single writer process, or serialize admin ingest). See concurrent smoke tests; prefer one admin writer. |
 | Go version | Module requires **Go 1.25+** — note for downstream consumers. |
-| Semantic index | V7 indexed `(root_name, term, chunk_id)` postings replace leading-wildcard vector scans. Query-time smooth IDF downweights ubiquitous terms; posting candidate lookup drops terms with DF > 15% of the scoped corpus when rarer terms exist, scores vectors first, and hydrates only the final hit bodies. Candidate pool is `clamp(limit*25, 250, 1500)`. Posting growth is bounded by 48 terms/chunk — use `Store.SemanticStats` / `go run ./cmd/semscale`. |
+| Semantic index | V8 indexed `(root_name, term, chunk_id)` postings plus persisted `term_df` / `root_chunk_stats` for O(query) IDF. Posting candidate lookup drops terms with DF > 15% of the scoped corpus when rarer terms exist, scores vectors first, and hydrates only the final hit bodies. Candidate pool is `clamp(limit*25, 250, 1500)`. Posting growth is bounded by 48 terms/chunk — use `Store.SemanticStats` / `go run ./cmd/semscale`. |
 
 ## Database files
 
@@ -179,19 +179,19 @@ Use the offline harness (not part of the default test suite):
 go run ./cmd/semscale -chunks 10000,100000,500000 -iters 12 -limit 20
 ```
 
-Measured on this machine (query-side IDF, high-DF terms excluded from posting
-lookup, score on vectors then hydrate top hits; candidate pool capped at
-`max(250, min(1500, limit*25))` → 500 for `limit=20`):
+Measured on this machine after schema v8 persisted DF (query-side IDF from
+`term_df`, high-DF terms excluded from posting lookup, score on vectors then
+hydrate top hits; candidate pool capped at `max(250, min(1500, limit*25))` →
+500 for `limit=20`):
 
 | Chunks | Semantic p50 | Semantic p95 | Dominant cost | Full SearchOpts+semantic p50 |
 |-------:|-------------:|-------------:|---------------|-----------------------------:|
-| 10k | 4.6 ms | 5.5 ms | posting + IDF | 30 ms |
-| 100k | 45 ms | 51 ms | IDF | 262 ms |
-| 500k | 223 ms | 240 ms | IDF (`COUNT` over postings) | 1.29 s |
+| 10k | 2.5 ms | 2.6 ms | posting fetch | 26 ms |
+| 100k | 8.7 ms | 9.5 ms | posting fetch | 223 ms |
+| 500k | 44 ms | 52 ms | posting fetch | 1.09 s |
 
-Scoring and body hydration stay cheap; at large scale, document-frequency
-aggregation dominates. A persisted DF table would be the next optimization if
-500k+ corpora become common.
+IDF lookups are now effectively free. Remaining large-corpus cost is posting
+candidate aggregation and (for full `SearchOpts`) FTS over the same corpus.
 
 ## Typical ops loop
 

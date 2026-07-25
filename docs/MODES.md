@@ -34,7 +34,7 @@ Local/development builds report **`dev`**. Inject a tag or commit at build time:
 go build -ldflags "-X main.version=$(git describe --tags --always)" -o implcache-mcp .
 ```
 
-Pre-1.0: MCP tool contracts and schema may still evolve. Schema version is independent (`PRAGMA user_version`; currently **7**).
+Pre-1.0: MCP tool contracts and schema may still evolve. Schema version is independent (`PRAGMA user_version`; currently **8**).
 
 ## Optional semantic search
 
@@ -42,7 +42,7 @@ Pre-1.0: MCP tool contracts and schema may still evolve. Schema version is indep
 ./implcache-mcp -mode agent -enable-semantic
 ```
 
-Or per-call `semantic: true` on `search_knowledge` / `get_implementation_context`. Uses sparse term vectors over chunks (cosine), merged with FTS; v7 uses an indexed term-postings table for candidates. It is not an embedding model.
+Or per-call `semantic: true` on `search_knowledge` / `get_implementation_context`. Uses sparse term vectors over chunks (cosine), merged with FTS; v8 uses indexed term postings plus persisted DF for candidates/IDF. It is not an embedding model.
 
 ## Read-only
 

@@ -300,6 +300,33 @@ func (s *Store) SemanticStats(ctx context.Context) (SemanticIndexStats, error) {
 }
 
 func upsertChunkTermPostingsTx(ctx context.Context, tx *sql.Tx, chunkID int64, rootName, terms string) error {
+	// Retract DF for any existing postings before replace (no-op for new chunks).
+	oldRows, err := tx.QueryContext(ctx, `
+		SELECT root_name, term FROM chunk_term_postings WHERE chunk_id = ?`, chunkID)
+	if err != nil {
+		return err
+	}
+	type oldPosting struct{ root, term string }
+	var old []oldPosting
+	for oldRows.Next() {
+		var p oldPosting
+		if err := oldRows.Scan(&p.root, &p.term); err != nil {
+			oldRows.Close()
+			return err
+		}
+		old = append(old, p)
+	}
+	if err := oldRows.Close(); err != nil {
+		return err
+	}
+	if err := oldRows.Err(); err != nil {
+		return err
+	}
+	for _, p := range old {
+		if err := adjustTermDFTx(ctx, tx, p.root, p.term, -1); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM chunk_term_postings WHERE chunk_id = ?`, chunkID); err != nil {
 		return err
 	}
@@ -325,7 +352,7 @@ func upsertChunkTermPostingsTx(ctx context.Context, tx *sql.Tx, chunkID int64, r
 			return err
 		}
 	}
-	return nil
+	return applyTermsDFDeltaTx(ctx, tx, rootName, terms, 1)
 }
 
 // semanticCandidates returns related chunks by IDF-weighted sparse cosine similarity.
@@ -543,7 +570,7 @@ func (s *Store) hydrateSemanticHits(ctx context.Context, ranked []semanticScored
 }
 
 // termDocumentFrequencies returns scoped chunk cardinality and per-term DF
-// from the postings table (exact term rows, not wildcard scans).
+// from persisted term_df / root_chunk_stats (O(query terms), not a postings scan).
 func (s *Store) termDocumentFrequencies(ctx context.Context, terms []string, roots []string) (int, map[string]int, error) {
 	df := make(map[string]int, len(terms))
 	if len(terms) == 0 {
@@ -556,39 +583,40 @@ func (s *Store) termDocumentFrequencies(ctx context.Context, terms []string, roo
 		args := make([]any, len(roots))
 		for i, root := range roots {
 			rootPlaceholders[i] = "?"
-			args[i] = root
+			args[i] = normalizeRootName(root)
 		}
 		err := s.db.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM chunks WHERE root_name IN (`+strings.Join(rootPlaceholders, ",")+`)`,
+			`SELECT COALESCE(SUM(chunk_count), 0) FROM root_chunk_stats WHERE root_name IN (`+
+				strings.Join(rootPlaceholders, ",")+`)`,
 			args...,
 		).Scan(&nChunks)
 		if err != nil {
 			return 0, nil, err
 		}
 	} else {
-		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunks`).Scan(&nChunks); err != nil {
+		if err := s.db.QueryRowContext(ctx,
+			`SELECT COALESCE(SUM(chunk_count), 0) FROM root_chunk_stats`,
+		).Scan(&nChunks); err != nil {
 			return 0, nil, err
 		}
 	}
 
-	// PRIMARY KEY (chunk_id, term) guarantees one row per chunk-term, so COUNT(*)
-	// equals COUNT(DISTINCT chunk_id) and avoids a distinct aggregate.
 	placeholders := make([]string, len(terms))
 	args := make([]any, 0, len(terms)+len(roots))
-	sqlText := `SELECT p.term, COUNT(*) FROM chunk_term_postings p WHERE `
+	sqlText := `SELECT term, COALESCE(SUM(df), 0) FROM term_df WHERE `
 	if len(roots) > 0 {
 		rootPlaceholders := make([]string, len(roots))
 		for i, root := range roots {
 			rootPlaceholders[i] = "?"
-			args = append(args, root)
+			args = append(args, normalizeRootName(root))
 		}
-		sqlText += `p.root_name IN (` + strings.Join(rootPlaceholders, ",") + `) AND `
+		sqlText += `root_name IN (` + strings.Join(rootPlaceholders, ",") + `) AND `
 	}
 	for i, term := range terms {
 		placeholders[i] = "?"
 		args = append(args, term)
 	}
-	sqlText += `p.term IN (` + strings.Join(placeholders, ",") + `) GROUP BY p.term`
+	sqlText += `term IN (` + strings.Join(placeholders, ",") + `) GROUP BY term`
 
 	rows, err := s.db.QueryContext(ctx, sqlText, args...)
 	if err != nil {

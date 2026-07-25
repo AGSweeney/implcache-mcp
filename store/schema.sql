@@ -2,7 +2,7 @@
 -- Use of this source code is governed by an MIT-style
 -- license that can be found in the LICENSE file.
 
--- Canonical schema (PRAGMA user_version = 7). New databases are created
+-- Canonical schema (PRAGMA user_version = 8). New databases are created
 -- directly from this file (embedded via store/schema.go). There is no
 -- migration ladder during pre-release development: incompatible databases
 -- must be deleted and re-ingested.
@@ -151,3 +151,16 @@ CREATE TABLE chunk_term_postings (
 );
 CREATE INDEX idx_chunk_term_postings_root_term
     ON chunk_term_postings(root_name, term, chunk_id);
+
+-- Persisted document frequency for query-time IDF (maintained on ingest/delete).
+CREATE TABLE term_df (
+    root_name TEXT NOT NULL,
+    term TEXT NOT NULL,
+    df INTEGER NOT NULL,
+    PRIMARY KEY (root_name, term)
+);
+
+CREATE TABLE root_chunk_stats (
+    root_name TEXT NOT NULL PRIMARY KEY,
+    chunk_count INTEGER NOT NULL
+);
