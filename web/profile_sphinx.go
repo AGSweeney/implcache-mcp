@@ -40,7 +40,7 @@ func SkipSphinxPath(rel string) bool {
 	p := strings.ToLower(rel)
 	for _, bad := range []string{
 		"search.html", "genindex.html", "py-modindex.html",
-		"_sources/", "searchindex.js",
+		"_sources/", "searchindex.js", "_static/",
 	} {
 		if strings.Contains(p, bad) {
 			return true

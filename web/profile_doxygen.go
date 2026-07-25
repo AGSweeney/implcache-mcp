@@ -34,6 +34,10 @@ func SkipDoxygenPath(rel string) bool {
 		base == "classes.html",
 		base == "files.html",
 		base == "namespaces.html",
+		base == "doxygen_crawl.html",
+		base == "search.html",
+		strings.HasPrefix(base, "search_"),
+		strings.HasSuffix(base, ".php"),
 		base == "dir_*.html",
 		strings.Contains(p, "/search/"),
 		base == "jquery.js":

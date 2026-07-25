@@ -193,6 +193,19 @@ func (s *Store) DeleteWebSource(ctx context.Context, name string) (bool, error) 
 	return n > 0, err
 }
 
+// SetWebSourceDetectedVersion records a version inferred from crawled page titles.
+func (s *Store) SetWebSourceDetectedVersion(ctx context.Context, id int64, version string) error {
+	version = strings.TrimSpace(version)
+	if id == 0 || version == "" {
+		return nil
+	}
+	now := time.Now().Unix()
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE web_sources SET detected_version = ?, updated_at = ? WHERE id = ?`,
+		version, now, id)
+	return err
+}
+
 // SetWebSourceStatus updates crawl status timestamps.
 func (s *Store) SetWebSourceStatus(ctx context.Context, id int64, status string, success bool) error {
 	now := time.Now().Unix()

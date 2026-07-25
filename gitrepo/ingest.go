@@ -141,6 +141,9 @@ func IngestRepo(ctx context.Context, st *store.Store, opt IngestOptions) (*Inges
 	}
 
 	inc, exc := opt.IncludePatterns, opt.ExcludePatterns
+	if len(inc) == 0 {
+		inc = includeFromSparse(opt.SparsePaths)
+	}
 	if len(exc) == 0 {
 		exc = DefaultExcludePatterns
 	}
@@ -231,6 +234,24 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// includeFromSparse turns cone sparse paths into PathAllowed include globs so
+// local_checkout / failed sparse setups still restrict the project walk.
+func includeFromSparse(sparse []string) []string {
+	if len(sparse) == 0 {
+		return nil
+	}
+	var out []string
+	for _, p := range sparse {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		p = strings.Trim(p, "/")
+		if p == "" {
+			continue
+		}
+		out = append(out, p, p+"/**")
+	}
+	return out
 }
 
 // AddRepoSource persists configuration without necessarily ingesting.

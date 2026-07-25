@@ -213,6 +213,18 @@ func CrawlSite(ctx context.Context, st *store.Store, opt CrawlOptions) (*CrawlRe
 			}
 			continue
 		}
+		rawTitle := ""
+		if m := reTitle.FindStringSubmatch(string(page.Body)); len(m) == 2 {
+			rawTitle = m[1]
+		}
+		ver := DetectDocVersion(rawTitle, ws.Profile)
+		if ver == "" {
+			ver = DetectDocVersion(title, ws.Profile)
+		}
+		if ver != "" && ws.DetectedVersion == "" {
+			ws.DetectedVersion = ver
+			_ = st.SetWebSourceDetectedVersion(ctx, ws.ID, ver)
+		}
 		rel := RelativePathFromURL(page.CanonicalURL)
 		hash := sha256Hex(page.Body)
 		uri := ingest.ProjectURI(ws.RootName, rel)
@@ -318,6 +330,9 @@ func extractLinks(baseURL, htmlStr string) []string {
 		if ref == "" || strings.HasPrefix(ref, "#") || strings.HasPrefix(strings.ToLower(ref), "javascript:") {
 			continue
 		}
+		if skipCrawlHref(ref) {
+			continue
+		}
 		ru, err := url.Parse(ref)
 		if err != nil {
 			continue
@@ -336,8 +351,49 @@ func extractLinks(baseURL, htmlStr string) []string {
 	return out
 }
 
+func skipCrawlHref(ref string) bool {
+	lower := strings.ToLower(strings.TrimSpace(ref))
+	if strings.HasPrefix(lower, "mailto:") || strings.HasPrefix(lower, "tel:") {
+		return true
+	}
+	// Scheme-less hostnames (e.g. "www.netburner.com") resolve into the docs tree.
+	if !strings.Contains(lower, "://") && !strings.HasPrefix(lower, "/") && !strings.HasPrefix(lower, "./") &&
+		!strings.HasPrefix(lower, "../") && looksLikeHostname(lower) {
+		return true
+	}
+	return false
+}
+
+func looksLikeHostname(s string) bool {
+	if s == "" || strings.ContainsAny(s, `/\?#`) {
+		return false
+	}
+	if strings.HasSuffix(s, ".html") || strings.HasSuffix(s, ".htm") {
+		return false
+	}
+	parts := strings.Split(s, ".")
+	if len(parts) < 2 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" {
+			return false
+		}
+		for _, r := range p {
+			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func skipCrawlPath(p string) bool {
 	p = strings.ToLower(p)
+	base := p
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		base = p[i+1:]
+	}
 	switch {
 	case strings.HasSuffix(p, ".css"), strings.HasSuffix(p, ".js"),
 		strings.HasSuffix(p, ".png"), strings.HasSuffix(p, ".jpg"),
@@ -345,9 +401,14 @@ func skipCrawlPath(p string) bool {
 		strings.HasSuffix(p, ".svg"), strings.HasSuffix(p, ".ico"),
 		strings.HasSuffix(p, ".woff"), strings.HasSuffix(p, ".woff2"),
 		strings.HasSuffix(p, ".ttf"), strings.HasSuffix(p, ".map"),
-		strings.HasSuffix(p, ".pdf"), strings.HasSuffix(p, ".zip"):
+		strings.HasSuffix(p, ".pdf"), strings.HasSuffix(p, ".zip"),
+		strings.HasSuffix(p, ".php"):
+		return true
+	case base == "doxygen_crawl.html", strings.HasPrefix(base, "search_"):
 		return true
 	case strings.Contains(p, "/_static/"), strings.Contains(p, "/_images/"):
+		return true
+	case looksLikeHostname(base):
 		return true
 	default:
 		return false

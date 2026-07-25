@@ -92,6 +92,10 @@ func prepareLocal(ctx context.Context, r *Runner, opt SnapshotOptions) (*Checkou
 			// Fallback: use working directory but warn via checkout of files from sha
 			return &CheckoutResult{Path: abs, RequestedRef: ref, ResolvedCommitSHA: sha, Managed: false}, nil
 		}
+		if err := applySparse(ctx, r, tmp, opt.SparsePaths); err != nil {
+			_ = os.RemoveAll(tmp)
+			return nil, fmt.Errorf("sparse-checkout on local HEAD worktree: %w", err)
+		}
 		return &CheckoutResult{Path: tmp, RequestedRef: ref, ResolvedCommitSHA: sha, Managed: false}, nil
 	}
 	// working_tree: index filesystem as-is

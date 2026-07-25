@@ -2,9 +2,9 @@
   "name": "esp-idf-docs",
   "sourceType": "web",
   "description": "ESP-IDF stable API-reference/system prefix (Sphinx)",
-  "startedAt": "2026-07-25T20:27:14.1558895Z",
-  "finishedAt": "2026-07-25T20:27:29.8262613Z",
-  "elapsedMs": 15670,
+  "startedAt": "2026-07-25T20:30:25.3614825Z",
+  "finishedAt": "2026-07-25T20:30:36.3154386Z",
+  "elapsedMs": 10953,
   "before": {
     "documents": 0,
     "chunks": 0,
@@ -12,29 +12,29 @@
     "databaseBytes": 270336
   },
   "after": {
-    "documents": 24,
-    "chunks": 891,
+    "documents": 14,
+    "chunks": 519,
     "symbols": 0,
-    "databaseBytes": 6582272
+    "databaseBytes": 4317184
   },
   "growth": {
-    "documents": 24,
-    "chunks": 891,
+    "documents": 14,
+    "chunks": 519,
     "symbols": 0,
-    "databaseBytes": 6311936
+    "databaseBytes": 4046848
   },
   "errors": [],
   "warnings": [
     "limitReached=maxPages"
   ],
   "detail": {
-    "bytesDownloaded": 3297246,
+    "bytesDownloaded": 2099756,
     "changed": 0,
-    "durationMs": 15655,
+    "durationMs": 10938,
     "failed": 0,
     "generation": 1,
     "limitReached": "maxPages",
-    "new": 25,
+    "new": 15,
     "pageErrorCount": 0,
     "rootName": "esp-idf-docs",
     "skipped": 0,

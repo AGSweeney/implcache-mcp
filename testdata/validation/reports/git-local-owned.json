@@ -2,35 +2,35 @@
   "name": "git-local-owned",
   "sourceType": "git",
   "description": "Owned local Git checkout (sparse: store,ingest,gitrepo)",
-  "startedAt": "2026-07-25T20:27:41.3351304Z",
-  "finishedAt": "2026-07-25T20:27:42.243196Z",
-  "elapsedMs": 908,
+  "startedAt": "2026-07-25T20:30:45.1320913Z",
+  "finishedAt": "2026-07-25T20:30:45.6914052Z",
+  "elapsedMs": 559,
   "before": {
-    "documents": 42,
-    "chunks": 987,
+    "documents": 30,
+    "chunks": 613,
     "symbols": 0,
-    "databaseBytes": 7036928
+    "databaseBytes": 4558848
   },
   "after": {
-    "documents": 164,
-    "chunks": 1450,
-    "symbols": 524,
-    "databaseBytes": 10682368
+    "documents": 85,
+    "chunks": 792,
+    "symbols": 313,
+    "databaseBytes": 6279168
   },
   "growth": {
-    "documents": 122,
-    "chunks": 463,
-    "symbols": 524,
-    "databaseBytes": 3645440
+    "documents": 55,
+    "chunks": 179,
+    "symbols": 313,
+    "databaseBytes": 1720320
   },
   "errors": [],
   "warnings": [],
   "detail": {
-    "bytesProcessed": 703506,
-    "documentsIngested": 122,
-    "filesDiscovered": 122,
+    "bytesProcessed": 351945,
+    "documentsIngested": 55,
+    "filesDiscovered": 55,
     "filesSkipped": 0,
-    "resolvedCommit": "87b75b71ed32cda9f1ff79cf7460e649478b0967",
+    "resolvedCommit": "60938f4b2261e19ad08b3dd9fa8259e399d9fec7",
     "rootName": "implcache-src",
     "status": "ingested"
   },

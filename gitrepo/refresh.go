@@ -85,6 +85,9 @@ func refreshManaged(ctx context.Context, st *store.Store, rs *store.RepoSource, 
 	}
 
 	inc, exc := rs.IncludePatterns, rs.ExcludePatterns
+	if len(inc) == 0 {
+		inc = includeFromSparse(rs.SparsePaths)
+	}
 	if len(exc) == 0 {
 		exc = DefaultExcludePatterns
 	}

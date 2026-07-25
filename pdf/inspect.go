@@ -215,9 +215,36 @@ func pageText(r *ledong.Reader, page int) (string, error) {
 		f := p.Font(name)
 		fonts[name] = &f
 	}
-	text, err := p.GetPlainText(fonts)
+	plain, err := p.GetPlainText(fonts)
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(text), nil
+	plain = strings.TrimSpace(plain)
+
+	// Row-ordered extraction follows visual reading order (top→bottom, then
+	// left→right). Prefer it when it keeps at least as much line structure as
+	// GetPlainText; otherwise fall back so header/footer line detection still works.
+	if rows, err := p.GetTextByRow(); err == nil && len(rows) > 0 {
+		var b strings.Builder
+		for _, row := range rows {
+			if row == nil || len(row.Content) == 0 {
+				continue
+			}
+			if b.Len() > 0 {
+				b.WriteByte('\n')
+			}
+			for j, word := range row.Content {
+				if j > 0 {
+					b.WriteByte(' ')
+				}
+				b.WriteString(word.S)
+			}
+		}
+		if rowText := strings.TrimSpace(b.String()); rowText != "" {
+			if plain == "" || strings.Count(rowText, "\n") >= strings.Count(plain, "\n") {
+				return rowText, nil
+			}
+		}
+	}
+	return plain, nil
 }
