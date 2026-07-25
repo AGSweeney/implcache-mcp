@@ -58,6 +58,88 @@ func TestTokenizeSemanticIdentifiers(t *testing.T) {
 	}
 }
 
+func TestIDFWeightDownranksCommonTerms(t *testing.T) {
+	if idfWeight(1000, 900) >= idfWeight(1000, 2) {
+		t.Fatal("rare terms must outrank common terms")
+	}
+	if idfWeight(100, 0) <= 1 {
+		t.Fatal("unseen terms need weight above the presence floor")
+	}
+}
+
+func TestSemanticIDFPrefersRareMatchOverCommonNoise(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "idf.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	for i := 0; i < 40; i++ {
+		_, err := st.UpsertDocument(ctx, UpsertInput{
+			URI: "project://sdk/noise-" + strconv.Itoa(i) + ".md", Title: "Noise",
+			SourceType: SourceMarkdown, RootName: "sdk", Authority: AuthorityOfficialDocs,
+			Hash:   "noise-" + strconv.Itoa(i),
+			Chunks: []Chunk{{Body: "network client application deployment guide " + strconv.Itoa(i)}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err = st.UpsertDocument(ctx, UpsertInput{
+		URI: "project://sdk/retry.md", Title: "Retry", SourceType: SourceMarkdown,
+		RootName: "sdk", Authority: AuthorityOfficialDocs, Hash: "retry",
+		Chunks: []Chunk{{Body: "Reconnect handling uses RetryPolicy and exponential backoff with network client"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hits, err := st.semanticCandidates(ctx, "network client RetryPolicy reconnect", []string{"sdk"}, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) == 0 || !strings.HasSuffix(hits[0].URI, "/retry.md") {
+		t.Fatalf("IDF ranking should prefer rare RetryPolicy doc, got %+v", hits)
+	}
+}
+
+func TestSemanticStatsBoundedPerChunk(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "stats.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	_, err = st.UpsertDocument(ctx, UpsertInput{
+		URI: "project://sdk/a.md", Title: "A", SourceType: SourceMarkdown,
+		RootName: "sdk", Authority: AuthorityOfficialDocs, Hash: "a",
+		Chunks: []Chunk{{Body: "RetryPolicy exponential backoff network client reconnect"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats, err := st.SemanticStats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Vectors != 1 || stats.Postings == 0 || stats.DistinctTerms == 0 {
+		t.Fatalf("unexpected stats: %+v", stats)
+	}
+	if stats.AvgPostingsPerVector > float64(maxTermVectorTerms) {
+		t.Fatalf("avg postings per vector %.1f exceeds cap %d", stats.AvgPostingsPerVector, maxTermVectorTerms)
+	}
+}
+
+func TestSelectLookupTermsCapsByIDF(t *testing.T) {
+	terms := []string{"alpha", "beta", "common", "delta"}
+	idf := map[string]float64{"alpha": 3, "beta": 2, "common": 1.1, "delta": 4}
+	got := selectLookupTerms(terms, idf, 2)
+	if len(got) != 2 || got[0] != "alpha" || got[1] != "delta" {
+		t.Fatalf("selectLookupTerms=%v want [alpha delta]", got)
+	}
+}
+
 func TestSemanticSearchFindsRelatedChunk(t *testing.T) {
 	dir := t.TempDir()
 	st, err := Open(filepath.Join(dir, "s.db"))

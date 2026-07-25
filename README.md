@@ -71,7 +71,7 @@ Use absolute paths. Reload MCP after rebuilding.
 
 **Symbol matching** (`find_symbol`): staged exact → normalized → qualified → unqualified → prefix/suffix/token → bounded fuzzy. Definitions outrank declarations and calls. Extractors: Go, C/C++/C#, Python, JS/TS, Java.
 
-**Optional semantic search**: `-enable-semantic` (or tool arg `semantic: true`) supplements FTS with deterministic sparse keyword-vector cosine. The tokenizer splits identifiers on camelCase/underscore boundaries (keeping the combined token), and the v7 inverted term postings index avoids wildcard vector scans; it is not embeddings or TF-IDF.
+**Optional semantic search**: `-enable-semantic` (or tool arg `semantic: true`) supplements FTS with IDF-weighted sparse cosine (query-side corpus IDF over presence vectors). The tokenizer splits identifiers on camelCase/underscore boundaries (keeping the combined token), and the v7 inverted term postings index avoids wildcard vector scans; it is not embeddings or classic TF-IDF.
 
 **Schema**: SQLite `PRAGMA user_version = 7` (see [docs/DATA_MODEL.md](docs/DATA_MODEL.md)). Pre-1.0; contracts may evolve.
 

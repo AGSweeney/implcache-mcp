@@ -304,6 +304,26 @@ func seedDemoCorpus(ctx context.Context, st *store.Store) error {
 			[]store.SymbolInput{{Name: "PutEntry", Kind: "function"}, {Name: "GetEntry", Kind: "function"}}),
 		docSyms("example-protocol-sdk", "frame.h", "DecodeFrame EncodeFrame protocol frame",
 			[]store.SymbolInput{{Name: "DecodeFrame", Kind: "function"}, {Name: "EncodeFrame", Kind: "function"}}),
+		// Noise docs share generic vocabulary with real tasks so FTS/semantic
+		// ranking is measurable (seed corpus used to saturate recall).
+		{
+			URI: "project://example-noise-docs/generic-network.md", Title: "Generic network",
+			SourceType: store.SourceMarkdown, Path: "generic-network.md", RootName: "example-noise-docs",
+			Authority: store.AuthorityOfficialDocs, Hash: "noise-net",
+			Chunks: chunkBody("The network client application handles configuration and session lifecycle for typical deployments without RetryPolicy"),
+		},
+		{
+			URI: "project://example-noise-docs/generic-plugin.md", Title: "Generic plugin",
+			SourceType: store.SourceMarkdown, Path: "generic-plugin.md", RootName: "example-noise-docs",
+			Authority: store.AuthorityOfficialDocs, Hash: "noise-plugin",
+			Chunks: chunkBody("Plugin command menus and application configuration guides for operators"),
+		},
+		{
+			URI: "project://example-noise-docs/generic-session.md", Title: "Generic session",
+			SourceType: store.SourceMarkdown, Path: "generic-session.md", RootName: "example-noise-docs",
+			Authority: store.AuthorityOfficialDocs, Hash: "noise-session",
+			Chunks: chunkBody("Device session lifecycle and configuration notes for network client deployments"),
+		},
 	}
 	for _, d := range docs {
 		if _, err := st.UpsertDocument(ctx, d); err != nil {

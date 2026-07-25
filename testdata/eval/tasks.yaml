@@ -117,3 +117,17 @@ tasks:
     expected_symbols: [DecodeFrame, EncodeFrame]
     expected_sources: [project://example-protocol-sdk/frame.h]
     max_context_tokens: 2000
+
+  # Harder ranking task: preferred roots include noise docs that share generic
+  # vocabulary ("network", "client", "session") without the expected APIs.
+  - id: reconnect-amid-noise
+    task: Reconnect a flaky network client with RetryPolicy backoff after Connect fails.
+    technology: Example Networking SDK
+    language: cpp
+    preferred_roots: [example-network-service, example-network-sdk, example-noise-docs]
+    expected_symbols: [RetryPolicy, Connect]
+    expected_sources:
+      - project://example-network-sdk/retry.h
+      - project://example-network-service/client.cpp
+    forbidden_symbols: [FakeAutoReconnect]
+    max_context_tokens: 2000

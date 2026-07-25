@@ -71,11 +71,15 @@ Optional sparse semantic-search support, one row per chunk.
 | `terms` | Deterministically sorted, top-48 normalized keyword terms (empty only for text without usable terms) |
 | `updated_at` | Unix time for the vector write |
 
-Term frequency chooses the top terms, then each selected term is stored once:
-deterministic sparse keyword-vector similarity. Scoring is cosine over
-normalized term presence; it is **not TF-IDF** (no IDF weighting), embeddings,
-or a vector database. Semantic search remains opt-in (`-enable-semantic` or
-`semantic: true`) and supplements FTS rather than replacing it.
+Term frequency chooses the top terms (capped at 48), then each selected term is
+stored once as a presence set. At query time, corpus document frequency from
+`chunk_term_postings` supplies smooth IDF weights on the **query** vector
+(`log(1 + N/(df+1)) + 1`); document vectors stay presence-normalized. The result
+is IDF-weighted sparse cosine — **not** classic TF-IDF with per-chunk TF weights,
+embeddings, or a vector database. Semantic search remains opt-in
+(`-enable-semantic` or `semantic: true`) and supplements FTS rather than
+replacing it. Candidate lookup uses at most 16 most-discriminative query terms
+against the postings index; final scoring still uses the full query vector.
 
 The tokenizer splits identifiers on camelCase/PascalCase boundaries and
 underscores *before* lowercasing, keeping both the combined identifier and its
@@ -178,6 +182,16 @@ One canonical schema, no migration ladder:
 During development, delete and recreate databases after schema changes; no time is spent backfilling old versions or testing historical upgrades.
 
 > ImplCache has not yet shipped a persistent production database format. During pre-release development, schema changes require recreating the local database. Backward migrations will begin when the first persistent deployment is released.
+
+### When migrations begin (post-deployment cutover)
+
+Treat **schema v7** as the baseline once any deployed database must be preserved. At that point:
+
+1. Stop deleting incompatible databases by policy; introduce an explicit migration ladder from `user_version = 7` forward.
+2. Keep `store/schema.sql` as the canonical *fresh* schema for new installs at the latest version.
+3. Add per-version upgrade steps that run inside transactions and leave failed opens retryable.
+4. Never silently rewrite a production file; refuse unknown future versions until a matching build is deployed.
+5. Document each bump in release notes with recreate-vs-migrate guidance for operators still on pre-release DBs.
 
 The vector table intentionally has no ordinary `terms` B-tree index: SQLite
 cannot use it for leading-wildcard `LIKE '%term%'`. Semantic candidate lookup

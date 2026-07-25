@@ -17,7 +17,7 @@ Primary goal: reduce the tokens, retrieval time, web searches, file reads, compi
 5. **Staged depth** — escalate from package → symbols → examples → surrounding source → full document.
 6. **Local-first, honest about staleness** — keep knowledge on disk; surface when web check may still be needed.
 7. **No CGO** — SQLite via `modernc.org/sqlite` for portable builds.
-8. **FTS-first search** — authority/root ranking by default; optional sparse term-vector semantic uses v7 indexed term postings (`-enable-semantic`); neural embeddings and TF-IDF weighting remain deferred.
+8. **FTS-first search** — authority/root ranking by default; optional sparse term-vector semantic uses v7 indexed term postings with query-time corpus IDF (`-enable-semantic`); neural embeddings and classic per-chunk TF-IDF remain deferred.
 
 **Schema** is `PRAGMA user_version = 7` (canonical schema in `store/schema.sql`, created directly on open; incompatible databases are refused — delete and re-ingest). **Symbol languages:** Go, C/C++/C#, Python, JS/TS, Java. **Freshness** is independent of authority. **`contextFingerprint`** hashes the final trimmed response (not pre-trim candidates).
 

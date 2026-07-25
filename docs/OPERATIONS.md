@@ -125,7 +125,7 @@ Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still ch
 | Area | Notes |
 |------|--------|
 | Symbol extraction | Heuristic regex for Go, C/C++/C#, Python, JS/TS, Java. Optional tree-sitter still future work. Unknown languages do not fall through to noisy C regex. |
-| Search model | FTS5 + authority ranking by default. Optional **sparse term-presence cosine** (`-enable-semantic` / `semantic: true`) supplements FTS through v7 indexed term postings — not neural embeddings or TF-IDF. Pure keyword search can still miss related concepts. |
+| Search model | FTS5 + authority ranking by default. Optional **IDF-weighted sparse cosine** (`-enable-semantic` / `semantic: true`) supplements FTS through v7 indexed term postings — query-side corpus IDF, not neural embeddings or classic TF-IDF. Pure keyword search can still miss related concepts. |
 | Freshness | Independent of authority. Official docs without version/date → `unknown`. `webSearchRecommended` uses coverage + freshness. |
 | Fingerprints | `contextFingerprint` is over the post-trim response (+ citation content hashes). |
 | Token estimates | `estimatedTokens` is roughly `utf8_runes/4` on the serialized JSON. Use for budgeting only — approximate, not exact. |
@@ -133,7 +133,7 @@ Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still ch
 | Recipes | Quality depends on human review of `vomit` / `saveRecipe` output. Ranking already demotes generated entries vs human-reviewed and project code. |
 | Concurrency | SQLite **WAL** helps readers; multiple writers still need care (single writer process, or serialize admin ingest). See concurrent smoke tests; prefer one admin writer. |
 | Go version | Module requires **Go 1.25+** — note for downstream consumers. |
-| Semantic index | V7 indexed `(root_name, term, chunk_id)` postings replace leading-wildcard vector scans. Term presence cosine remains intentionally simpler than TF-IDF until corpus evidence justifies added maintenance cost. |
+| Semantic index | V7 indexed `(root_name, term, chunk_id)` postings replace leading-wildcard vector scans. Query-time smooth IDF downweights ubiquitous terms; candidate IN-lists are capped (16 terms). Posting growth is bounded by 48 terms/chunk — use `Store.SemanticStats` to watch cardinality on large corpora. |
 
 ## Database files
 
@@ -162,13 +162,16 @@ go run ./cmd/evaltasks -db ./implcache.db -semantic
 go test ./store -run TestSemanticPostingQueryPlan -count=1
 ```
 
-On the sanitized 12-task seed corpus, semantic off/on both produced top-1 and
-top-3 symbol recall of 1.0, expected-source recall of 1.0, zero forbidden hits,
-and zero duplicate excerpts. Semantic search increased average estimated
-response size from 646.7 to 653.3 tokens and raised one task's coverage from
-medium to high; observed median latency was 2 ms and p95 was 3 ms in both
-modes. It is therefore still opt-in: the seed corpus does not demonstrate a
-retrieval-quality improvement that justifies changing the default.
+On the sanitized 13-task seed corpus (including `reconnect-amid-noise` plus
+generic noise documents), semantic off/on both produced top-1 and top-3 symbol
+recall of 1.0, expected-source recall of 1.0, zero forbidden hits, and zero
+duplicate excerpts. Semantic search increased average estimated response size
+from 665.6 to 671.8 tokens and raised `reconnect-network-client` coverage from
+medium to high; median and p95 latency were 3 ms in both modes. On a local
+bench, multi-term semantic candidate lookup over ~800 chunks was ~7.6 ms/op
+versus ~3.2 ms/op for a short query over 250 chunks. Semantic search remains
+opt-in: seed recall is saturated, so the default stays FTS-only until a larger
+corpus shows a clear ranking win.
 
 ## Typical ops loop
 

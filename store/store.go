@@ -475,7 +475,7 @@ type SearchOptions struct {
 	// 0 means only DefaultSearchLimit (when Limit unset) and MaxSearchLimit apply.
 	MaxResults int
 	// Semantic enables optional sparse term-vector similarity to supplement FTS.
-	// Requires chunk_term_vectors (schema v6). Off by default.
+	// Uses chunk_term_vectors + chunk_term_postings with query-time IDF. Off by default.
 	Semantic bool
 }
 

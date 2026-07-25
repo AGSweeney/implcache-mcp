@@ -21,11 +21,17 @@ const maxTermVectorTerms = 48
 const (
 	minSemanticCandidates     = 1000
 	semanticCandidateMultiple = 50
+	// maxSemanticQueryTerms bounds the posting IN-list. Extra query terms still
+	// participate in final IDF-weighted scoring after candidates are fetched.
+	maxSemanticQueryTerms = 16
+	postingInsertBatch    = 24
 )
 
 // BuildTermVector returns a deterministic top-N sparse term-presence vector.
 // Term frequency selects the top terms, but each selected term is serialized
-// once; scoring is therefore normalized set overlap, not TF-IDF.
+// once. Final scoring applies query-time corpus IDF over that presence set
+// (IDF-weighted cosine); it is not classic TF-IDF with per-chunk TF weights,
+// embeddings, or a vector database.
 func BuildTermVector(heading, body string) string {
 	tf := map[string]int{}
 	addText := func(s string) {
@@ -161,11 +167,24 @@ func isSemanticStop(t string) bool {
 }
 
 func termSet(vec string) map[string]float64 {
+	return weightedTermSet(vec, nil)
+}
+
+// weightedTermSet builds an L2-normalized sparse vector. When idf is non-nil,
+// each present term is weighted by its corpus IDF (missing keys use a rare-term
+// fallback based on nChunks via idfWeight when df is absent — callers should
+// populate every needed term).
+func weightedTermSet(vec string, idf map[string]float64) map[string]float64 {
 	out := map[string]float64{}
 	for _, t := range strings.Fields(vec) {
-		out[t]++
+		w := 1.0
+		if idf != nil {
+			if iw, ok := idf[t]; ok {
+				w = iw
+			}
+		}
+		out[t] += w
 	}
-	// L2 normalize
 	var sum float64
 	for _, v := range out {
 		sum += v * v
@@ -193,6 +212,18 @@ func cosineSparse(a, b map[string]float64) float64 {
 	return dot
 }
 
+// idfWeight is smooth IDF: log(1 + N/(df+1)) + 1. Common terms approach ~1;
+// rare terms get higher weight. Deterministic and cheap at query time.
+func idfWeight(nChunks, df int) float64 {
+	if nChunks < 1 {
+		nChunks = 1
+	}
+	if df < 0 {
+		df = 0
+	}
+	return math.Log(1+float64(nChunks)/float64(df+1)) + 1
+}
+
 func (s *Store) upsertChunkTermVector(ctx context.Context, tx *sql.Tx, chunkID int64, rootName, heading, body string) error {
 	terms := BuildTermVector(heading, body)
 	_, err := tx.ExecContext(ctx, `
@@ -216,58 +247,102 @@ func (s *Store) TermVectorCount(ctx context.Context) (int, error) {
 }
 
 // TermPostingCount returns the number of indexed semantic terms. It is useful
-// for local integrity checks after ingestion or migration.
+// for local integrity checks after ingestion.
 func (s *Store) TermPostingCount(ctx context.Context) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunk_term_postings`).Scan(&n)
 	return n, err
 }
 
+// SemanticIndexStats summarizes posting-table size for operators and tests.
+type SemanticIndexStats struct {
+	Vectors              int     `json:"vectors"`
+	Postings             int     `json:"postings"`
+	DistinctTerms        int     `json:"distinctTerms"`
+	AvgPostingsPerVector float64 `json:"avgPostingsPerVector"`
+}
+
+// SemanticStats returns vector/posting cardinality. Useful for watching
+// posting-table growth on large corpora (bounded by maxTermVectorTerms per chunk).
+func (s *Store) SemanticStats(ctx context.Context) (SemanticIndexStats, error) {
+	var st SemanticIndexStats
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunk_term_vectors`).Scan(&st.Vectors); err != nil {
+		return st, err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunk_term_postings`).Scan(&st.Postings); err != nil {
+		return st, err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT term) FROM chunk_term_postings`).Scan(&st.DistinctTerms); err != nil {
+		return st, err
+	}
+	if st.Vectors > 0 {
+		st.AvgPostingsPerVector = float64(st.Postings) / float64(st.Vectors)
+	}
+	return st, nil
+}
+
 func upsertChunkTermPostingsTx(ctx context.Context, tx *sql.Tx, chunkID int64, rootName, terms string) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM chunk_term_postings WHERE chunk_id = ?`, chunkID); err != nil {
 		return err
 	}
-	if terms == "" {
+	termList := strings.Fields(terms)
+	if len(termList) == 0 {
 		return nil
 	}
-	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO chunk_term_postings(chunk_id, root_name, term)
-		VALUES (?, ?, ?)`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-	for _, term := range strings.Fields(terms) {
-		if _, err := stmt.ExecContext(ctx, chunkID, rootName, term); err != nil {
+	for i := 0; i < len(termList); i += postingInsertBatch {
+		end := i + postingInsertBatch
+		if end > len(termList) {
+			end = len(termList)
+		}
+		batch := termList[i:end]
+		placeholders := make([]string, len(batch))
+		args := make([]any, 0, len(batch)*3)
+		for j, term := range batch {
+			placeholders[j] = "(?, ?, ?)"
+			args = append(args, chunkID, rootName, term)
+		}
+		sqlText := `INSERT INTO chunk_term_postings(chunk_id, root_name, term) VALUES ` +
+			strings.Join(placeholders, ",")
+		if _, err := tx.ExecContext(ctx, sqlText, args...); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// semanticCandidates returns related chunks by sparse term-presence cosine similarity.
+// semanticCandidates returns related chunks by IDF-weighted sparse cosine similarity.
 // Used only when SearchOptions.Semantic is true — supplements FTS, does not replace it.
 func (s *Store) semanticCandidates(ctx context.Context, query string, roots []string, limit int) ([]SearchHit, error) {
-	qVec := termSet(BuildTermVector("", query))
+	qTermsAll := strings.Fields(BuildTermVector("", query))
+	if len(qTermsAll) == 0 {
+		return nil, nil
+	}
+	sort.Strings(qTermsAll)
+
+	nChunks, df, err := s.termDocumentFrequencies(ctx, qTermsAll, roots)
+	if err != nil {
+		return nil, err
+	}
+	idf := make(map[string]float64, len(qTermsAll))
+	for _, term := range qTermsAll {
+		idf[term] = idfWeight(nChunks, df[term])
+	}
+	qVec := weightedTermSet(strings.Join(qTermsAll, " "), idf)
 	if len(qVec) == 0 {
 		return nil, nil
 	}
-	qTerms := make([]string, 0, len(qVec))
-	for term := range qVec {
-		qTerms = append(qTerms, term)
-	}
-	sort.Strings(qTerms)
-	if len(qTerms) == 0 {
-		return nil, nil
-	}
+
+	// Candidate lookup uses the most discriminative query terms to keep the
+	// posting IN-list and GROUP BY small on multi-term queries.
+	lookupTerms := selectLookupTerms(qTermsAll, idf, maxSemanticQueryTerms)
 	candidateLimit := limit * semanticCandidateMultiple
 	if candidateLimit < minSemanticCandidates {
 		candidateLimit = minSemanticCandidates
 	}
 
-	placeholders := make([]string, len(qTerms))
-	args := make([]any, 0, len(qTerms)+len(roots)+1)
-	for i, term := range qTerms {
+	placeholders := make([]string, len(lookupTerms))
+	args := make([]any, 0, len(lookupTerms)+len(roots)+1)
+	for i, term := range lookupTerms {
 		placeholders[i] = "?"
 		args = append(args, term)
 	}
@@ -325,6 +400,9 @@ func (s *Store) semanticCandidates(ctx context.Context, query string, roots []st
 			return nil, err
 		}
 		h.Archived = archived != 0
+		// Query-side IDF only: document vectors stay term-presence. This
+		// downweights ubiquitous query terms without a second DF round-trip
+		// over every candidate vector term.
 		sim := cosineSparse(qVec, termSet(terms))
 		if sim < 0.12 {
 			continue
@@ -352,4 +430,97 @@ func (s *Store) semanticCandidates(ctx context.Context, query string, roots []st
 		out[i] = r.hit
 	}
 	return out, nil
+}
+
+// termDocumentFrequencies returns scoped chunk cardinality and per-term DF
+// from the postings table (exact term rows, not wildcard scans).
+func (s *Store) termDocumentFrequencies(ctx context.Context, terms []string, roots []string) (int, map[string]int, error) {
+	df := make(map[string]int, len(terms))
+	if len(terms) == 0 {
+		return 0, df, nil
+	}
+
+	var nChunks int
+	if len(roots) > 0 {
+		rootPlaceholders := make([]string, len(roots))
+		args := make([]any, len(roots))
+		for i, root := range roots {
+			rootPlaceholders[i] = "?"
+			args[i] = root
+		}
+		err := s.db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM chunks WHERE root_name IN (`+strings.Join(rootPlaceholders, ",")+`)`,
+			args...,
+		).Scan(&nChunks)
+		if err != nil {
+			return 0, nil, err
+		}
+	} else {
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM chunks`).Scan(&nChunks); err != nil {
+			return 0, nil, err
+		}
+	}
+
+	placeholders := make([]string, len(terms))
+	args := make([]any, 0, len(terms)+len(roots))
+	for i, term := range terms {
+		placeholders[i] = "?"
+		args = append(args, term)
+	}
+	sqlText := `
+		SELECT p.term, COUNT(DISTINCT p.chunk_id)
+		FROM chunk_term_postings p
+		WHERE p.term IN (` + strings.Join(placeholders, ",") + `)`
+	if len(roots) > 0 {
+		rootPlaceholders := make([]string, len(roots))
+		for i, root := range roots {
+			rootPlaceholders[i] = "?"
+			args = append(args, root)
+		}
+		sqlText += ` AND p.root_name IN (` + strings.Join(rootPlaceholders, ",") + `)`
+	}
+	sqlText += ` GROUP BY p.term`
+
+	rows, err := s.db.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var term string
+		var count int
+		if err := rows.Scan(&term, &count); err != nil {
+			return 0, nil, err
+		}
+		df[term] = count
+	}
+	return nChunks, df, rows.Err()
+}
+
+func selectLookupTerms(terms []string, idf map[string]float64, limit int) []string {
+	if limit <= 0 || len(terms) <= limit {
+		out := append([]string(nil), terms...)
+		sort.Strings(out)
+		return out
+	}
+	type scored struct {
+		term string
+		w    float64
+	}
+	items := make([]scored, len(terms))
+	for i, term := range terms {
+		items[i] = scored{term, idf[term]}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].w == items[j].w {
+			return items[i].term < items[j].term
+		}
+		return items[i].w > items[j].w
+	})
+	out := make([]string, limit)
+	for i := 0; i < limit; i++ {
+		out[i] = items[i].term
+	}
+	sort.Strings(out)
+	return out
 }
