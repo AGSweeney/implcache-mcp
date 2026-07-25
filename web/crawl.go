@@ -25,6 +25,9 @@ const (
 	DefaultCrawlDelay    = 100 * time.Millisecond
 )
 
+// ProgressFunc receives crawl progress updates (optional).
+type ProgressFunc func(done, total int, bytes int64, currentURL, message string)
+
 // CrawlOptions configures a site crawl / refresh.
 type CrawlOptions struct {
 	SourceName        string
@@ -36,6 +39,7 @@ type CrawlOptions struct {
 	AllowInsecureHTTP bool
 	ExtraAllowedHosts map[string]struct{}
 	RefreshOnly       bool // use conditional requests when possible
+	Progress          ProgressFunc
 }
 
 // CrawlReport summarizes a crawl.
@@ -56,6 +60,7 @@ type CrawlReport struct {
 	LimitReached  string    `json:"limitReached,omitempty"`
 	FatalError    string    `json:"fatalError,omitempty"`
 	PageErrors    []string  `json:"pageErrors,omitempty"`
+	OpID          string    `json:"opId,omitempty"` // set by admin tool progress tracking
 }
 
 var reHref = regexp.MustCompile(`(?i)href\s*=\s*["']([^"']+)["']`)
@@ -142,6 +147,10 @@ func CrawlSite(ctx context.Context, st *store.Store, opt CrawlOptions) (*CrawlRe
 
 		cur := queue[0]
 		queue = queue[1:]
+		if opt.Progress != nil {
+			done := rep.New + rep.Changed + rep.Unchanged + rep.Failed + rep.Skipped
+			opt.Progress(done, opt.MaxPages, rep.Bytes, cur.url, "fetch")
+		}
 		if cur.depth > opt.MaxDepth {
 			rep.Skipped++
 			continue

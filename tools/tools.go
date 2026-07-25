@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"implcache-mcp/gitrepo"
 	"implcache-mcp/implctx"
 	"implcache-mcp/ingest"
+	"implcache-mcp/librarian"
 	"implcache-mcp/pdf"
 	"implcache-mcp/store"
 	"implcache-mcp/vomit"
@@ -53,6 +55,14 @@ var AdminOnlyTools = []string{
 	"list_documents",
 	"delete_document",
 	"delete_by_uri_prefix",
+	"list_sources",
+	"get_source",
+	"source_health",
+	"recent_source_errors",
+	"preview_document",
+	"search_playground",
+	"get_operation",
+	"list_operations",
 	"vomit",
 }
 
@@ -262,13 +272,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			if !opt.AllowIngest {
 				return nil, web.CrawlReport{}, deny("ingest")
 			}
-			rep, err := web.CrawlSite(ctx, st, web.CrawlOptions{
-				SourceName:        args.Name,
-				MaxPages:          args.MaxPages,
-				MaxDepth:          args.MaxDepth,
-				AllowInsecureHTTP: args.AllowInsecureHTTP,
-				MaxResponseBytes:  opt.MaxDocumentBytes,
-			})
+			rep, err := runTrackedCrawl(ctx, st, args, opt.MaxDocumentBytes, false)
 			if err != nil {
 				return nil, web.CrawlReport{}, err
 			}
@@ -283,14 +287,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			if !opt.AllowIngest {
 				return nil, web.CrawlReport{}, deny("ingest")
 			}
-			rep, err := web.CrawlSite(ctx, st, web.CrawlOptions{
-				SourceName:        args.Name,
-				MaxPages:          args.MaxPages,
-				MaxDepth:          args.MaxDepth,
-				AllowInsecureHTTP: args.AllowInsecureHTTP,
-				MaxResponseBytes:  opt.MaxDocumentBytes,
-				RefreshOnly:       true,
-			})
+			rep, err := runTrackedCrawl(ctx, st, args, opt.MaxDocumentBytes, true)
 			if err != nil {
 				return nil, web.CrawlReport{}, err
 			}
@@ -677,6 +674,112 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 		})
 
 		mcp.AddTool(server, &mcp.Tool{
+			Name:        "list_sources",
+			Description: "Unified inventory of web, PDF, Git, and local document roots for the Librarian GUI",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, listSourcesResult, error) {
+			list, err := librarian.ListSources(ctx, st)
+			if err != nil {
+				return nil, listSourcesResult{}, err
+			}
+			out := listSourcesResult{Sources: list, Count: len(list)}
+			b, _ := json.MarshalIndent(out, "", "  ")
+			return textResult(string(b)), out, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "get_source",
+			Description: "Inspect one source by kind (web|pdf|repo|local) and id (name, pdf URI, or rootName)",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args sourceRefArgs) (*mcp.CallToolResult, librarian.SourceSummary, error) {
+			sum, err := librarian.GetSource(ctx, st, librarian.SourceKind(args.Kind), args.ID)
+			if err != nil {
+				return nil, librarian.SourceSummary{}, err
+			}
+			b, _ := json.MarshalIndent(sum, "", "  ")
+			return textResult(string(b)), *sum, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "source_health",
+			Description: "Health/status snapshot for one source (counts, state, recent errors)",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args sourceRefArgs) (*mcp.CallToolResult, librarian.SourceHealth, error) {
+			h, err := librarian.GetSourceHealth(ctx, st, librarian.SourceKind(args.Kind), args.ID)
+			if err != nil {
+				return nil, librarian.SourceHealth{}, err
+			}
+			b, _ := json.MarshalIndent(h, "", "  ")
+			return textResult(string(b)), *h, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "recent_source_errors",
+			Description: "Recent errors for one source (web page failures, repo/PDF status)",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args recentErrorsArgs) (*mcp.CallToolResult, recentErrorsResult, error) {
+			limit := args.Limit
+			if limit <= 0 {
+				limit = 20
+			}
+			errs, err := librarian.RecentErrors(ctx, st, librarian.SourceKind(args.Kind), args.ID, limit)
+			if err != nil {
+				return nil, recentErrorsResult{}, err
+			}
+			out := recentErrorsResult{Kind: args.Kind, ID: args.ID, Errors: errs, Count: len(errs)}
+			b, _ := json.MarshalIndent(out, "", "  ")
+			return textResult(string(b)), out, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "preview_document",
+			Description: "Bounded document/chunk preview for the Librarian GUI",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args previewDocumentArgs) (*mcp.CallToolResult, librarian.PreviewResult, error) {
+			res, err := librarian.PreviewDocument(ctx, st, librarian.PreviewOptions{
+				URI: args.URI, ID: args.ID, MaxChunks: args.MaxChunks, MaxChars: args.MaxChars,
+				IncludeBody: args.IncludeBody,
+			})
+			if err != nil {
+				return nil, librarian.PreviewResult{}, err
+			}
+			b, _ := json.MarshalIndent(res, "", "  ")
+			return textResult(string(b)), *res, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "search_playground",
+			Description: "Admin search playground with optional EXPLAIN QUERY PLAN",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args searchPlaygroundArgs) (*mcp.CallToolResult, librarian.SearchPlaygroundResult, error) {
+			res, err := librarian.SearchPlayground(ctx, st, librarian.SearchPlaygroundOptions{
+				Query: args.Query, Roots: args.Roots, RootName: args.RootName,
+				Limit: args.Limit, Semantic: args.Semantic, Explain: args.Explain,
+			})
+			if err != nil {
+				return nil, librarian.SearchPlaygroundResult{}, err
+			}
+			b, _ := json.MarshalIndent(res, "", "  ")
+			return textResult(string(b)), *res, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "get_operation",
+			Description: "Poll in-process ingest/crawl operation progress by opId",
+		}, func(_ context.Context, _ *mcp.CallToolRequest, args opIDArgs) (*mcp.CallToolResult, librarian.Operation, error) {
+			op, ok := librarian.DefaultTracker.Get(args.OpID)
+			if !ok {
+				return nil, librarian.Operation{}, fmt.Errorf("operation %q not found", args.OpID)
+			}
+			b, _ := json.MarshalIndent(op, "", "  ")
+			return textResult(string(b)), *op, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "list_operations",
+			Description: "List recent in-process admin operations (progress/status)",
+		}, func(_ context.Context, _ *mcp.CallToolRequest, args listOpsArgs) (*mcp.CallToolResult, listOperationsResult, error) {
+			ops := librarian.DefaultTracker.List(args.Limit)
+			out := listOperationsResult{Operations: ops, Count: len(ops)}
+			b, _ := json.MarshalIndent(out, "", "  ")
+			return textResult(string(b)), out, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
 			Name: "vomit",
 			Description: "Compile a source-grounded implementation recipe/playbook from local knowledge. " +
 				"Returns body to the agent; optionally writes under -output-root and/or saves as a generated knowledge_entry. " +
@@ -957,4 +1060,113 @@ func textResult(s string) *mcp.CallToolResult {
 			&mcp.TextContent{Text: s},
 		},
 	}
+}
+
+func runTrackedCrawl(ctx context.Context, st *store.Store, args siteCrawlArgs, maxBytes int64, refresh bool) (*web.CrawlReport, error) {
+	src := librarian.SourceRef{Kind: librarian.KindWeb, ID: args.Name}
+	if ws, err := st.GetWebSourceByName(ctx, args.Name); err == nil {
+		src.RootName = ws.RootName
+		src.Title = ws.StartURL
+	}
+	phase := "crawl"
+	if refresh {
+		phase = "refresh"
+	}
+	opID := librarian.DefaultTracker.Start(src, phase)
+	rep, err := web.CrawlSite(ctx, st, web.CrawlOptions{
+		SourceName:        args.Name,
+		MaxPages:          args.MaxPages,
+		MaxDepth:          args.MaxDepth,
+		AllowInsecureHTTP: args.AllowInsecureHTTP,
+		MaxResponseBytes:  maxBytes,
+		RefreshOnly:       refresh,
+		Progress: func(done, total int, bytes int64, currentURL, message string) {
+			librarian.DefaultTracker.Update(opID, librarian.ProgressEvent{
+				Source: src, Phase: phase, Done: done, Total: total, Bytes: bytes,
+				Current: currentURL, Message: message, UpdatedAt: time.Now().Unix(),
+			})
+		},
+	})
+	state := "ok"
+	var errs []string
+	report := map[string]any{}
+	if err != nil {
+		state = "failed"
+		errs = append(errs, err.Error())
+	}
+	if rep != nil {
+		report["new"] = rep.New
+		report["changed"] = rep.Changed
+		report["failed"] = rep.Failed
+		report["bytesDownloaded"] = rep.Bytes
+		report["limitReached"] = rep.LimitReached
+		report["durationMs"] = rep.DurationMS
+		errs = append(errs, rep.PageErrors...)
+		if rep.FatalError != "" {
+			state = "failed"
+			errs = append(errs, rep.FatalError)
+		} else if rep.Failed > 0 || rep.LimitReached != "" {
+			if state == "ok" {
+				state = "ok"
+			}
+		}
+	}
+	librarian.DefaultTracker.Finish(opID, state, report, errs)
+	if rep != nil {
+		rep.OpID = opID
+	}
+	return rep, err
+}
+
+type listSourcesResult struct {
+	Sources []librarian.SourceSummary `json:"sources"`
+	Count   int                       `json:"count"`
+}
+
+type sourceRefArgs struct {
+	Kind string `json:"kind" jsonschema:"Source kind: web, pdf, repo, or local"`
+	ID   string `json:"id" jsonschema:"Source id: web/repo name, pdf documentUri, or local rootName"`
+}
+
+type recentErrorsArgs struct {
+	Kind  string `json:"kind" jsonschema:"Source kind: web, pdf, repo, or local"`
+	ID    string `json:"id" jsonschema:"Source id"`
+	Limit int    `json:"limit,omitempty" jsonschema:"Max errors to return (default 20)"`
+}
+
+type recentErrorsResult struct {
+	Kind   string   `json:"kind"`
+	ID     string   `json:"id"`
+	Errors []string `json:"errors"`
+	Count  int      `json:"count"`
+}
+
+type previewDocumentArgs struct {
+	URI         string `json:"uri,omitempty" jsonschema:"Document URI"`
+	ID          int64  `json:"id,omitempty" jsonschema:"Numeric document id"`
+	MaxChunks   int    `json:"maxChunks,omitempty" jsonschema:"Max chunks to return (default 3)"`
+	MaxChars    int    `json:"maxChars,omitempty" jsonschema:"Max chars per chunk body (default 2000)"`
+	IncludeBody bool   `json:"includeBody,omitempty" jsonschema:"Concatenate preview chunks into body"`
+}
+
+type searchPlaygroundArgs struct {
+	Query    string   `json:"query" jsonschema:"Search query"`
+	Roots    []string `json:"roots,omitempty" jsonschema:"Optional rootName filters"`
+	RootName string   `json:"rootName,omitempty" jsonschema:"Optional single rootName filter"`
+	Limit    int      `json:"limit,omitempty" jsonschema:"Max hits (default 10)"`
+	Semantic bool     `json:"semantic,omitempty" jsonschema:"Enable sparse semantic supplement"`
+	Explain  bool     `json:"explain,omitempty" jsonschema:"Include EXPLAIN QUERY PLAN"`
+}
+
+type opIDArgs struct {
+	OpID string `json:"opId" jsonschema:"Operation id from ingest/crawl tracking"`
+}
+
+type listOpsArgs struct {
+	Limit int `json:"limit,omitempty" jsonschema:"Max operations to list (default 20)"`
+}
+
+type listOperationsResult struct {
+	Operations []librarian.Operation `json:"operations"`
+	Count      int                   `json:"count"`
 }

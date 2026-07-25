@@ -203,6 +203,22 @@ Separate from web crawl. Uses system `git` (no hooks); credentials via GCM/SSH/`
 
 GitHub HTML URLs (`/tree/`, `/blob/`) and `.git` remotes are rejected by web crawl tools with guidance to use repo tools instead.
 
+### Librarian (GUI readiness)
+
+Unified inventory and debug surface (admin mode). Existing per-type ingest/refresh/remove tools remain the mutation path.
+
+| Tool | Purpose |
+|------|---------|
+| `list_sources` | Union of web / PDF / Git / synthesized local roots |
+| `get_source` | Inspect one source (`kind` + `id`) |
+| `source_health` | State, counts, recent errors |
+| `recent_source_errors` | Error list for one source |
+| `preview_document` | Bounded chunk preview (`maxChunks` / `maxChars`) |
+| `search_playground` | Search with optional `explain` (query plan) |
+| `get_operation` / `list_operations` | In-process crawl progress (`opId` on `ingest_site` / `refresh_web_source` reports) |
+
+Progress is process-local (not persisted across restarts). Schema remains `user_version = 11`.
+
 ### `delete_document`
 
 | Argument | Type | Required |

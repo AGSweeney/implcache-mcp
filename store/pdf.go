@@ -151,14 +151,34 @@ func (s *Store) UpsertPDFSource(ctx context.Context, in PDFSource, pages []PDFPa
 	return id, nil
 }
 
-// GetPDFSourceByURI loads a PDF source row.
-func (s *Store) GetPDFSourceByURI(ctx context.Context, uri string) (*PDFSource, error) {
-	row := s.db.QueryRowContext(ctx, `
+const pdfSourceSelect = `
 		SELECT id, COALESCE(document_id, 0), root_name, document_uri, source_path, file_name, file_hash,
 		       file_size, page_count, title, product, version, authority, language, pdf_version,
 		       encrypted, ocr_mode, extraction_status, created_at, updated_at
-		FROM pdf_sources WHERE document_uri = ?`, uri)
+		FROM pdf_sources`
+
+// GetPDFSourceByURI loads a PDF source row.
+func (s *Store) GetPDFSourceByURI(ctx context.Context, uri string) (*PDFSource, error) {
+	row := s.db.QueryRowContext(ctx, pdfSourceSelect+` WHERE document_uri = ?`, uri)
 	return scanPDFSource(row)
+}
+
+// ListPDFSources returns all registered PDF sources.
+func (s *Store) ListPDFSources(ctx context.Context) ([]PDFSource, error) {
+	rows, err := s.db.QueryContext(ctx, pdfSourceSelect+` ORDER BY document_uri`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PDFSource
+	for rows.Next() {
+		p, err := scanPDFSourceRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *p)
+	}
+	return out, rows.Err()
 }
 
 // DeletePDFSourceByURI removes pdf_sources (cascades pdf_pages). Document is left to caller.
@@ -175,6 +195,18 @@ func (s *Store) DeletePDFSourceByURI(ctx context.Context, uri string) (bool, err
 }
 
 func scanPDFSource(row *sql.Row) (*PDFSource, error) {
+	p, err := scanPDFSourceRow(row)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("pdf source not found")
+	}
+	return p, err
+}
+
+type pdfSourceScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanPDFSourceRow(row pdfSourceScanner) (*PDFSource, error) {
 	var p PDFSource
 	var enc int
 	if err := row.Scan(
@@ -182,9 +214,6 @@ func scanPDFSource(row *sql.Row) (*PDFSource, error) {
 		&p.FileSize, &p.PageCount, &p.Title, &p.Product, &p.Version, &p.Authority, &p.Language, &p.PDFVersion,
 		&enc, &p.OCRMode, &p.ExtractionStatus, &p.CreatedAt, &p.UpdatedAt,
 	); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("pdf source not found")
-		}
 		return nil, err
 	}
 	p.Encrypted = enc != 0
