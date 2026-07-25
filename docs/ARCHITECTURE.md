@@ -38,13 +38,19 @@ Task identified (technology, language, project)
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│  MCP tools (tools/)                                         │
-│  agent: get_implementation_context · find_symbol · search   │
-│  admin: ingest/crawl · Librarian inventory · vomit          │
+│  Transports                                                 │
+│  MCP stdio / Streamable HTTP (/mcp) · Librarian REST+UI     │
+│  (/api/v1 + embedded SPA when -enable-librarian)            │
 └────────────────────────────┬────────────────────────────────┘
                              │
 ┌────────────────────────────▼────────────────────────────────┐
-│  Librarian (librarian/) — admin inventory / health / preview│
+│  MCP tools (tools/) · HTTP admin (httpapi/)                 │
+│  agent: get_implementation_context · find_symbol · search   │
+│  admin: ingest/crawl · inventory · vomit                    │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────┐
+│  Librarian (librarian/) — inventory / health / preview/jobs │
 │  Acquisition: web/ · pdf/ · gitrepo/                        │
 └────────────────────────────┬────────────────────────────────┘
                              │
@@ -129,7 +135,10 @@ Roots are never silently merged across conflicting product families.
 
 | Package | Responsibility |
 |---------|----------------|
-| `main` | Flags, DB open, MCP stdio/HTTP, loopback rewrite, shutdown |
+| `main` | Flags, DB open, MCP stdio/HTTP, Librarian mount, loopback rewrite, shutdown |
+| `httpapi` | Librarian REST `/api/v1` (sources, jobs+SSE, library, search, auth, uploads) |
+| `embedui` | `//go:embed` production SPA assets (`embedui/dist`) |
+| `frontend` | Optional Vite/React source; rebuild copies into `embedui/dist` |
 | `tools` | Tool schemas, permission gates, root-need error shaping |
 | `librarian` | Unified source inventory, health, preview, search playground, in-process op progress |
 | `implctx` | Budgeted implementation package assembly |
@@ -137,7 +146,7 @@ Roots are never silently merged across conflicting product families.
 | `ingest` | Walk, convert, chunk, hash skip, symbol extract, authority infer |
 | `web` | URL fetch, HTML cleanup profiles, site crawl / refresh |
 | `pdf` | Local PDF inspect / Stage 1 text ingest |
-| `gitrepo` | Git acquire / sparse / classify / ingest / refresh |
+| `gitrepo` | Git acquire / sparse / classify / ingest / refresh (managed clones under `.implcache/repos`) |
 | `vomit` | Playbook/recipe compilation |
 | `internal/netsafe` | SSRF host/prefix guards for web fetch |
 | `internal/safePath` | Confine output paths under a root |
@@ -156,7 +165,8 @@ Roots are never silently merged across conflicting product families.
 
 ## Related docs
 
-- [TOOLS.md](TOOLS.md) — tool contracts  
+- [TOOLS.md](TOOLS.md) — MCP tool contracts  
+- [API_V1.md](API_V1.md) — Librarian REST + embedded UI  
 - [DATA_MODEL.md](DATA_MODEL.md) — schema and URIs  
 - [AGENT_GUIDE.md](AGENT_GUIDE.md) — usage patterns  
 - [OPERATIONS.md](OPERATIONS.md) — run, harden, evaluate  

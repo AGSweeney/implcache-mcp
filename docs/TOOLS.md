@@ -203,9 +203,9 @@ Separate from web crawl. Uses system `git` (no hooks); credentials via GCM/SSH/`
 
 GitHub HTML URLs (`/tree/`, `/blob/`) and `.git` remotes are rejected by web crawl tools with guidance to use repo tools instead.
 
-### Librarian (GUI readiness)
+### Librarian (MCP + browser UI)
 
-Unified inventory and debug surface (admin mode). Existing per-type ingest/refresh/remove tools remain the mutation path.
+The **browser Librarian** (`-enable-librarian`) is the primary GUI: REST `/api/v1` + embedded SPA (see [API_V1.md](API_V1.md)). These MCP tools are the parallel inventory/debug surface for admin/stdio clients. Per-type ingest/refresh/remove tools remain available over MCP; the UI uses the same acquisition packages via HTTP.
 
 | Tool | Purpose |
 |------|---------|
@@ -215,7 +215,7 @@ Unified inventory and debug surface (admin mode). Existing per-type ingest/refre
 | `recent_source_errors` | Error list for one source |
 | `preview_document` | Bounded chunk preview (`maxChunks` / `maxChars`) |
 | `search_playground` | Search with optional `explain` (query plan) |
-| `get_operation` / `list_operations` | In-process crawl progress (`opId` on `ingest_site` / `refresh_web_source` reports) |
+| `get_operation` / `list_operations` | In-process job progress (`opId` on site/repo ingest and refresh) |
 
 Progress is process-local (not persisted across restarts). Schema remains `user_version = 11`.
 

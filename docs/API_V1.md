@@ -1,10 +1,10 @@
 # Admin API v1
 
-Versioned REST surface for the ImplCache Librarian UI. Mounted under `/api/v1` when HTTP is enabled.
+Versioned REST surface for the ImplCache Librarian UI. Mounted under `/api/v1` when `-http` is set (UI assets require `-enable-librarian`).
 
 Base URL example: `http://127.0.0.1:8080/api/v1`
 
-MCP Streamable HTTP remains at `/mcp`.
+MCP Streamable HTTP remains at `/mcp`. Managed Git clones for `managed_clone` sources are cached under `<db-dir>/.implcache/repos/` (gitignored; not part of the published tree).
 
 ## Capability discovery
 

@@ -16,8 +16,10 @@
 | PDF | `inspect_pdf`, `ingest_pdf`, `remove_pdf` |
 | Git | `inspect_repo`, `add_repo_source`, `ingest_repo`, `refresh_repo_source`, `list_repo_sources`, `remove_repo_source` |
 | Inventory / delete | `list_documents`, `delete_document`, `delete_by_uri_prefix` |
-| Librarian (GUI) | `list_sources`, `get_source`, `source_health`, `recent_source_errors`, `preview_document`, `search_playground`, `get_operation`, `list_operations` |
+| Librarian (MCP) | `list_sources`, `get_source`, `source_health`, `recent_source_errors`, `preview_document`, `search_playground`, `get_operation`, `list_operations` |
 | Recipes | `vomit` |
+
+The **Librarian browser UI** is separate from MCP: enable with `-http` + `-enable-librarian` (see [API_V1.md](API_V1.md) / [OPERATIONS.md](OPERATIONS.md)). It talks REST `/api/v1`, not MCP-over-HTTP.
 
 Call-time permission flags (`-readonly`, `-allow-ingest`, …) still apply when admin tools are present.
 
@@ -33,9 +35,10 @@ Call-time permission flags (`-readonly`, `-allow-ingest`, …) still apply when 
 | Behavior | Default |
 |----------|---------|
 | Bind | Loopback; bare `:port` / `0.0.0.0` rewritten to `127.0.0.1` |
-| Non-loopback | Refused unless `-allow-remote-http` (no built-in auth) |
+| Paths | MCP Streamable HTTP at `/mcp`; Librarian REST at `/api/v1`; UI at `-librarian-base-path` when `-enable-librarian` |
+| Non-loopback | Refused unless `-allow-remote-http` |
 | Mutations over HTTP | Off unless `-enable-http-mutations` |
-| Auth | None built-in |
+| Librarian auth | Optional Bearer (`-librarian-token` admin, `-librarian-viewer-token` viewer); open when unset (loopback-oriented) |
 
 ## Version
 

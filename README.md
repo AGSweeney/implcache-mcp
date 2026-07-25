@@ -59,7 +59,7 @@ Default **`-mode agent`** registers retrieval tools only. Admin tools are **not*
 # open http://127.0.0.1:8080/
 ```
 
-See [docs/API_V1.md](docs/API_V1.md), [docs/LIBRARIAN_PRD.md](docs/LIBRARIAN_PRD.md), and [docs/OPERATIONS.md](docs/OPERATIONS.md). React sources live under `frontend/` (optional rebuild into `embedui/dist`).
+See [docs/API_V1.md](docs/API_V1.md) and [docs/OPERATIONS.md](docs/OPERATIONS.md). React sources live under `frontend/` (optional rebuild into `embedui/dist`).
 
 ### Cursor MCP config
 
