@@ -1,0 +1,183 @@
+{
+  "database": "testdata\\validation\\reports\\validation.db",
+  "finalInventory": {
+    "documents": 164,
+    "chunks": 1450,
+    "symbols": 524,
+    "databaseBytes": 10682368
+  },
+  "generatedAt": "2026-07-25T20:27:42.243196Z",
+  "scenarios": [
+    {
+      "name": "esp-idf-docs",
+      "sourceType": "web",
+      "description": "ESP-IDF stable API-reference/system prefix (Sphinx)",
+      "startedAt": "2026-07-25T20:27:14.1558895Z",
+      "finishedAt": "2026-07-25T20:27:29.8262613Z",
+      "elapsedMs": 15670,
+      "before": {
+        "documents": 0,
+        "chunks": 0,
+        "symbols": 0,
+        "databaseBytes": 270336
+      },
+      "after": {
+        "documents": 24,
+        "chunks": 891,
+        "symbols": 0,
+        "databaseBytes": 6582272
+      },
+      "growth": {
+        "documents": 24,
+        "chunks": 891,
+        "symbols": 0,
+        "databaseBytes": 6311936
+      },
+      "errors": [],
+      "warnings": [
+        "limitReached=maxPages"
+      ],
+      "detail": {
+        "bytesDownloaded": 3297246,
+        "changed": 0,
+        "durationMs": 15655,
+        "failed": 0,
+        "generation": 1,
+        "limitReached": "maxPages",
+        "new": 25,
+        "pageErrorCount": 0,
+        "rootName": "esp-idf-docs",
+        "skipped": 0,
+        "sourceName": "esp-idf-system",
+        "unchanged": 0
+      },
+      "ok": true
+    },
+    {
+      "name": "netburner-docs",
+      "sourceType": "web",
+      "description": "NetBurner Developer Guide (Doxygen HTML)",
+      "startedAt": "2026-07-25T20:27:29.8262613Z",
+      "finishedAt": "2026-07-25T20:27:41.3282344Z",
+      "elapsedMs": 11501,
+      "before": {
+        "documents": 24,
+        "chunks": 891,
+        "symbols": 0,
+        "databaseBytes": 6582272
+      },
+      "after": {
+        "documents": 41,
+        "chunks": 986,
+        "symbols": 0,
+        "databaseBytes": 7036928
+      },
+      "growth": {
+        "documents": 17,
+        "chunks": 95,
+        "symbols": 0,
+        "databaseBytes": 454656
+      },
+      "errors": [
+        "https://www.netburner.com/NBDocs/Developer/html/search_opensearch.php: http 404 for https://www.netburner.com/NBDocs/Developer/html/search_opensearch.php",
+        "https://www.netburner.com/NBDocs/Developer/html/www.netburner.com: http 404 for https://www.netburner.com/NBDocs/Developer/html/www.netburner.com",
+        "https://www.netburner.com/NBDocs/Developer/html/doxygen_crawl.html: empty content"
+      ],
+      "warnings": [
+        "failedPages=3"
+      ],
+      "detail": {
+        "bytesDownloaded": 1378211,
+        "changed": 0,
+        "durationMs": 11498,
+        "failed": 3,
+        "generation": 1,
+        "limitReached": "",
+        "new": 17,
+        "pageErrorCount": 3,
+        "rootName": "netburner-docs",
+        "skipped": 0,
+        "sourceName": "netburner-dev",
+        "unchanged": 0
+      },
+      "ok": true
+    },
+    {
+      "name": "pdf-text-manual",
+      "sourceType": "pdf",
+      "description": "Representative text PDF fixture (Stage 1)",
+      "startedAt": "2026-07-25T20:27:41.3282344Z",
+      "finishedAt": "2026-07-25T20:27:41.3351304Z",
+      "elapsedMs": 6,
+      "before": {
+        "documents": 41,
+        "chunks": 986,
+        "symbols": 0,
+        "databaseBytes": 7036928
+      },
+      "after": {
+        "documents": 42,
+        "chunks": 987,
+        "symbols": 0,
+        "databaseBytes": 7036928
+      },
+      "growth": {
+        "documents": 1,
+        "chunks": 1,
+        "symbols": 0,
+        "databaseBytes": 0
+      },
+      "errors": [],
+      "warnings": [],
+      "detail": {
+        "chunks": 1,
+        "classification": "text",
+        "documentURI": "pdf://validation-pdfs/text_manual.pdf",
+        "pageCount": 2,
+        "skipped": false,
+        "status": "ingested"
+      },
+      "ok": true
+    },
+    {
+      "name": "git-local-owned",
+      "sourceType": "git",
+      "description": "Owned local Git checkout (sparse: store,ingest,gitrepo)",
+      "startedAt": "2026-07-25T20:27:41.3351304Z",
+      "finishedAt": "2026-07-25T20:27:42.243196Z",
+      "elapsedMs": 908,
+      "before": {
+        "documents": 42,
+        "chunks": 987,
+        "symbols": 0,
+        "databaseBytes": 7036928
+      },
+      "after": {
+        "documents": 164,
+        "chunks": 1450,
+        "symbols": 524,
+        "databaseBytes": 10682368
+      },
+      "growth": {
+        "documents": 122,
+        "chunks": 463,
+        "symbols": 524,
+        "databaseBytes": 3645440
+      },
+      "errors": [],
+      "warnings": [],
+      "detail": {
+        "bytesProcessed": 703506,
+        "documentsIngested": 122,
+        "filesDiscovered": 122,
+        "filesSkipped": 0,
+        "resolvedCommit": "87b75b71ed32cda9f1ff79cf7460e649478b0967",
+        "rootName": "implcache-src",
+        "status": "ingested"
+      },
+      "ok": true
+    }
+  ],
+  "schemaOK": true,
+  "schemaVersion": 11
+}

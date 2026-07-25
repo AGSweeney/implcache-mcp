@@ -147,6 +147,16 @@ Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still ch
 
 New databases are created at the canonical schema (**`PRAGMA user_version = 11`**) on open. A database with a different `user_version` is refused: delete `implcache.db` (and `-wal`/`-shm`) and re-ingest (see [DATA_MODEL.md](DATA_MODEL.md)).
 
+## Real-source validation
+
+Controlled ingest reports (documents/chunks/symbols, errors, warnings, DB growth, elapsed time):
+
+```bash
+go run ./cmd/sourcevalidate -out testdata/validation/reports -max-pages 25 -max-depth 2
+```
+
+Scenarios: ESP-IDF docs prefix (Sphinx), NetBurner Developer Guide (Doxygen), `testdata/pdf/text_manual.pdf`, and a sparse local checkout of this repository. JSON reports land under `testdata/validation/reports/`.
+
 ## Evaluation
 
 ```bash

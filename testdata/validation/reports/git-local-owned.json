@@ -1,0 +1,38 @@
+{
+  "name": "git-local-owned",
+  "sourceType": "git",
+  "description": "Owned local Git checkout (sparse: store,ingest,gitrepo)",
+  "startedAt": "2026-07-25T20:27:41.3351304Z",
+  "finishedAt": "2026-07-25T20:27:42.243196Z",
+  "elapsedMs": 908,
+  "before": {
+    "documents": 42,
+    "chunks": 987,
+    "symbols": 0,
+    "databaseBytes": 7036928
+  },
+  "after": {
+    "documents": 164,
+    "chunks": 1450,
+    "symbols": 524,
+    "databaseBytes": 10682368
+  },
+  "growth": {
+    "documents": 122,
+    "chunks": 463,
+    "symbols": 524,
+    "databaseBytes": 3645440
+  },
+  "errors": [],
+  "warnings": [],
+  "detail": {
+    "bytesProcessed": 703506,
+    "documentsIngested": 122,
+    "filesDiscovered": 122,
+    "filesSkipped": 0,
+    "resolvedCommit": "87b75b71ed32cda9f1ff79cf7460e649478b0967",
+    "rootName": "implcache-src",
+    "status": "ingested"
+  },
+  "ok": true
+}

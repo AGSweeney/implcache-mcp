@@ -1,0 +1,49 @@
+{
+  "name": "netburner-docs",
+  "sourceType": "web",
+  "description": "NetBurner Developer Guide (Doxygen HTML)",
+  "startedAt": "2026-07-25T20:27:29.8262613Z",
+  "finishedAt": "2026-07-25T20:27:41.3282344Z",
+  "elapsedMs": 11501,
+  "before": {
+    "documents": 24,
+    "chunks": 891,
+    "symbols": 0,
+    "databaseBytes": 6582272
+  },
+  "after": {
+    "documents": 41,
+    "chunks": 986,
+    "symbols": 0,
+    "databaseBytes": 7036928
+  },
+  "growth": {
+    "documents": 17,
+    "chunks": 95,
+    "symbols": 0,
+    "databaseBytes": 454656
+  },
+  "errors": [
+    "https://www.netburner.com/NBDocs/Developer/html/search_opensearch.php: http 404 for https://www.netburner.com/NBDocs/Developer/html/search_opensearch.php",
+    "https://www.netburner.com/NBDocs/Developer/html/www.netburner.com: http 404 for https://www.netburner.com/NBDocs/Developer/html/www.netburner.com",
+    "https://www.netburner.com/NBDocs/Developer/html/doxygen_crawl.html: empty content"
+  ],
+  "warnings": [
+    "failedPages=3"
+  ],
+  "detail": {
+    "bytesDownloaded": 1378211,
+    "changed": 0,
+    "durationMs": 11498,
+    "failed": 3,
+    "generation": 1,
+    "limitReached": "",
+    "new": 17,
+    "pageErrorCount": 3,
+    "rootName": "netburner-docs",
+    "skipped": 0,
+    "sourceName": "netburner-dev",
+    "unchanged": 0
+  },
+  "ok": true
+}

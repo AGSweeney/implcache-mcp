@@ -1,0 +1,37 @@
+{
+  "name": "pdf-text-manual",
+  "sourceType": "pdf",
+  "description": "Representative text PDF fixture (Stage 1)",
+  "startedAt": "2026-07-25T20:27:41.3282344Z",
+  "finishedAt": "2026-07-25T20:27:41.3351304Z",
+  "elapsedMs": 6,
+  "before": {
+    "documents": 41,
+    "chunks": 986,
+    "symbols": 0,
+    "databaseBytes": 7036928
+  },
+  "after": {
+    "documents": 42,
+    "chunks": 987,
+    "symbols": 0,
+    "databaseBytes": 7036928
+  },
+  "growth": {
+    "documents": 1,
+    "chunks": 1,
+    "symbols": 0,
+    "databaseBytes": 0
+  },
+  "errors": [],
+  "warnings": [],
+  "detail": {
+    "chunks": 1,
+    "classification": "text",
+    "documentURI": "pdf://validation-pdfs/text_manual.pdf",
+    "pageCount": 2,
+    "skipped": false,
+    "status": "ingested"
+  },
+  "ok": true
+}

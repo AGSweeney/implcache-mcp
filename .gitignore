@@ -11,6 +11,7 @@
 *.db-wal
 *.db-shm
 implcache.db*
+testdata/validation/reports/validation.db*
 
 # Generated playbooks (default -output-root)
 /vomit-output/
