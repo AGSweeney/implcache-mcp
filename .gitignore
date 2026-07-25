@@ -1,18 +1,14 @@
-# Binaries
+# Binaries built at repo root (not the shipped dist/ package)
 /implcache-mcp
 /implcache-mcp.exe
 /implcache-mcp.exe~
 /ingestcli
 /ingestcli.exe
 *.exe
+!/dist/*.exe
 
-# End-user package: keep docs + helpers; ignore packed binaries and local DBs
-/dist/implcache-mcp
-/dist/implcache-mcp.exe
-/dist/ingestcli
-/dist/ingestcli.exe
-/dist/VERSION
-/dist/*.db
+# End-user package: track binaries, VERSION, and empty starter DB.
+# Ignore only local runtime junk created while testing the package.
 /dist/*.db-wal
 /dist/*.db-shm
 /dist/vomit-output/
@@ -21,9 +17,11 @@
 
 # Local knowledge databases (never publish ingested corpora)
 *.db
+!/dist/implcache.db
 *.db-wal
 *.db-shm
 implcache.db*
+!/dist/implcache.db
 testdata/validation/reports/validation.db*
 
 # Managed Git clone cache (beside the DB; recreated by ingest/refresh)
