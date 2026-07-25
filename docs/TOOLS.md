@@ -4,7 +4,7 @@ All tools are registered by `tools.RegisterWithOptions`. Default **`-mode agent`
 
 When root scope is ambiguous, several tools return a JSON payload with `needsChoice`, `message`, and `availableRoots` (often as an error-shaped MCP result). Ask the user, then retry with an explicit root.
 
-Schema: `PRAGMA user_version = 8`. Symbol extraction at ingest supports: Go, C/C++/C#, Python, JavaScript/TypeScript, Java. Unsupported languages yield no symbols.
+Schema: `PRAGMA user_version = 10`. Symbol extraction at ingest supports: Go, C/C++/C#, Python, JavaScript/TypeScript, Java. Unsupported languages yield no symbols. Web fetch/crawl and PDF ingest tools are **admin-only** (never registered in agent mode).
 
 ---
 
@@ -122,7 +122,7 @@ No arguments. Returns `{ roots: string[], count }`.
 
 | Argument | Type | Description |
 |----------|------|-------------|
-| `sourceType` | string | Optional filter: `markdown` or `source` |
+| `sourceType` | string | Optional filter: `markdown`, `source`, `web`, or `pdf` |
 
 Returns `{ documents[], count }`.
 
@@ -130,7 +130,7 @@ Returns `{ documents[], count }`.
 
 ## Mutation tools
 
-Disabled when `-readonly`, or when the matching `-allow-*` flag is false.
+Disabled when `-readonly`, or when the matching `-allow-*` flag is false. Web/PDF tools below are admin-only.
 
 ### `ingest_markdown`
 
@@ -153,6 +153,41 @@ Disabled when `-readonly`, or when the matching `-allow-*` flag is false.
 
 Walks text-like files, skips common junk / symlinks, extracts symbols where possible.
 
+### `ingest_url`
+
+Fetch and index **one** approved documentation URL (SSRF-safe; no link following). HTTPS preferred; `http://` requires `allowInsecureHTTP`.
+
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| `url` | string | yes | Documentation URL |
+| `rootName` | string | no | Root for `project://` URIs |
+| `profile` | string | no | `generic` \| `sphinx` \| `doxygen` |
+| `authority`, `product`, `version`, `target`, `language` | string | no | Metadata |
+| `allowInsecureHTTP` | bool | no | Permit `http://` |
+
+### Web site mirroring
+
+| Tool | Purpose |
+|------|---------|
+| `add_web_source` | Persist crawl config (`name`, `startUrl`, `rootName`, prefixes, profile) |
+| `ingest_site` | Full crawl within allowed prefixes |
+| `refresh_web_source` | Conditional GET / hash-skip refresh |
+| `list_web_sources` | List registered sources + last status |
+| `remove_web_source` | Delete source + mirrored docs |
+| `prune_web_source` | Delete pages missing for N successful generations |
+
+Defaults (crawl): maxPages 5000, maxDepth 16, concurrency 2, delay 100ms, 5 MB/response. Private/loopback/metadata hosts are blocked.
+
+### PDF Stage 1
+
+| Tool | Purpose |
+|------|---------|
+| `inspect_pdf` | Metadata/classification/bookmarks; **no DB writes** |
+| `ingest_pdf` | Text PDF → `pdf://{root}/{file}` with page-cited chunks |
+| `remove_pdf` | Delete by `pdf://…` URI |
+
+`ocrMode` must be `off` (OCR deferred). Image-only PDFs are reported as requiring OCR and are not ingested.
+
 ### `delete_document`
 
 | Argument | Type | Required |
@@ -163,7 +198,7 @@ Walks text-like files, skips common junk / symlinks, extracts symbols where poss
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
-| `prefix` | string | yes | e.g. `file:///` or `project://old_root/` |
+| `prefix` | string | yes | e.g. `file:///`, `project://old_root/`, `pdf://root/` |
 
 ---
 

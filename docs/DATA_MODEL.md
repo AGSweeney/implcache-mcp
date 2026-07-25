@@ -1,6 +1,6 @@
 # Data model
 
-Schema version: **8** (`PRAGMA user_version`). `store/schema.sql` is the single canonical schema, embedded by `store/schema.go`: new databases are created directly at version 8 in one transaction. `user_version` is a schema identity check, not a migration ladder — there is no upgrade path during pre-release development.
+Schema version: **10** (`PRAGMA user_version`). `store/schema.sql` is the single canonical schema, embedded by `store/schema.go`: new databases are created directly at version 10 in one transaction. `user_version` is a schema identity check, not a migration ladder — there is no upgrade path during pre-release development.
 
 Ingest extracts symbols from Go, C/C++/C#, Python, JavaScript/TypeScript, and Java only. Runtime **freshness** (`current` / `version-specific` / `mixed` / `stale` / `unknown`) is computed separately from document **authority**. Implementation-context responses include a **`contextFingerprint`** of the final trimmed payload (see [TOOLS.md](TOOLS.md)).
 
@@ -10,6 +10,7 @@ Documents use portable URIs so databases can move across machines:
 
 ```text
 project://{rootName}/{relative/path}
+pdf://{rootName}/{normalized-file-name}
 ```
 
 Examples:
@@ -18,10 +19,12 @@ Examples:
 project://example-control-app/help/topics/timers.md
 project://my_app/src/menu.c
 project://example-device-sdk/ug/RegisterHandler.html
+pdf://device-manuals/esp32-technical-reference.pdf
 ```
 
 - **`rootName`** — corpus id (set at ingest; default = directory basename)
 - **`relative/path`** — path under that ingest root, forward slashes
+- **PDF URIs** use a normalized basename under `pdf://`; the original filesystem path is stored on the document / `pdf_sources` row
 
 Legacy `file:///` URIs may still exist; `delete_by_uri_prefix` can remove them.
 
@@ -36,8 +39,8 @@ One row per ingested file (or logical document).
 | `id` | Primary key |
 | `uri` | Unique portable URI |
 | `title` | Display title |
-| `source_type` | `markdown` or `source` |
-| `path` | Original filesystem path at ingest (informational) |
+| `source_type` | `markdown`, `source`, `web`, or `pdf` |
+| `path` | Original filesystem path or source URL path (informational) |
 | `root_name` | Corpus id |
 | `mtime`, `hash` | Change detection / skip unchanged |
 | `authority` | Ranking class (see below) |
@@ -56,6 +59,7 @@ Split bodies for FTS and partial retrieval.
 | `ordinal` | Order within document |
 | `heading`, `body` | Indexed text |
 | `start_line`, `end_line` | Optional line range |
+| `start_page`, `end_page` | Optional PDF page citations (1-based; 0 when unused) |
 
 ### `chunks_fts` (FTS5)
 
@@ -169,6 +173,26 @@ Controlled query expansion: `alias` → `canonical`, optional `technology` / `ro
 
 Named groups of roots with integer `priority` (higher first). Used by `get_implementation_context` via `rootGroup`.
 
+### `web_sources` / `web_pages`
+
+Registered documentation site mirrors (admin crawl config + per-URL crawl state).
+
+| Table | Role |
+|-------|------|
+| `web_sources` | Name, root, start URL, profile (`generic`/`sphinx`/`doxygen`), allowed prefixes, authority/product/version, enabled, last status timestamps |
+| `web_pages` | Per-URL row: document link, canonical URL, ETag/Last-Modified, content hash, crawl generation, missing_count, errors |
+
+Crawl generations classify new/changed/unchanged/missing/failed. Failed crawls never delete pages; `prune_web_source` removes pages missing for N successful generations.
+
+### `pdf_sources` / `pdf_pages`
+
+Local PDF ingest metadata (Stage 1: text extraction only; OCR deferred).
+
+| Table | Role |
+|-------|------|
+| `pdf_sources` | `document_uri` (`pdf://…`), filesystem path, file hash/size, page count, title/product/version, `ocr_mode`, extraction status |
+| `pdf_pages` | Per-page text hash/length, page type (`text`/`image-only`), OCR flag, layout/confidence placeholders |
+
 ## Authority values
 
 Constants in `store`:
@@ -198,8 +222,8 @@ Runtime structure `store.ContextBudget` limits how much text `implctx` returns. 
 
 One canonical schema, no migration ladder:
 
-- **Version matches** (`user_version == 8`): run a lightweight `sqlite_master` check for required objects (`documents`, `chunks`, `chunks_fts`, `symbols`, `chunk_term_vectors`, `chunk_term_postings`, `idx_chunk_term_postings_root_term`, `term_df`, `root_chunk_stats`), then open. Missing objects are refused with rebuild instructions — the file is not repaired.
-- **Empty/new database**: create the full v8 schema directly from `store/schema.sql`, then set `user_version = 8`.
+- **Version matches** (`user_version == 10`): run a lightweight `sqlite_master` check for required objects (documents/chunks/FTS/symbols/semantic tables + `web_sources`/`web_pages` + `pdf_sources`/`pdf_pages`), then open. Missing objects are refused with rebuild instructions — the file is not repaired.
+- **Empty/new database**: create the full v10 schema directly from `store/schema.sql`, then set `user_version = 10`.
 - **Any other version** (or an unversioned non-empty file): refuse to open without modifying the file. The error reports the database path, the found version, and the expected version, and instructs the developer to delete the database (and its `-wal`/`-shm` sidecars) and re-ingest.
 
 During development, delete and recreate databases after schema changes; no time is spent backfilling old versions or testing historical upgrades.
@@ -208,7 +232,7 @@ During development, delete and recreate databases after schema changes; no time 
 
 ### When migrations begin (post-deployment cutover)
 
-Treat the **first deployed schema version** (currently v8 in development) as the baseline once any deployed database must be preserved. At that point:
+Treat the **first deployed schema version** (currently v10 in development) as the baseline once any deployed database must be preserved. At that point:
 
 1. Stop deleting incompatible databases by policy; introduce an explicit migration ladder from that baseline `user_version` forward.
 2. Keep `store/schema.sql` as the canonical *fresh* schema for new installs at the latest version.

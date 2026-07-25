@@ -24,6 +24,22 @@ Ingest loads files into SQLite as `documents` + `chunks` (+ `symbols` when extra
 
 Removes all documents whose URI starts with a given prefix (cascades chunks/symbols).
 
+### Single URL (`ingest_url` / CLI `-mode url`)
+
+- Fetches one HTTPS (or explicitly allowed HTTP) documentation page
+- Blocks private/loopback/metadata addresses (SSRF controls)
+- Cleans HTML with profile `generic` \| `sphinx` \| `doxygen`
+- Assigns `source_type=web`, URI `project://{rootName}/{url-path}`
+
+Site-wide mirroring uses admin tools `add_web_source` / `ingest_site` / `refresh_web_source` (not the CLI yet). Crawls stay within allowed URL prefixes, respect `robots.txt` Disallow (best-effort), and may seed URLs from same-host `sitemap.xml`.
+
+### PDF Stage 1 (`inspect_pdf` / `ingest_pdf` / CLI `-mode pdf-*`)
+
+- Local `.pdf` files only (no remote download in this stage)
+- Pure-Go extractors (`pdfcpu` metadata, `ledongthuc/pdf` text)
+- Text PDFs chunked with `start_page` / `end_page` citations; URI `pdf://{root}/{file}`
+- Image-only / encrypted PDFs are classified; OCR is **not** implemented (`ocrMode=off`)
+
 ## CLI (`cmd/ingestcli`)
 
 ```bash
@@ -35,6 +51,14 @@ go build -o ingestcli ./cmd/ingestcli
 # Application sources
 ./ingestcli -db ./implcache.db -mode project -root my_app -path "D:/work/my_app"
 
+# One documentation URL
+./ingestcli -db ./implcache.db -mode url -root esp-idf-docs -url "https://docs.example.com/en/latest/api.html" -profile sphinx
+
+# PDF inspect / ingest / remove
+./ingestcli -db ./implcache.db -mode pdf-inspect -path ./manual.pdf
+./ingestcli -db ./implcache.db -mode pdf-ingest -root device-manuals -path ./manual.pdf
+./ingestcli -db ./implcache.db -mode pdf-remove -uri "pdf://device-manuals/manual.pdf"
+
 # Remove legacy file:// URIs
 ./ingestcli -db ./implcache.db -mode delete-prefix -prefix "file:///"
 ```
@@ -42,11 +66,16 @@ go build -o ingestcli ./cmd/ingestcli
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `-db` | `./implcache.db` | Database path |
-| `-mode` | `markdown` | `markdown` \| `project` \| `delete-prefix` |
-| `-path` | | File or directory (markdown/project) |
+| `-mode` | `markdown` | `markdown` \| `project` \| `delete-prefix` \| `url` \| `pdf-inspect` \| `pdf-ingest` \| `pdf-remove` |
+| `-path` | | File or directory (markdown/project/pdf) |
 | `-root` | | `rootName` (default: basename of path) |
 | `-recursive` | `true` | Markdown directory recursion |
 | `-prefix` | | URI prefix for delete-prefix |
+| `-url` | | URL for `url` mode |
+| `-uri` | | Document URI for `pdf-remove` |
+| `-profile` | `generic` | Web cleanup profile |
+| `-allow-http` | `false` | Permit `http://` in `url` mode |
+| `-page-start` / `-page-end` | | Optional PDF page range |
 
 ## MCP ingest tools
 

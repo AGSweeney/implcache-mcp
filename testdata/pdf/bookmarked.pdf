@@ -1,0 +1,61 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /Outlines 8 0 R /PageMode /UseOutlines >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+5 0 obj
+<< /Length 133 >>
+stream
+BT /F1 12 Tf 72 720 Td (Introduction to the Example Device SDK.) Tj T* (This section explains bootstrapping the host adapter.) Tj ET
+
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 7 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+7 0 obj
+<< /Length 148 >>
+stream
+BT /F1 12 Tf 72 720 Td (API Reference for RegisterHandler and callbacks.) Tj T* (Pass a stable command name and validate the payload schema.) Tj ET
+
+endstream
+endobj
+8 0 obj
+<< /Type /Outlines /First 9 0 R /Last 10 0 R /Count 2 >>
+endobj
+9 0 obj
+<< /Title (Introduction) /Parent 8 0 R /Next 10 0 R /Dest [4 0 R /XYZ null 720 null] >>
+endobj
+10 0 obj
+<< /Title (API Reference) /Parent 8 0 R /Prev 9 0 R /Dest [6 0 R /XYZ null 720 null] >>
+endobj
+11 0 obj
+<< /Title (Bookmarked Manual) /Author (ImplCache Fixtures) /Producer (testdata/pdf/gen) >>
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000009 00000 n 
+0000000097 00000 n 
+0000000160 00000 n 
+0000000230 00000 n 
+0000000356 00000 n 
+0000000540 00000 n 
+0000000666 00000 n 
+0000000865 00000 n 
+0000000937 00000 n 
+0000001040 00000 n 
+0000001144 00000 n 
+trailer
+<< /Size 12 /Root 1 0 R /Info 11 0 R >>
+startxref
+1251
+%%EOF

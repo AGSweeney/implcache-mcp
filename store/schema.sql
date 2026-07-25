@@ -2,7 +2,7 @@
 -- Use of this source code is governed by an MIT-style
 -- license that can be found in the LICENSE file.
 
--- Canonical schema (PRAGMA user_version = 8). New databases are created
+-- Canonical schema (PRAGMA user_version = 10). New databases are created
 -- directly from this file (embedded via store/schema.go). There is no
 -- migration ladder during pre-release development: incompatible databases
 -- must be deleted and re-ingested.
@@ -34,6 +34,8 @@ CREATE TABLE chunks (
     body TEXT NOT NULL,
     start_line INTEGER NOT NULL DEFAULT 0,
     end_line INTEGER NOT NULL DEFAULT 0,
+    start_page INTEGER NOT NULL DEFAULT 0,
+    end_page INTEGER NOT NULL DEFAULT 0,
     root_name TEXT NOT NULL DEFAULT '',
     UNIQUE(document_id, ordinal)
 );
@@ -164,3 +166,90 @@ CREATE TABLE root_chunk_stats (
     root_name TEXT NOT NULL PRIMARY KEY,
     chunk_count INTEGER NOT NULL
 );
+
+CREATE TABLE web_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    root_name TEXT NOT NULL,
+    start_url TEXT NOT NULL,
+    profile TEXT NOT NULL DEFAULT 'generic',
+    allowed_prefixes TEXT NOT NULL DEFAULT '[]',
+    authority TEXT NOT NULL DEFAULT 'official_documentation',
+    product TEXT NOT NULL DEFAULT '',
+    declared_version TEXT NOT NULL DEFAULT '',
+    detected_version TEXT NOT NULL DEFAULT '',
+    target TEXT NOT NULL DEFAULT '',
+    language TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    configuration_json TEXT NOT NULL DEFAULT '{}',
+    last_attempt_at INTEGER NOT NULL DEFAULT 0,
+    last_success_at INTEGER NOT NULL DEFAULT 0,
+    last_status TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE web_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    web_source_id INTEGER NOT NULL REFERENCES web_sources(id) ON DELETE CASCADE,
+    document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+    source_url TEXT NOT NULL,
+    canonical_url TEXT NOT NULL DEFAULT '',
+    relative_path TEXT NOT NULL DEFAULT '',
+    page_title TEXT NOT NULL DEFAULT '',
+    etag TEXT NOT NULL DEFAULT '',
+    last_modified TEXT NOT NULL DEFAULT '',
+    content_hash TEXT NOT NULL DEFAULT '',
+    http_status INTEGER NOT NULL DEFAULT 0,
+    content_type TEXT NOT NULL DEFAULT '',
+    content_length INTEGER NOT NULL DEFAULT 0,
+    fetched_at INTEGER NOT NULL DEFAULT 0,
+    verified_at INTEGER NOT NULL DEFAULT 0,
+    crawl_generation INTEGER NOT NULL DEFAULT 0,
+    crawl_depth INTEGER NOT NULL DEFAULT 0,
+    last_seen_generation INTEGER NOT NULL DEFAULT 0,
+    missing_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '',
+    UNIQUE(web_source_id, source_url)
+);
+CREATE INDEX idx_web_pages_source ON web_pages(web_source_id, last_seen_generation);
+CREATE INDEX idx_web_sources_root ON web_sources(root_name);
+
+CREATE TABLE pdf_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+    root_name TEXT NOT NULL DEFAULT '',
+    document_uri TEXT NOT NULL UNIQUE,
+    source_path TEXT NOT NULL DEFAULT '',
+    file_name TEXT NOT NULL DEFAULT '',
+    file_hash TEXT NOT NULL DEFAULT '',
+    file_size INTEGER NOT NULL DEFAULT 0,
+    page_count INTEGER NOT NULL DEFAULT 0,
+    title TEXT NOT NULL DEFAULT '',
+    product TEXT NOT NULL DEFAULT '',
+    version TEXT NOT NULL DEFAULT '',
+    authority TEXT NOT NULL DEFAULT 'official_documentation',
+    language TEXT NOT NULL DEFAULT '',
+    pdf_version TEXT NOT NULL DEFAULT '',
+    encrypted INTEGER NOT NULL DEFAULT 0,
+    ocr_mode TEXT NOT NULL DEFAULT 'off',
+    extraction_status TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE pdf_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pdf_source_id INTEGER NOT NULL REFERENCES pdf_sources(id) ON DELETE CASCADE,
+    page_number INTEGER NOT NULL,
+    page_label TEXT NOT NULL DEFAULT '',
+    text_hash TEXT NOT NULL DEFAULT '',
+    text_length INTEGER NOT NULL DEFAULT 0,
+    page_type TEXT NOT NULL DEFAULT 'text',
+    ocr_used INTEGER NOT NULL DEFAULT 0,
+    layout_type TEXT NOT NULL DEFAULT 'single',
+    extraction_confidence TEXT NOT NULL DEFAULT 'unknown',
+    warning_flags TEXT NOT NULL DEFAULT '',
+    UNIQUE(pdf_source_id, page_number)
+);
+CREATE INDEX idx_pdf_sources_root ON pdf_sources(root_name);

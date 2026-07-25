@@ -19,7 +19,7 @@ Primary goal: reduce the tokens, retrieval time, web searches, file reads, compi
 7. **No CGO** — SQLite via `modernc.org/sqlite` for portable builds.
 8. **FTS-first search** — authority/root ranking by default; optional sparse term-vector semantic uses v8 indexed term postings with persisted DF for query-time IDF (`-enable-semantic`); neural embeddings and classic per-chunk TF-IDF remain deferred.
 
-**Schema** is `PRAGMA user_version = 8` (canonical schema in `store/schema.sql`, created directly on open; incompatible databases are refused — delete and re-ingest). **Symbol languages:** Go, C/C++/C#, Python, JS/TS, Java. **Freshness** is independent of authority. **`contextFingerprint`** hashes the final trimmed response (not pre-trim candidates).
+**Schema** is `PRAGMA user_version = 10` (canonical schema in `store/schema.sql`, created directly on open; incompatible databases are refused — delete and re-ingest). Includes web mirror and PDF metadata tables. **Symbol languages:** Go, C/C++/C#, Python, JS/TS, Java. **Freshness** is independent of authority. **`contextFingerprint`** hashes the final trimmed response (not pre-trim candidates).
 
 Known limitations: [OPERATIONS.md](OPERATIONS.md#limitations-and-risks).
 

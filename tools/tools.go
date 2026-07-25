@@ -12,8 +12,10 @@ import (
 
 	"implcache-mcp/implctx"
 	"implcache-mcp/ingest"
+	"implcache-mcp/pdf"
 	"implcache-mcp/store"
 	"implcache-mcp/vomit"
+	"implcache-mcp/web"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -31,6 +33,16 @@ var AgentTools = []string{
 var AdminOnlyTools = []string{
 	"ingest_markdown",
 	"ingest_project",
+	"ingest_url",
+	"add_web_source",
+	"ingest_site",
+	"refresh_web_source",
+	"list_web_sources",
+	"remove_web_source",
+	"prune_web_source",
+	"inspect_pdf",
+	"ingest_pdf",
+	"remove_pdf",
 	"list_documents",
 	"delete_document",
 	"delete_by_uri_prefix",
@@ -180,6 +192,214 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 				return nil, ingest.ProjectResult{}, err
 			}
 			return textResult(fmt.Sprintf("root=%s ingested=%d skipped=%d errors=%d", res.RootName, res.Ingested, res.Skipped, len(res.Errors))), *res, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "ingest_url",
+			Description: "Fetch and ingest one approved documentation URL (admin-only; SSRF-safe; no link following)",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args ingestURLArgs) (*mcp.CallToolResult, web.URLIngestResult, error) {
+			if !opt.AllowIngest {
+				return nil, web.URLIngestResult{}, deny("ingest")
+			}
+			res, err := web.IngestURL(ctx, st, web.IngestURLOptions{
+				URL:               args.URL,
+				RootName:          args.RootName,
+				Authority:         args.Authority,
+				Product:           args.Product,
+				Version:           args.Version,
+				Target:            args.Target,
+				Language:          args.Language,
+				Profile:           args.Profile,
+				AllowInsecureHTTP: args.AllowInsecureHTTP,
+				MaxBytes:          opt.MaxDocumentBytes,
+			})
+			if err != nil {
+				return nil, web.URLIngestResult{}, err
+			}
+			payload, _ := json.MarshalIndent(res, "", "  ")
+			return textResult(string(payload)), *res, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "add_web_source",
+			Description: "Register an approved documentation site for controlled crawling",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args addWebSourceArgs) (*mcp.CallToolResult, store.WebSource, error) {
+			if !opt.AllowIngest {
+				return nil, store.WebSource{}, deny("ingest")
+			}
+			prefixes := args.AllowedPrefixes
+			if len(prefixes) == 0 {
+				prefixes = []string{args.StartURL}
+			}
+			id, err := st.UpsertWebSource(ctx, store.WebSource{
+				Name: args.Name, RootName: args.RootName, StartURL: args.StartURL,
+				Profile: args.Profile, AllowedPrefixes: prefixes, Authority: args.Authority,
+				Product: args.Product, DeclaredVersion: args.Version, Target: args.Target,
+				Language: args.Language, Enabled: true,
+			})
+			if err != nil {
+				return nil, store.WebSource{}, err
+			}
+			ws, err := st.GetWebSourceByID(ctx, id)
+			if err != nil {
+				return nil, store.WebSource{}, err
+			}
+			payload, _ := json.MarshalIndent(ws, "", "  ")
+			return textResult(string(payload)), *ws, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "ingest_site",
+			Description: "Crawl a registered web source within allowed URL prefixes",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args siteCrawlArgs) (*mcp.CallToolResult, web.CrawlReport, error) {
+			if !opt.AllowIngest {
+				return nil, web.CrawlReport{}, deny("ingest")
+			}
+			rep, err := web.CrawlSite(ctx, st, web.CrawlOptions{
+				SourceName:        args.Name,
+				MaxPages:          args.MaxPages,
+				MaxDepth:          args.MaxDepth,
+				AllowInsecureHTTP: args.AllowInsecureHTTP,
+				MaxResponseBytes:  opt.MaxDocumentBytes,
+			})
+			if err != nil {
+				return nil, web.CrawlReport{}, err
+			}
+			payload, _ := json.MarshalIndent(rep, "", "  ")
+			return textResult(string(payload)), *rep, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "refresh_web_source",
+			Description: "Refresh a registered web source using conditional requests when possible",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args siteCrawlArgs) (*mcp.CallToolResult, web.CrawlReport, error) {
+			if !opt.AllowIngest {
+				return nil, web.CrawlReport{}, deny("ingest")
+			}
+			rep, err := web.CrawlSite(ctx, st, web.CrawlOptions{
+				SourceName:        args.Name,
+				MaxPages:          args.MaxPages,
+				MaxDepth:          args.MaxDepth,
+				AllowInsecureHTTP: args.AllowInsecureHTTP,
+				MaxResponseBytes:  opt.MaxDocumentBytes,
+				RefreshOnly:       true,
+			})
+			if err != nil {
+				return nil, web.CrawlReport{}, err
+			}
+			payload, _ := json.MarshalIndent(rep, "", "  ")
+			return textResult(string(payload)), *rep, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "list_web_sources",
+			Description: "List registered documentation web sources",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, listWebSourcesResult, error) {
+			list, err := st.ListWebSources(ctx)
+			if err != nil {
+				return nil, listWebSourcesResult{}, err
+			}
+			out := listWebSourcesResult{Sources: list, Count: len(list)}
+			payload, _ := json.MarshalIndent(out, "", "  ")
+			return textResult(string(payload)), out, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "remove_web_source",
+			Description: "Remove a web source and delete its mirrored documents",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args nameArgs) (*mcp.CallToolResult, deleteDocumentResult, error) {
+			if !opt.AllowDelete {
+				return nil, deleteDocumentResult{}, deny("delete")
+			}
+			ok, err := st.DeleteWebSource(ctx, args.Name)
+			if err != nil {
+				return nil, deleteDocumentResult{}, err
+			}
+			out := deleteDocumentResult{Deleted: ok, URI: args.Name}
+			return textResult(fmt.Sprintf("deleted=%v name=%s", ok, args.Name)), out, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "prune_web_source",
+			Description: "Delete mirrored pages missing for N successful crawl generations",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args pruneArgs) (*mcp.CallToolResult, pruneResult, error) {
+			if !opt.AllowDelete {
+				return nil, pruneResult{}, deny("delete")
+			}
+			ws, err := st.GetWebSourceByName(ctx, args.Name)
+			if err != nil {
+				return nil, pruneResult{}, err
+			}
+			n, err := st.PruneWebPages(ctx, ws.ID, args.Threshold)
+			if err != nil {
+				return nil, pruneResult{}, err
+			}
+			out := pruneResult{Name: args.Name, Deleted: n}
+			payload, _ := json.MarshalIndent(out, "", "  ")
+			return textResult(string(payload)), out, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "inspect_pdf",
+			Description: "Inspect a local PDF (metadata, classification, bookmarks) without writing to the database",
+		}, func(_ context.Context, _ *mcp.CallToolRequest, args pdfInspectArgs) (*mcp.CallToolResult, pdf.InspectReport, error) {
+			if !opt.AllowIngest {
+				return nil, pdf.InspectReport{}, deny("ingest")
+			}
+			rep, err := pdf.InspectPDF(args.Path, pdf.InspectOptions{
+				MaxFileBytes: opt.MaxDocumentBytes,
+				MaxPages:     args.MaxPages,
+				PageStart:    args.PageStart,
+				PageEnd:      args.PageEnd,
+			})
+			if err != nil {
+				return nil, pdf.InspectReport{}, err
+			}
+			payload, _ := json.MarshalIndent(rep, "", "  ")
+			return textResult(string(payload)), *rep, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "ingest_pdf",
+			Description: "Ingest a local text PDF with page-cited chunks (admin-only; OCR not supported in Stage 1)",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args pdfIngestArgs) (*mcp.CallToolResult, pdf.IngestResult, error) {
+			if !opt.AllowIngest {
+				return nil, pdf.IngestResult{}, deny("ingest")
+			}
+			res, err := pdf.IngestPDF(ctx, st, pdf.IngestOptions{
+				Path:         args.Path,
+				RootName:     args.RootName,
+				Authority:    args.Authority,
+				Product:      args.Product,
+				Version:      args.Version,
+				Language:     args.Language,
+				OCRMode:      args.OCRMode,
+				PageStart:    args.PageStart,
+				PageEnd:      args.PageEnd,
+				MaxFileBytes: opt.MaxDocumentBytes,
+				MaxPages:     args.MaxPages,
+				Force:        args.Force,
+			})
+			if err != nil {
+				return nil, pdf.IngestResult{}, err
+			}
+			payload, _ := json.MarshalIndent(res, "", "  ")
+			return textResult(string(payload)), *res, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "remove_pdf",
+			Description: "Remove an ingested PDF document by URI (pdf://…)",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args deleteDocumentArgs) (*mcp.CallToolResult, deleteDocumentResult, error) {
+			if !opt.AllowDelete {
+				return nil, deleteDocumentResult{}, deny("delete")
+			}
+			ok, err := pdf.RemovePDF(ctx, st, args.URI)
+			if err != nil {
+				return nil, deleteDocumentResult{}, err
+			}
+			out := deleteDocumentResult{Deleted: ok, URI: args.URI}
+			return textResult(fmt.Sprintf("deleted=%v uri=%s", ok, args.URI)), out, nil
 		})
 	}
 
@@ -431,6 +651,78 @@ type ingestProjectArgs struct {
 	RootName string `json:"rootName,omitempty" jsonschema:"Optional root name for project:// URIs (default: directory basename)"`
 }
 
+type ingestURLArgs struct {
+	URL               string `json:"url" jsonschema:"Approved documentation URL to fetch (https preferred)"`
+	RootName          string `json:"rootName,omitempty" jsonschema:"Root name for project:// URIs"`
+	Authority         string `json:"authority,omitempty" jsonschema:"Authority class (default official_documentation)"`
+	Product           string `json:"product,omitempty"`
+	Version           string `json:"version,omitempty"`
+	Target            string `json:"target,omitempty" jsonschema:"Hardware/product target (e.g. esp32)"`
+	Language          string `json:"language,omitempty"`
+	Profile           string `json:"profile,omitempty" jsonschema:"Extraction profile: generic|sphinx|doxygen"`
+	AllowInsecureHTTP bool   `json:"allowInsecureHTTP,omitempty" jsonschema:"Permit http:// URLs (default false)"`
+}
+
+type addWebSourceArgs struct {
+	Name            string   `json:"name" jsonschema:"Unique source name"`
+	StartURL        string   `json:"startUrl" jsonschema:"Crawl start URL"`
+	RootName        string   `json:"rootName" jsonschema:"Root name for project:// URIs"`
+	Profile         string   `json:"profile,omitempty" jsonschema:"generic|sphinx|doxygen"`
+	AllowedPrefixes []string `json:"allowedPrefixes,omitempty" jsonschema:"URL prefixes that may be crawled"`
+	Authority       string   `json:"authority,omitempty"`
+	Product         string   `json:"product,omitempty"`
+	Version         string   `json:"version,omitempty"`
+	Target          string   `json:"target,omitempty"`
+	Language        string   `json:"language,omitempty"`
+}
+
+type siteCrawlArgs struct {
+	Name              string `json:"name" jsonschema:"Registered web source name"`
+	MaxPages          int    `json:"maxPages,omitempty"`
+	MaxDepth          int    `json:"maxDepth,omitempty"`
+	AllowInsecureHTTP bool   `json:"allowInsecureHTTP,omitempty"`
+}
+
+type listWebSourcesResult struct {
+	Sources []store.WebSource `json:"sources"`
+	Count   int               `json:"count"`
+}
+
+type nameArgs struct {
+	Name string `json:"name" jsonschema:"Web source name"`
+}
+
+type pruneArgs struct {
+	Name      string `json:"name" jsonschema:"Web source name"`
+	Threshold int    `json:"threshold,omitempty" jsonschema:"Missing-generation threshold (default 2)"`
+}
+
+type pruneResult struct {
+	Name    string `json:"name"`
+	Deleted int64  `json:"deleted"`
+}
+
+type pdfInspectArgs struct {
+	Path      string `json:"path" jsonschema:"Local filesystem path to a .pdf file"`
+	PageStart int    `json:"pageStart,omitempty" jsonschema:"1-based start page (optional)"`
+	PageEnd   int    `json:"pageEnd,omitempty" jsonschema:"1-based end page (optional)"`
+	MaxPages  int    `json:"maxPages,omitempty" jsonschema:"Maximum allowed page count"`
+}
+
+type pdfIngestArgs struct {
+	Path      string `json:"path" jsonschema:"Local filesystem path to a .pdf file"`
+	RootName  string `json:"rootName,omitempty" jsonschema:"Root name for pdf:// URIs"`
+	Authority string `json:"authority,omitempty"`
+	Product   string `json:"product,omitempty"`
+	Version   string `json:"version,omitempty"`
+	Language  string `json:"language,omitempty"`
+	OCRMode   string `json:"ocrMode,omitempty" jsonschema:"Must be off in Stage 1"`
+	PageStart int    `json:"pageStart,omitempty"`
+	PageEnd   int    `json:"pageEnd,omitempty"`
+	MaxPages  int    `json:"maxPages,omitempty"`
+	Force     bool   `json:"force,omitempty" jsonschema:"Reingest even if file hash unchanged"`
+}
+
 type searchArgs struct {
 	Query    string `json:"query" jsonschema:"Full-text search query"`
 	Limit    int    `json:"limit,omitempty" jsonschema:"Max hits to return (default 20, max 100)"`
@@ -466,7 +758,7 @@ type documentResult struct {
 }
 
 type listDocumentsArgs struct {
-	SourceType string `json:"sourceType,omitempty" jsonschema:"Optional filter: markdown or source"`
+	SourceType string `json:"sourceType,omitempty" jsonschema:"Optional filter: markdown, source, web, or pdf"`
 }
 
 type listDocumentsResult struct {

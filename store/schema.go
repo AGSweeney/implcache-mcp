@@ -14,7 +14,7 @@ import (
 // It is a schema identity check, not a migration ladder: pre-release databases
 // with a different version must be deleted and recreated. Real migrations
 // begin only after a deployment contains data that must be preserved.
-const currentSchemaVersion = 8
+const currentSchemaVersion = 10
 
 // canonicalSchema is the complete, authoritative schema for new databases.
 //
@@ -34,6 +34,10 @@ var requiredSchemaObjects = []string{
 	"idx_chunk_term_postings_root_term",
 	"term_df",
 	"root_chunk_stats",
+	"web_sources",
+	"web_pages",
+	"pdf_sources",
+	"pdf_pages",
 }
 
 // ensureSchema opens-or-creates the canonical schema:

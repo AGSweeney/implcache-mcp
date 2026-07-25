@@ -9,7 +9,7 @@ go build -o implcache-mcp .
 go build -o ingestcli ./cmd/ingestcli
 ```
 
-Module: `implcache-mcp` (Go 1.25+). Default reported version is `dev` (override with `-ldflags "-X main.version=…"`). SQLite is pure Go (`modernc.org/sqlite`); **no CGO** required for build/test. Schema `PRAGMA user_version` is currently **8**.
+Module: `implcache-mcp` (Go 1.25+). Default reported version is `dev` (override with `-ldflags "-X main.version=…"`). SQLite is pure Go (`modernc.org/sqlite`); **no CGO** required for build/test. Schema `PRAGMA user_version` is currently **10**.
 
 ### Race detector
 
@@ -125,7 +125,9 @@ Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still ch
 | Area | Notes |
 |------|--------|
 | Symbol extraction | Heuristic regex for Go, C/C++/C#, Python, JS/TS, Java. Optional tree-sitter still future work. Unknown languages do not fall through to noisy C regex. |
-| Search model | FTS5 + authority ranking by default. Optional **IDF-weighted sparse cosine** (`-enable-semantic` / `semantic: true`) supplements FTS through v8 indexed term postings and persisted `term_df` — query-side corpus IDF, not neural embeddings or classic TF-IDF. Pure keyword search can still miss related concepts. |
+| Search model | FTS5 + authority ranking by default. Optional **IDF-weighted sparse cosine** (`-enable-semantic` / `semantic: true`) supplements FTS through indexed term postings and persisted `term_df` — query-side corpus IDF, not neural embeddings or classic TF-IDF. Pure keyword search can still miss related concepts. |
+| Web mirroring | Admin-only; SSRF-safe fetch; prefix-scoped crawl. No JS browser rendering; authenticated portals deferred. |
+| PDF Stage 1 | Local text PDFs with page citations. OCR, remote PDF download, and complex table reconstruction deferred. |
 | Freshness | Independent of authority. Official docs without version/date → `unknown`. `webSearchRecommended` uses coverage + freshness. |
 | Fingerprints | `contextFingerprint` is over the post-trim response (+ citation content hashes). |
 | Token estimates | `estimatedTokens` is roughly `utf8_runes/4` on the serialized JSON. Use for budgeting only — approximate, not exact. |
@@ -179,7 +181,7 @@ Use the offline harness (not part of the default test suite):
 go run ./cmd/semscale -chunks 10000,100000,500000 -iters 12 -limit 20
 ```
 
-Measured on this machine after schema v8 persisted DF (query-side IDF from
+Measured on this machine after persisted DF landed (query-side IDF from
 `term_df`, high-DF terms excluded from posting lookup, score on vectors then
 hydrate top hits; candidate pool capped at `max(250, min(1500, limit*25))` →
 500 for `limit=20`):

@@ -43,8 +43,8 @@ func (s *Store) SeedSyntheticSemanticCorpus(ctx context.Context, root string, n 
 			return err
 		}
 		chunkStmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO chunks(document_id, ordinal, heading, body, start_line, end_line, root_name)
-			VALUES (?, 0, ?, ?, 1, 2, ?)`)
+			INSERT INTO chunks(document_id, ordinal, heading, body, start_line, end_line, start_page, end_page, root_name)
+			VALUES (?, 0, ?, ?, 1, 2, 0, 0, ?)`)
 		if err != nil {
 			docStmt.Close()
 			_ = tx.Rollback()

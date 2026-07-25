@@ -5,9 +5,9 @@
 | Mode | Flag | Registered tools |
 |------|------|------------------|
 | **agent** (default) | `-mode agent` | `get_implementation_context`, `find_symbol`, `search_knowledge`, `get_document`, `list_roots` |
-| **admin** | `-mode admin` or `-enable-admin-tools` | agent tools + `ingest_*`, `delete_*`, `list_documents`, `vomit` |
+| **admin** | `-mode admin` or `-enable-admin-tools` | agent tools + `ingest_*`, web mirror tools, PDF tools, `delete_*`, `list_documents`, `vomit` |
 
-Administrative schemas are **not registered** in agent mode. Call-time permission flags (`-readonly`, `-allow-ingest`, …) still apply when admin tools are present.
+Administrative schemas are **not registered** in agent mode — including `ingest_url`, site crawl tools, and `inspect_pdf` / `ingest_pdf` / `remove_pdf`. Call-time permission flags (`-readonly`, `-allow-ingest`, …) still apply when admin tools are present.
 
 ## Workspace defaults
 
@@ -34,7 +34,7 @@ Local/development builds report **`dev`**. Inject a tag or commit at build time:
 go build -ldflags "-X main.version=$(git describe --tags --always)" -o implcache-mcp .
 ```
 
-Pre-1.0: MCP tool contracts and schema may still evolve. Schema version is independent (`PRAGMA user_version`; currently **8**).
+Pre-1.0: MCP tool contracts and schema may still evolve. Schema version is independent (`PRAGMA user_version`; currently **10**).
 
 ## Optional semantic search
 
@@ -42,7 +42,7 @@ Pre-1.0: MCP tool contracts and schema may still evolve. Schema version is indep
 ./implcache-mcp -mode agent -enable-semantic
 ```
 
-Or per-call `semantic: true` on `search_knowledge` / `get_implementation_context`. Uses sparse term vectors over chunks (cosine), merged with FTS; v8 uses indexed term postings plus persisted DF for candidates/IDF. It is not an embedding model.
+Or per-call `semantic: true` on `search_knowledge` / `get_implementation_context`. Uses sparse term vectors over chunks (cosine), merged with FTS; indexed term postings plus persisted DF for candidates/IDF. It is not an embedding model.
 
 ## Read-only
 

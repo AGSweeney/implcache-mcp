@@ -38,7 +38,7 @@ go build -ldflags "-X main.version=$(git describe --tags --always 2>/dev/null ||
 ./implcache-mcp -version   # "dev" unless injected via -ldflags
 ```
 
-Default **`-mode agent`** registers retrieval tools only. Admin tools are **not** available in agent mode. Use **`-mode admin`** (or `-enable-admin-tools`) for ingest/delete/`vomit`. `-readonly` disables mutations even in admin mode.
+Default **`-mode agent`** registers retrieval tools only. Admin tools are **not** available in agent mode. Use **`-mode admin`** (or `-enable-admin-tools`) for ingest/delete/`vomit`, web mirroring, and PDF tools. `-readonly` disables mutations even in admin mode.
 
 ```bash
 # Coding-agent default (stdio, retrieval only)
@@ -71,9 +71,9 @@ Use absolute paths. Reload MCP after rebuilding.
 
 **Symbol matching** (`find_symbol`): staged exact → normalized → qualified → unqualified → prefix/suffix/token → bounded fuzzy. Definitions outrank declarations and calls. Extractors: Go, C/C++/C#, Python, JS/TS, Java.
 
-**Optional semantic search**: `-enable-semantic` (or tool arg `semantic: true`) supplements FTS with IDF-weighted sparse cosine (persisted `term_df` IDF over presence vectors). The tokenizer splits identifiers on camelCase/underscore boundaries (keeping the combined token), and the v8 inverted term postings index avoids wildcard vector scans; it is not embeddings or classic TF-IDF.
+**Optional semantic search**: `-enable-semantic` (or tool arg `semantic: true`) supplements FTS with IDF-weighted sparse cosine (persisted `term_df` IDF over presence vectors). The tokenizer splits identifiers on camelCase/underscore boundaries (keeping the combined token), and the inverted term postings index avoids wildcard vector scans; it is not embeddings or classic TF-IDF.
 
-**Schema**: SQLite `PRAGMA user_version = 8` (see [docs/DATA_MODEL.md](docs/DATA_MODEL.md)). Pre-1.0; contracts may evolve.
+**Schema**: SQLite `PRAGMA user_version = 10` (see [docs/DATA_MODEL.md](docs/DATA_MODEL.md)). Pre-1.0; contracts may evolve. Includes web mirror tables and PDF page citations.
 
 ---
 
@@ -85,9 +85,11 @@ Prefer the offline CLI for large trees:
 go build -o ingestcli ./cmd/ingestcli
 ./ingestcli -db ./implcache.db -mode markdown -root example-device-sdk -path /path/to/docs
 ./ingestcli -db ./implcache.db -mode project -root example-control-app -path /path/to/src
+./ingestcli -db ./implcache.db -mode url -root web-docs -url "https://docs.example.com/api.html"
+./ingestcli -db ./implcache.db -mode pdf-ingest -root manuals -path /path/to/manual.pdf
 ```
 
-Or enable admin tools and call `ingest_markdown` / `ingest_project`. Details: [docs/INGEST.md](docs/INGEST.md).
+Or enable admin tools and call `ingest_markdown` / `ingest_project` / `ingest_url` / `ingest_pdf` (plus site crawl tools). Details: [docs/INGEST.md](docs/INGEST.md).
 
 ---
 

@@ -19,6 +19,8 @@ import (
 
 const SourceMarkdown = "markdown"
 const SourceSource = "source"
+const SourceWeb = "web"
+const SourcePDF = "pdf"
 
 // Authority ranks source usefulness for implementation context.
 const (
@@ -61,6 +63,8 @@ type Chunk struct {
 	Body       string `json:"body"`
 	StartLine  int    `json:"startLine"`
 	EndLine    int    `json:"endLine"`
+	StartPage  int    `json:"startPage,omitempty"`
+	EndPage    int    `json:"endPage,omitempty"`
 }
 
 // SearchHit is one FTS result with a generated snippet.
@@ -81,6 +85,8 @@ type SearchHit struct {
 	Snippet        string  `json:"snippet"`
 	StartLine      int     `json:"startLine"`
 	EndLine        int     `json:"endLine"`
+	StartPage      int     `json:"startPage,omitempty"`
+	EndPage        int     `json:"endPage,omitempty"`
 	Rank           float64 `json:"rank"`
 	Score          float64 `json:"score,omitempty"`     // composite score after authority/symbol boosts
 	MatchKind      string  `json:"matchKind,omitempty"` // symbol|filename|path|heading|body
@@ -331,9 +337,9 @@ func (s *Store) UpsertDocument(ctx context.Context, in UpsertInput) (bool, error
 
 	for i, c := range in.Chunks {
 		res, err := tx.ExecContext(ctx, `
-			INSERT INTO chunks (document_id, ordinal, heading, body, start_line, end_line, root_name)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			docID, i, c.Heading, c.Body, c.StartLine, c.EndLine, in.RootName,
+			INSERT INTO chunks (document_id, ordinal, heading, body, start_line, end_line, start_page, end_page, root_name)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			docID, i, c.Heading, c.Body, c.StartLine, c.EndLine, c.StartPage, c.EndPage, in.RootName,
 		)
 		if err != nil {
 			return false, fmt.Errorf("insert chunk %d: %w", i, err)
@@ -672,6 +678,8 @@ func (s *Store) searchFTS(ctx context.Context, ftsQuery string, roots []string, 
 				snippet(chunks_fts, 1, '<b>', '</b>', '…', 32) AS snip,
 				c.start_line,
 				c.end_line,
+				c.start_page,
+				c.end_page,
 				bm25(chunks_fts, 10.0, 1.0) AS rank
 			FROM chunks_fts
 			JOIN chunks c ON c.id = chunks_fts.rowid
@@ -716,7 +724,7 @@ func (s *Store) searchFTS(ctx context.Context, ftsQuery string, roots []string, 
 		if err := rows.Scan(
 			&h.ChunkID, &h.DocumentID, &h.URI, &h.Title, &h.RootName, &h.Path,
 			&h.Authority, &h.Language, &h.Technology, &h.ProductVersion, &archived,
-			&h.Ordinal, &h.Heading, &h.Snippet, &h.StartLine, &h.EndLine, &h.Rank,
+			&h.Ordinal, &h.Heading, &h.Snippet, &h.StartLine, &h.EndLine, &h.StartPage, &h.EndPage, &h.Rank,
 		); err != nil {
 			return nil, err
 		}
@@ -741,7 +749,7 @@ func (s *Store) pathTitleCandidates(ctx context.Context, query string, roots []s
 		SELECT c.id, c.document_id, d.uri, d.title, COALESCE(d.root_name, ''), COALESCE(d.path, ''),
 		       COALESCE(d.authority, 'unknown'), COALESCE(d.language, ''), COALESCE(d.technology, ''),
 		       COALESCE(d.product_version, ''), COALESCE(d.archived, 0),
-		       c.ordinal, c.heading, substr(c.body, 1, 240), c.start_line, c.end_line
+		       c.ordinal, c.heading, substr(c.body, 1, 240), c.start_line, c.end_line, c.start_page, c.end_page
 		FROM documents d
 		JOIN chunks c ON c.document_id = d.id AND c.ordinal = 0
 		WHERE (d.path LIKE ? ESCAPE '\' OR d.title LIKE ? ESCAPE '\' OR d.uri LIKE ? ESCAPE '\')`
@@ -769,7 +777,7 @@ func (s *Store) pathTitleCandidates(ctx context.Context, query string, roots []s
 		if err := rows.Scan(
 			&h.ChunkID, &h.DocumentID, &h.URI, &h.Title, &h.RootName, &h.Path,
 			&h.Authority, &h.Language, &h.Technology, &h.ProductVersion, &archived,
-			&h.Ordinal, &h.Heading, &h.Snippet, &h.StartLine, &h.EndLine,
+			&h.Ordinal, &h.Heading, &h.Snippet, &h.StartLine, &h.EndLine, &h.StartPage, &h.EndPage,
 		); err != nil {
 			return nil, err
 		}
@@ -916,7 +924,7 @@ func diversifyHits(hits []SearchHit, limit, maxPerDoc int) []SearchHit {
 
 func (s *Store) chunksForDocument(ctx context.Context, docID int64) ([]Chunk, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, document_id, ordinal, heading, body, start_line, end_line
+		SELECT id, document_id, ordinal, heading, body, start_line, end_line, start_page, end_page
 		FROM chunks WHERE document_id = ? ORDER BY ordinal`, docID)
 	if err != nil {
 		return nil, err
@@ -926,7 +934,7 @@ func (s *Store) chunksForDocument(ctx context.Context, docID int64) ([]Chunk, er
 	var chunks []Chunk
 	for rows.Next() {
 		var c Chunk
-		if err := rows.Scan(&c.ID, &c.DocumentID, &c.Ordinal, &c.Heading, &c.Body, &c.StartLine, &c.EndLine); err != nil {
+		if err := rows.Scan(&c.ID, &c.DocumentID, &c.Ordinal, &c.Heading, &c.Body, &c.StartLine, &c.EndLine, &c.StartPage, &c.EndPage); err != nil {
 			return nil, err
 		}
 		chunks = append(chunks, c)
