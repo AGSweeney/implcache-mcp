@@ -31,7 +31,7 @@ Removes all documents whose URI starts with a given prefix (cascades chunks/symb
 - Cleans HTML with profile `generic` \| `sphinx` \| `doxygen`
 - Assigns `source_type=web`, URI `project://{rootName}/{url-path}`
 
-Site-wide mirroring uses admin tools `add_web_source` / `ingest_site` / `refresh_web_source` (not the CLI yet). Crawls stay within allowed URL prefixes, respect `robots.txt` Disallow (best-effort), and may seed URLs from same-host `sitemap.xml`.
+Site-wide mirroring uses admin tools `add_web_source` / `ingest_site` / `refresh_web_source` (not the CLI yet). Crawls stay within allowed URL prefixes, respect `robots.txt` Disallow (best-effort), and may seed URLs from same-host `sitemap.xml`. Sphinx/Doxygen profiles strip nav chrome, normalize titles, and may set `web_sources.detected_version` from page titles. `ingest_site` / `refresh_web_source` report an `opId` for in-process progress via Librarian `get_operation`.
 
 ### PDF Stage 1 (`inspect_pdf` / `ingest_pdf` / CLI `-mode pdf-*`)
 

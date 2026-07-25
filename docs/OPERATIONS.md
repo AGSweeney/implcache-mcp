@@ -155,7 +155,9 @@ Controlled ingest reports (documents/chunks/symbols, errors, warnings, DB growth
 go run ./cmd/sourcevalidate -out testdata/validation/reports -max-pages 25 -max-depth 2
 ```
 
-Scenarios: ESP-IDF docs prefix (Sphinx), NetBurner Developer Guide (Doxygen), `testdata/pdf/text_manual.pdf`, and a sparse local checkout of this repository. JSON reports land under `testdata/validation/reports/`.
+Scenarios: ESP-IDF docs prefix (Sphinx), NetBurner Developer Guide (Doxygen), `testdata/pdf/text_manual.pdf`, and a sparse local checkout of this repository. JSON reports land under `testdata/validation/reports/`. See also [testdata/validation/README.md](../testdata/validation/README.md).
+
+Admin inventory for the Librarian GUI: run with `-mode admin` and use `list_sources` / `source_health` / `preview_document` / `search_playground` (see [TOOLS.md](TOOLS.md#librarian-gui-readiness)).
 
 ## Evaluation
 

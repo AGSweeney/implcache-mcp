@@ -5,9 +5,21 @@
 | Mode | Flag | Registered tools |
 |------|------|------------------|
 | **agent** (default) | `-mode agent` | `get_implementation_context`, `find_symbol`, `search_knowledge`, `get_document`, `list_roots` |
-| **admin** | `-mode admin` or `-enable-admin-tools` | agent tools + `ingest_*`, web/PDF/Git repo tools, `delete_*`, `list_documents`, `vomit` |
+| **admin** | `-mode admin` or `-enable-admin-tools` | agent tools + all admin-only tools below |
 
-Administrative schemas are **not registered** in agent mode — including web fetch/crawl, PDF ingest, and `inspect_repo` / `ingest_repo` / `refresh_repo_source`. Call-time permission flags (`-readonly`, `-allow-ingest`, …) still apply when admin tools are present.
+**Admin-only tools** (schemas omitted in agent mode):
+
+| Group | Tools |
+|-------|-------|
+| Local ingest | `ingest_markdown`, `ingest_project` |
+| Web | `ingest_url`, `add_web_source`, `ingest_site`, `refresh_web_source`, `list_web_sources`, `remove_web_source`, `prune_web_source` |
+| PDF | `inspect_pdf`, `ingest_pdf`, `remove_pdf` |
+| Git | `inspect_repo`, `add_repo_source`, `ingest_repo`, `refresh_repo_source`, `list_repo_sources`, `remove_repo_source` |
+| Inventory / delete | `list_documents`, `delete_document`, `delete_by_uri_prefix` |
+| Librarian (GUI) | `list_sources`, `get_source`, `source_health`, `recent_source_errors`, `preview_document`, `search_playground`, `get_operation`, `list_operations` |
+| Recipes | `vomit` |
+
+Call-time permission flags (`-readonly`, `-allow-ingest`, …) still apply when admin tools are present.
 
 ## Workspace defaults
 

@@ -38,7 +38,7 @@ go build -ldflags "-X main.version=$(git describe --tags --always 2>/dev/null ||
 ./implcache-mcp -version   # "dev" unless injected via -ldflags
 ```
 
-Default **`-mode agent`** registers retrieval tools only. Admin tools are **not** available in agent mode. Use **`-mode admin`** (or `-enable-admin-tools`) for ingest/delete/`vomit`, web mirroring, PDF Stage 1, and Git repository tools. `-readonly` disables mutations even in admin mode.
+Default **`-mode agent`** registers retrieval tools only. Admin tools are **not** available in agent mode. Use **`-mode admin`** (or `-enable-admin-tools`) for ingest/delete/`vomit`, web mirroring, PDF Stage 1, Git repository tools, and Librarian inventory/health/preview tools. `-readonly` disables mutations even in admin mode.
 
 ```bash
 # Coding-agent default (stdio, retrieval only)
@@ -90,7 +90,9 @@ go build -o ingestcli ./cmd/ingestcli
 ./ingestcli -db ./implcache.db -mode repo-ingest -name sdk -root sdk-main -url https://github.com/org/sdk.git -ref main -acq managed_clone
 ```
 
-Or enable admin tools and call `ingest_markdown` / `ingest_project` / `ingest_url` / `ingest_pdf` / `ingest_repo` (plus site crawl and repo refresh tools). Details: [docs/INGEST.md](docs/INGEST.md).
+Or enable admin tools and call `ingest_markdown` / `ingest_project` / `ingest_url` / `ingest_pdf` / `ingest_repo` (plus site crawl, repo refresh, and Librarian `list_sources` / `source_health` tools). Details: [docs/INGEST.md](docs/INGEST.md), [docs/TOOLS.md](docs/TOOLS.md).
+
+Controlled real-source checks: `go run ./cmd/sourcevalidate` (see [testdata/validation/README.md](testdata/validation/README.md)).
 
 ---
 

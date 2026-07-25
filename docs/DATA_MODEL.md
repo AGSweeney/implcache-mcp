@@ -182,10 +182,10 @@ Registered documentation site mirrors (admin crawl config + per-URL crawl state)
 
 | Table | Role |
 |-------|------|
-| `web_sources` | Name, root, start URL, profile (`generic`/`sphinx`/`doxygen`), allowed prefixes, authority/product/version, enabled, last status timestamps |
+| `web_sources` | Name, root, start URL, profile (`generic`/`sphinx`/`doxygen`), allowed prefixes, authority/product, **`declared_version`** (operator-set) and **`detected_version`** (inferred from page titles during crawl), enabled, last status timestamps |
 | `web_pages` | Per-URL row: document link, canonical URL, ETag/Last-Modified, content hash, crawl generation, missing_count, errors |
 
-Crawl generations classify new/changed/unchanged/missing/failed. Failed crawls never delete pages; `prune_web_source` removes pages missing for N successful generations.
+Document `product_version` prefers `detected_version`, then `declared_version`. Crawl generations classify new/changed/unchanged/missing/failed. Failed crawls never delete pages; `prune_web_source` removes pages missing for N successful generations.
 
 ### `pdf_sources` / `pdf_pages`
 

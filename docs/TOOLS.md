@@ -237,9 +237,10 @@ Progress is process-local (not persisted across restarts). Schema remains `user_
 
 | Tool | `-readonly` | `-allow-ingest=false` | `-allow-delete=false` | `-allow-output-write=false` |
 |------|-------------|------------------------|------------------------|------------------------------|
-| get / find / search / list / get_document | allowed | allowed | allowed | allowed |
-| ingest_* | denied | denied | allowed | allowed |
-| delete_* | denied | allowed | denied | allowed |
+| get / find / search / list_roots / get_document | allowed | allowed | allowed | allowed |
+| Librarian read (`list_sources`, `get_source`, `source_health`, `recent_source_errors`, `preview_document`, `search_playground`, `get_operation`, `list_operations`, `list_*_sources`, `list_documents`, `inspect_*`) | allowed | allowed | allowed | allowed |
+| ingest_* / `ingest_site` / `refresh_*` / `add_*_source` / `prune_web_source` | denied | denied | allowed | allowed |
+| delete_* / `remove_*` | denied | allowed | denied | allowed |
 | vomit (body / saveRecipe) | body ok* | allowed | allowed | body/save ok; file write denied |
 | vomit (file write) | denied | allowed | allowed | denied |
 
@@ -256,4 +257,8 @@ Progress is process-local (not persisted across restarts). Schema remains `user_
 | “What’s in the example-control-app help about timers?” | `search_knowledge` + `rootName` |
 | “Show me the whole sample file” | `get_document` with `includeBody` |
 | “Write a reusable playbook for X” | `vomit` (+ optional `saveRecipe`) |
-| “What corpora are loaded?” | `list_roots` |
+| “What corpora are loaded?” | `list_roots` (agent) or `list_sources` (admin / Librarian) |
+| “Is this web/PDF/Git source healthy?” | `source_health` |
+| “Preview a document without full body” | `preview_document` |
+| “Debug a search query / plan” | `search_playground` (+ optional `explain`) |
+| “How is the crawl going?” | `get_operation` / `list_operations` (`opId` from `ingest_site`) |

@@ -17,7 +17,7 @@ Primary goal: reduce the tokens, retrieval time, web searches, file reads, compi
 5. **Staged depth** — escalate from package → symbols → examples → surrounding source → full document.
 6. **Local-first, honest about staleness** — keep knowledge on disk; surface when web check may still be needed.
 7. **No CGO** — SQLite via `modernc.org/sqlite` for portable builds.
-8. **FTS-first search** — authority/root ranking by default; optional sparse term-vector semantic uses v8 indexed term postings with persisted DF for query-time IDF (`-enable-semantic`); neural embeddings and classic per-chunk TF-IDF remain deferred.
+8. **FTS-first search** — authority/root ranking by default; optional sparse term-vector semantic uses indexed term postings with persisted DF for query-time IDF (`-enable-semantic`); neural embeddings and classic per-chunk TF-IDF remain deferred.
 
 **Schema** is `PRAGMA user_version = 11` (canonical schema in `store/schema.sql`, created directly on open; incompatible databases are refused — delete and re-ingest). Includes web, PDF, and Git `repo_sources`/`repo_files` tables. **Symbol languages:** Go, C/C++/C#, Python, JS/TS, Java. **Freshness** is independent of authority. **`contextFingerprint`** hashes the final trimmed response (not pre-trim candidates).
 
@@ -39,7 +39,13 @@ Task identified (technology, language, project)
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │  MCP tools (tools/)                                         │
-│  get_implementation_context · find_symbol · search · vomit  │
+│  agent: get_implementation_context · find_symbol · search   │
+│  admin: ingest/crawl · Librarian inventory · vomit          │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────┐
+│  Librarian (librarian/) — admin inventory / health / preview│
+│  Acquisition: web/ · pdf/ · gitrepo/                        │
 └────────────────────────────┬────────────────────────────────┘
                              │
 ┌────────────────────────────▼────────────────────────────────┐
@@ -50,11 +56,11 @@ Task identified (technology, language, project)
 ┌────────────────────────────▼────────────────────────────────┐
 │  Store (store/)                                             │
 │  documents · chunks · FTS5 · symbols · recipes · aliases    │
-│  root groups · authority ranking · root inference           │
+│  web/pdf/repo sources · authority ranking · root inference  │
 └────────────────────────────┬────────────────────────────────┘
                              │
 ┌────────────────────────────▼────────────────────────────────┐
-│  Ingest (ingest/)                                           │
+│  Shared ingest (ingest/)                                    │
 │  Markdown / HTML→MD / project walk · chunk · symbols · hash │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -125,13 +131,20 @@ Roots are never silently merged across conflicting product families.
 |---------|----------------|
 | `main` | Flags, DB open, MCP stdio/HTTP, loopback rewrite, shutdown |
 | `tools` | Tool schemas, permission gates, root-need error shaping |
+| `librarian` | Unified source inventory, health, preview, search playground, in-process op progress |
 | `implctx` | Budgeted implementation package assembly |
-| `store` | Schema bootstrap, CRUD, FTS, symbols, recipes, roots, ranking |
+| `store` | Schema bootstrap, CRUD, FTS, symbols, recipes, roots, ranking, source tables |
 | `ingest` | Walk, convert, chunk, hash skip, symbol extract, authority infer |
+| `web` | URL fetch, HTML cleanup profiles, site crawl / refresh |
+| `pdf` | Local PDF inspect / Stage 1 text ingest |
+| `gitrepo` | Git acquire / sparse / classify / ingest / refresh |
 | `vomit` | Playbook/recipe compilation |
+| `internal/netsafe` | SSRF host/prefix guards for web fetch |
 | `internal/safePath` | Confine output paths under a root |
-| `cmd/ingestcli` | Offline ingest / delete-prefix |
+| `cmd/ingestcli` | Offline ingest / delete-prefix / url / pdf / repo |
+| `cmd/sourcevalidate` | Controlled real-source ingest reports |
 | `cmd/evaltasks` | Small task-based retrieval harness |
+| `cmd/semscale` | Offline semantic scale harness |
 
 ## Non-goals
 
