@@ -559,7 +559,9 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 		candidates = append(candidates, h)
 	}
 	if opt.Semantic {
-		semHits, err := s.semanticCandidates(ctx, query, roots, candidateLimit)
+		// Pass the final result limit (not the FTS-enlarged candidateLimit) so
+		// semantic candidate expansion is not double-multiplied.
+		semHits, err := s.semanticCandidates(ctx, query, roots, limit)
 		if err != nil {
 			return nil, err
 		}

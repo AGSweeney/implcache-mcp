@@ -133,7 +133,7 @@ Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still ch
 | Recipes | Quality depends on human review of `vomit` / `saveRecipe` output. Ranking already demotes generated entries vs human-reviewed and project code. |
 | Concurrency | SQLite **WAL** helps readers; multiple writers still need care (single writer process, or serialize admin ingest). See concurrent smoke tests; prefer one admin writer. |
 | Go version | Module requires **Go 1.25+** — note for downstream consumers. |
-| Semantic index | V7 indexed `(root_name, term, chunk_id)` postings replace leading-wildcard vector scans. Query-time smooth IDF downweights ubiquitous terms; candidate IN-lists are capped (16 terms). Posting growth is bounded by 48 terms/chunk — use `Store.SemanticStats` to watch cardinality on large corpora. |
+| Semantic index | V7 indexed `(root_name, term, chunk_id)` postings replace leading-wildcard vector scans. Query-time smooth IDF downweights ubiquitous terms; posting candidate lookup drops terms with DF > 15% of the scoped corpus when rarer terms exist, scores vectors first, and hydrates only the final hit bodies. Candidate pool is `clamp(limit*25, 250, 1500)`. Posting growth is bounded by 48 terms/chunk — use `Store.SemanticStats` / `go run ./cmd/semscale`. |
 
 ## Database files
 
@@ -167,11 +167,31 @@ generic noise documents), semantic off/on both produced top-1 and top-3 symbol
 recall of 1.0, expected-source recall of 1.0, zero forbidden hits, and zero
 duplicate excerpts. Semantic search increased average estimated response size
 from 665.6 to 671.8 tokens and raised `reconnect-network-client` coverage from
-medium to high; median and p95 latency were 3 ms in both modes. On a local
-bench, multi-term semantic candidate lookup over ~800 chunks was ~7.6 ms/op
-versus ~3.2 ms/op for a short query over 250 chunks. Semantic search remains
-opt-in: seed recall is saturated, so the default stays FTS-only until a larger
-corpus shows a clear ranking win.
+medium to high; median and p95 latency were 3 ms in both modes. Semantic search
+remains opt-in: seed recall is saturated, so the default stays FTS-only until a
+larger corpus shows a clear ranking win.
+
+### Semantic scale (synthetic corpora)
+
+Use the offline harness (not part of the default test suite):
+
+```bash
+go run ./cmd/semscale -chunks 10000,100000,500000 -iters 12 -limit 20
+```
+
+Measured on this machine (query-side IDF, high-DF terms excluded from posting
+lookup, score on vectors then hydrate top hits; candidate pool capped at
+`max(250, min(1500, limit*25))` → 500 for `limit=20`):
+
+| Chunks | Semantic p50 | Semantic p95 | Dominant cost | Full SearchOpts+semantic p50 |
+|-------:|-------------:|-------------:|---------------|-----------------------------:|
+| 10k | 4.6 ms | 5.5 ms | posting + IDF | 30 ms |
+| 100k | 45 ms | 51 ms | IDF | 262 ms |
+| 500k | 223 ms | 240 ms | IDF (`COUNT` over postings) | 1.29 s |
+
+Scoring and body hydration stay cheap; at large scale, document-frequency
+aggregation dominates. A persisted DF table would be the next optimization if
+500k+ corpora become common.
 
 ## Typical ops loop
 

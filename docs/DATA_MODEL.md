@@ -78,8 +78,10 @@ stored once as a presence set. At query time, corpus document frequency from
 is IDF-weighted sparse cosine — **not** classic TF-IDF with per-chunk TF weights,
 embeddings, or a vector database. Semantic search remains opt-in
 (`-enable-semantic` or `semantic: true`) and supplements FTS rather than
-replacing it. Candidate lookup uses at most 16 most-discriminative query terms
-against the postings index; final scoring still uses the full query vector.
+replacing it. Candidate lookup uses the most discriminative query terms
+(high IDF; DF ≤ 15% of the scoped corpus when possible) against the postings
+index, scores sparse vectors without loading chunk bodies, then hydrates only
+the top hits; final scoring still uses the full query vector.
 
 The tokenizer splits identifiers on camelCase/PascalCase boundaries and
 underscores *before* lowercasing, keeping both the combined identifier and its

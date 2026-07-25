@@ -58,6 +58,18 @@ func TestTokenizeSemanticIdentifiers(t *testing.T) {
 	}
 }
 
+func TestSemanticCandidateLimitClamped(t *testing.T) {
+	if got := semanticCandidateLimit(1); got != minSemanticCandidates {
+		t.Fatalf("limit 1 -> %d want min %d", got, minSemanticCandidates)
+	}
+	if got := semanticCandidateLimit(20); got != 20*semanticCandidateMultiple {
+		t.Fatalf("limit 20 -> %d want %d", got, 20*semanticCandidateMultiple)
+	}
+	if got := semanticCandidateLimit(100); got != maxSemanticCandidates {
+		t.Fatalf("limit 100 -> %d want max %d", got, maxSemanticCandidates)
+	}
+}
+
 func TestIDFWeightDownranksCommonTerms(t *testing.T) {
 	if idfWeight(1000, 900) >= idfWeight(1000, 2) {
 		t.Fatal("rare terms must outrank common terms")
@@ -134,9 +146,20 @@ func TestSemanticStatsBoundedPerChunk(t *testing.T) {
 func TestSelectLookupTermsCapsByIDF(t *testing.T) {
 	terms := []string{"alpha", "beta", "common", "delta"}
 	idf := map[string]float64{"alpha": 3, "beta": 2, "common": 1.1, "delta": 4}
-	got := selectLookupTerms(terms, idf, 2)
+	df := map[string]int{"alpha": 5, "beta": 10, "common": 900, "delta": 2}
+	got := selectLookupTerms(terms, idf, df, 1000, 2)
 	if len(got) != 2 || got[0] != "alpha" || got[1] != "delta" {
 		t.Fatalf("selectLookupTerms=%v want [alpha delta]", got)
+	}
+}
+
+func TestSelectLookupTermsDropsHighDF(t *testing.T) {
+	terms := []string{"network", "retrypolicy"}
+	idf := map[string]float64{"network": 1.2, "retrypolicy": 4}
+	df := map[string]int{"network": 800, "retrypolicy": 20}
+	got := selectLookupTerms(terms, idf, df, 1000, 8)
+	if len(got) != 1 || got[0] != "retrypolicy" {
+		t.Fatalf("selectLookupTerms=%v want [retrypolicy]", got)
 	}
 }
 
@@ -423,17 +446,17 @@ func TestSemanticProductionCandidateQueryPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Mirror the production candidate subquery shape (GROUP BY / ORDER BY / LIMIT).
+	// Mirror the production candidate subquery shape (root-first, GROUP BY / ORDER BY / LIMIT).
 	assertPostingPlanUsesIndex(t, st, `
 		EXPLAIN QUERY PLAN
 		SELECT p.chunk_id
 		FROM chunk_term_postings p
-		WHERE p.term IN (?, ?)
-		  AND p.root_name IN (?)
+		WHERE p.root_name IN (?)
+		  AND p.term IN (?, ?)
 		GROUP BY p.chunk_id
 		ORDER BY COUNT(*) DESC, p.chunk_id
 		LIMIT ?`,
-		"reconnect", "retry", "example-network-sdk", 1000)
+		"example-network-sdk", "reconnect", "retry", 500)
 }
 
 func assertPostingPlanUsesIndex(t *testing.T, st *Store, sqlText string, args ...any) {
