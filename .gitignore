@@ -6,11 +6,12 @@
 /ingestcli.exe
 *.exe
 
-# End-user package: keep docs; ignore packed binaries and local DBs
+# End-user package: keep docs + helpers; ignore packed binaries and local DBs
 /dist/implcache-mcp
 /dist/implcache-mcp.exe
 /dist/ingestcli
 /dist/ingestcli.exe
+/dist/VERSION
 /dist/*.db
 /dist/*.db-wal
 /dist/*.db-shm

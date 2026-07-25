@@ -247,6 +247,18 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// FinalizeEmptyPackage checkpoints WAL and switches to DELETE journal so a
+// freshly created empty database can ship as a single .db file.
+func (s *Store) FinalizeEmptyPackage() error {
+	if _, err := s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		return fmt.Errorf("wal_checkpoint: %w", err)
+	}
+	if _, err := s.db.Exec(`PRAGMA journal_mode = DELETE`); err != nil {
+		return fmt.Errorf("journal_mode DELETE: %w", err)
+	}
+	return nil
+}
+
 // GetHashByURI returns the stored hash for a URI, or "" if missing.
 func (s *Store) GetHashByURI(ctx context.Context, uri string) (string, error) {
 	var hash string

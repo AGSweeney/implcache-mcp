@@ -14,10 +14,20 @@ ImplCache indexes your documentation, source trees, PDFs, mirrored web docs, and
 |------|---------|
 | `implcache-mcp` / `implcache-mcp.exe` | MCP server (stdio or HTTP) + optional Librarian UI |
 | `ingestcli` / `ingestcli.exe` | Offline tool to load large corpora into the database |
-| `docs/` | End-user documentation |
+| `implcache.db` | **Sanitized empty** starter database (schema only — no corpora) |
+| `docs/` | End-user documentation (includes Librarian screenshots) |
+| `VERSION` | Build identifier from the pack step |
+| `run-librarian.cmd` | Windows helper: start Librarian UI on `:8080` |
+| `run-agent.cmd` | Windows helper: start stdio MCP in agent mode |
 | `LICENSE` / `NOTICE` | License and third-party notices |
 
-If a binary is missing from this folder, obtain the release build for your platform and place it here (or wherever you prefer), then point your MCP client at that path.
+This folder is meant to be **self-contained**. After packing (or unzipping a release), you can run locally without cloning the source repository and without installing Go or Node.js.
+
+If a binary is missing, rebuild from a source checkout with:
+
+```powershell
+pwsh ./scripts/pack-dist.ps1
+```
 
 ---
 
@@ -32,35 +42,60 @@ If a binary is missing from this folder, obtain the release build for your platf
 |-------------|----------|
 | [docs/INGEST.md](docs/INGEST.md) | Loading docs, source, web, PDF, Git |
 | [docs/TOOLS.md](docs/TOOLS.md) | MCP tool reference |
-| [docs/LIBRARIAN.md](docs/LIBRARIAN.md) | Browser UI and REST API |
+| [docs/LIBRARIAN.md](docs/LIBRARIAN.md) | Browser UI, REST API, and screenshots |
 
 ---
 
-## Two common setups
+## Quick start (from this folder)
 
-**Coding agent (recommended daily use)** — stdio MCP, retrieval tools only:
+Create or open a database next to the binaries, then either:
+
+**Coding agent (stdio MCP)** — retrieval tools only:
 
 ```text
-implcache-mcp -db /absolute/path/to/implcache.db -mode agent
+./implcache-mcp -db ./implcache.db -mode agent
 ```
+
+Point Cursor (or another MCP client) at the absolute path of `implcache-mcp` with those args.
 
 **Librarian / corpus admin** — browser UI on loopback:
 
 ```text
-implcache-mcp -db /absolute/path/to/implcache.db -http :8080 ^
+./implcache-mcp -db ./implcache.db -http :8080 ^
   -enable-librarian -enable-http-mutations -mode admin
 ```
 
 Then open `http://127.0.0.1:8080/`.
 
+**Load corpora** (examples):
+
+```text
+./ingestcli -db ./implcache.db -mode markdown -root my-docs -path "C:/path/to/docs"
+./ingestcli -db ./implcache.db -mode project -root my-app -path "D:/work/my-app"
+```
+
+Suggested layout after first use:
+
+```text
+ImplCache/                 (this package)
+  implcache-mcp.exe
+  ingestcli.exe
+  docs/
+  LICENSE
+  NOTICE
+  VERSION
+  README.md
+  implcache.db             (empty starter; grows as you ingest)
+```
+
 ---
 
 ## Requirements
 
-- A release binary for your OS (Windows, macOS, or Linux)
-- For Git repository ingest: a system `git` on `PATH`
-- An MCP-capable client (e.g. Cursor) for agent use
-- Optional: a browser for the Librarian UI
+- The release binaries for your OS (Windows, macOS, or Linux) in this folder  
+- For Git repository ingest: a system `git` on `PATH`  
+- An MCP-capable client (e.g. Cursor) for agent use  
+- Optional: a browser for the Librarian UI  
 
 No Go toolchain, Node.js, or C compiler is required to **run** this package.
 

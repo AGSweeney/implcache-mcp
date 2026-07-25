@@ -6,7 +6,7 @@ ImplCache MCP is a local SQLite-backed implementation-context server for coding 
 
 **Users manual (source tree):** [docs/USERS_MANUAL.md](docs/USERS_MANUAL.md) · Full index: [docs/README.md](docs/README.md)
 
-**End-user package:** [dist/](dist/) — sanitized docs for binary installs; pack with `scripts/pack-dist.ps1`.
+**End-user package:** [dist/](dist/) — binaries, sanitized empty `implcache.db`, and docs for people who do not want to clone/build; pack with `scripts/pack-dist.ps1` (never copies a developer corpus).
 
 ---
 

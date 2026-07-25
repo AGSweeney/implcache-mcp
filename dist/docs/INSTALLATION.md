@@ -14,7 +14,7 @@ macOS:    /Users/you/Tools/ImplCache/
 Linux:    /home/you/tools/implcache/
 ```
 
-Suggested layout:
+Suggested layout (this release package already includes the binaries and docs):
 
 ```text
 ImplCache/
@@ -23,7 +23,9 @@ ImplCache/
   docs/
   LICENSE
   NOTICE
-  implcache.db         (created on first run / first ingest)
+  VERSION
+  README.md
+  implcache.db         (empty starter schema; ingest your corpora into it)
 ```
 
 Use **absolute paths** everywhere you configure Cursor or scripts. Relative paths break when the client’s working directory changes.
@@ -32,7 +34,9 @@ Use **absolute paths** everywhere you configure Cursor or scripts. Relative path
 
 ## 2. Place the binaries
 
-Copy `implcache-mcp` and `ingestcli` into the install directory.
+If you unzipped a full release package, the binaries are already next to this `docs/` folder — skip to [§3](#3-create-the-knowledge-database).
+
+Otherwise, copy `implcache-mcp` and `ingestcli` into the install directory.
 
 | Platform | Server binary | Ingest CLI |
 |----------|---------------|------------|
@@ -53,17 +57,17 @@ Check the reported version:
 
 ---
 
-## 3. Create the knowledge database
+## 3. Knowledge database
 
-The server creates `implcache.db` (and optional WAL sidecars) when you first open it:
+This release package includes a **sanitized empty** `implcache.db` (schema only — no vendor or project corpora). Point the server at it:
 
 ```bash
-./implcache-mcp -db ./implcache.db -version
-# or start briefly; Ctrl+C after it logs mode/tools
 ./implcache-mcp -db ./implcache.db -mode agent
 ```
 
-Prefer putting the database next to the binaries, or in a dedicated data directory you back up.
+If the file is missing, the server creates a new empty database at `-db` on first open.
+
+Prefer keeping the database next to the binaries, or in a dedicated data directory you back up. After you ingest your own corpora, back up that DB — it is not interchangeable with anyone else’s.
 
 **Important:** ImplCache is pre-1.0. The database schema is versioned. If a future release refuses an old database, delete `implcache.db` (and `implcache.db-wal` / `implcache.db-shm` if present) and re-ingest your corpora. There is no automatic migration.
 
