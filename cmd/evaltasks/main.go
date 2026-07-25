@@ -1,3 +1,6 @@
+// Copyright 2026 Adam G. Sweeney <agsweeney@gmail.com>. All rights reserved.
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file.
 // Command evaltasks runs a small retrieval evaluation harness for coding tasks.
 // It measures context size and symbol recall against a local implcache.db.
 package main

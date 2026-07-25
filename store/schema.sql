@@ -1,3 +1,7 @@
+-- Copyright 2026 Adam G. Sweeney <agsweeney@gmail.com>. All rights reserved.
+-- Use of this source code is governed by an MIT-style
+-- license that can be found in the LICENSE file.
+
 -- Schema mirror (applied via PRAGMA user_version migrations in migrate.go).
 -- Current: v2 (v1 tables + root indexes).
 

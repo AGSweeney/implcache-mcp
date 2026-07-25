@@ -212,4 +212,8 @@ Local corpora can lag vendor docs. Responses may set `coverage`, `freshness`, an
 
 ## License
 
-MIT
+MIT — Copyright (c) 2026 Adam G. Sweeney <agsweeney@gmail.com>.
+
+See [LICENSE](LICENSE) for the full text, [NOTICE](NOTICE) for third-party
+attribution (MCP Go SDK, SQLite, and modernc.org/sqlite), and
+[third_party/](third_party/) for upstream license copies.
