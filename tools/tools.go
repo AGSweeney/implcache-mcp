@@ -18,13 +18,42 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Register adds all knowledge tools to the server with default (permissive) options.
-func Register(server *mcp.Server, st *store.Store) {
-	RegisterWithOptions(server, st, Options{
+// AgentTools are registered in agent (default) mode.
+var AgentTools = []string{
+	"get_implementation_context",
+	"find_symbol",
+	"search_knowledge",
+	"get_document",
+	"list_roots",
+}
+
+// AdminOnlyTools are registered only in admin mode (or -enable-admin-tools).
+var AdminOnlyTools = []string{
+	"ingest_markdown",
+	"ingest_project",
+	"list_documents",
+	"delete_document",
+	"delete_by_uri_prefix",
+	"vomit",
+}
+
+// PlannedTools returns the tool names that RegisterWithOptions would expose.
+func PlannedTools(opt Options) []string {
+	names := append([]string{}, AgentTools...)
+	if opt.AdminEnabled() {
+		names = append(names, AdminOnlyTools...)
+	}
+	return names
+}
+
+// Register adds tools with admin mode enabled (legacy helper for tests/CLIs).
+func Register(server *mcp.Server, st *store.Store) []string {
+	return RegisterWithOptions(server, st, Options{
+		Mode:             ModeAdmin,
 		AllowIngest:      true,
 		AllowDelete:      true,
 		AllowOutputWrite: true,
-		OutputRoot:       "", // vomit uses its own default relative vomit/
+		OutputRoot:       "",
 		MaxResults:       store.DefaultSearchLimit,
 		MaxIngestFiles:   50000,
 		MaxDocumentBytes: 8 << 20,
@@ -32,7 +61,8 @@ func Register(server *mcp.Server, st *store.Store) {
 }
 
 // RegisterWithOptions registers tools with explicit safety/limit options.
-func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) {
+// Agent mode (default) omits administrative schemas entirely.
+func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []string {
 	if opt.MaxResults <= 0 {
 		opt.MaxResults = store.DefaultSearchLimit
 	}
@@ -51,6 +81,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) {
 	deny := func(action string) error {
 		return fmt.Errorf("%s disabled (read-only or permission flags)", action)
 	}
+	registered := PlannedTools(opt)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "get_implementation_context",
@@ -58,12 +89,20 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) {
 			"(APIs, sequence, examples, constraints, pitfalls) within a token budget. " +
 			"Prefer this over dumping search hits or full documents.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args implContextArgs) (*mcp.CallToolResult, implctx.Response, error) {
+		projectRoot := args.ProjectRoot
+		if strings.TrimSpace(projectRoot) == "" {
+			projectRoot = opt.DefaultProjectRoot
+		}
+		preferred := args.PreferredRoots
+		if len(preferred) == 0 {
+			preferred = append([]string{}, opt.DefaultPreferredRoots...)
+		}
 		res, err := implctx.Get(ctx, st, implctx.Request{
 			Task:             args.Task,
 			Language:         args.Language,
 			Technology:       args.Technology,
-			ProjectRoot:      args.ProjectRoot,
-			PreferredRoots:   args.PreferredRoots,
+			ProjectRoot:      projectRoot,
+			PreferredRoots:   preferred,
 			RootGroup:        args.RootGroup,
 			MaxContextTokens: args.MaxContextTokens,
 		})
@@ -84,13 +123,15 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "find_symbol",
-		Description: "Exact/near-exact symbol lookup (APIs, functions, types) within preferred roots",
+		Description: "Symbol lookup with staged exact/normalized/qualified/prefix/suffix matching within preferred roots",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args findSymbolArgs) (*mcp.CallToolResult, findSymbolResult, error) {
 		var roots []string
 		if r := strings.TrimSpace(args.RootName); r != "" {
 			roots = []string{r}
 		} else if len(args.PreferredRoots) > 0 {
 			roots = args.PreferredRoots
+		} else if len(opt.DefaultPreferredRoots) > 0 {
+			roots = opt.DefaultPreferredRoots
 		}
 		limit := args.Limit
 		if limit <= 0 {
@@ -105,44 +146,48 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) {
 		return textResult(string(payload)), out, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "ingest_markdown",
-		Description: "Ingest Markdown or HTML (HTML→Markdown) from a file or directory using portable project://{rootName}/{rel} URIs",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, args ingestMarkdownArgs) (*mcp.CallToolResult, ingest.MarkdownResult, error) {
-		if !opt.AllowIngest {
-			return nil, ingest.MarkdownResult{}, deny("ingest")
-		}
-		res, err := ingest.IngestMarkdownOpts(ctx, st, ingest.MarkdownOptions{
-			Path:             args.Path,
-			Recursive:        args.Recursive,
-			RootName:         args.RootName,
-			MaxFiles:         opt.MaxIngestFiles,
-			MaxDocumentBytes: opt.MaxDocumentBytes,
+	if !opt.AdminEnabled() {
+		// Agent retrieval tools continue below; admin tools are not registered.
+	} else {
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "ingest_markdown",
+			Description: "Ingest Markdown or HTML (HTML→Markdown) from a file or directory using portable project://{rootName}/{rel} URIs",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args ingestMarkdownArgs) (*mcp.CallToolResult, ingest.MarkdownResult, error) {
+			if !opt.AllowIngest {
+				return nil, ingest.MarkdownResult{}, deny("ingest")
+			}
+			res, err := ingest.IngestMarkdownOpts(ctx, st, ingest.MarkdownOptions{
+				Path:             args.Path,
+				Recursive:        args.Recursive,
+				RootName:         args.RootName,
+				MaxFiles:         opt.MaxIngestFiles,
+				MaxDocumentBytes: opt.MaxDocumentBytes,
+			})
+			if err != nil {
+				return nil, ingest.MarkdownResult{}, err
+			}
+			return textResult(fmt.Sprintf("root=%s ingested=%d skipped=%d errors=%d", res.RootName, res.Ingested, res.Skipped, len(res.Errors))), *res, nil
 		})
-		if err != nil {
-			return nil, ingest.MarkdownResult{}, err
-		}
-		return textResult(fmt.Sprintf("root=%s ingested=%d skipped=%d errors=%d", res.RootName, res.Ingested, res.Skipped, len(res.Errors))), *res, nil
-	})
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "ingest_project",
-		Description: "Walk a project source tree and ingest text-like files (project:// URIs)",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, args ingestProjectArgs) (*mcp.CallToolResult, ingest.ProjectResult, error) {
-		if !opt.AllowIngest {
-			return nil, ingest.ProjectResult{}, deny("ingest")
-		}
-		res, err := ingest.IngestProjectOpts(ctx, st, ingest.ProjectOptions{
-			Path:             args.Path,
-			RootName:         args.RootName,
-			MaxFiles:         opt.MaxIngestFiles,
-			MaxDocumentBytes: opt.MaxDocumentBytes,
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "ingest_project",
+			Description: "Walk a project source tree and ingest text-like files (project:// URIs)",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args ingestProjectArgs) (*mcp.CallToolResult, ingest.ProjectResult, error) {
+			if !opt.AllowIngest {
+				return nil, ingest.ProjectResult{}, deny("ingest")
+			}
+			res, err := ingest.IngestProjectOpts(ctx, st, ingest.ProjectOptions{
+				Path:             args.Path,
+				RootName:         args.RootName,
+				MaxFiles:         opt.MaxIngestFiles,
+				MaxDocumentBytes: opt.MaxDocumentBytes,
+			})
+			if err != nil {
+				return nil, ingest.ProjectResult{}, err
+			}
+			return textResult(fmt.Sprintf("root=%s ingested=%d skipped=%d errors=%d", res.RootName, res.Ingested, res.Skipped, len(res.Errors))), *res, nil
 		})
-		if err != nil {
-			return nil, ingest.ProjectResult{}, err
-		}
-		return textResult(fmt.Sprintf("root=%s ingested=%d skipped=%d errors=%d", res.RootName, res.Ingested, res.Skipped, len(res.Errors))), *res, nil
-	})
+	}
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "search_knowledge",
@@ -219,21 +264,6 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) {
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "delete_by_uri_prefix",
-		Description: "Delete all documents whose URI starts with the given prefix (e.g. file:///)",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, args deletePrefixArgs) (*mcp.CallToolResult, deletePrefixResult, error) {
-		if !opt.AllowDelete {
-			return nil, deletePrefixResult{}, deny("delete")
-		}
-		n, err := st.DeleteDocumentsByURIPrefix(ctx, args.Prefix)
-		if err != nil {
-			return nil, deletePrefixResult{}, err
-		}
-		out := deletePrefixResult{Deleted: n, Prefix: args.Prefix}
-		return textResult(fmt.Sprintf("deleted=%d prefix=%s", n, args.Prefix)), out, nil
-	})
-
-	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_document",
 		Description: "Fetch a document by uri (project://…) or numeric id",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args getDocumentArgs) (*mcp.CallToolResult, documentResult, error) {
@@ -273,79 +303,98 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) {
 		return textResult(string(payload)), out, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_documents",
-		Description: "List ingested documents, optionally filtered by sourceType (markdown|source)",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, args listDocumentsArgs) (*mcp.CallToolResult, listDocumentsResult, error) {
-		docs, err := st.ListDocuments(ctx, args.SourceType)
-		if err != nil {
-			return nil, listDocumentsResult{}, err
-		}
-		out := listDocumentsResult{Documents: docs, Count: len(docs)}
-		b, _ := json.MarshalIndent(out, "", "  ")
-		return textResult(string(b)), out, nil
-	})
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "delete_document",
-		Description: "Delete a document and its chunks by uri",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, args deleteDocumentArgs) (*mcp.CallToolResult, deleteDocumentResult, error) {
-		if !opt.AllowDelete {
-			return nil, deleteDocumentResult{}, deny("delete")
-		}
-		ok, err := st.DeleteDocument(ctx, args.URI)
-		if err != nil {
-			return nil, deleteDocumentResult{}, err
-		}
-		out := deleteDocumentResult{Deleted: ok, URI: args.URI}
-		msg := "not found"
-		if ok {
-			msg = "deleted"
-		}
-		return textResult(msg), out, nil
-	})
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name: "vomit",
-		Description: "Compile a source-grounded implementation recipe/playbook from local knowledge. " +
-			"Returns body to the agent; optionally writes under -output-root and/or saves as a generated knowledge_entry. " +
-			"Generated recipes keep source lineage and are ranked below human-reviewed recipes.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, args vomitArgs) (*mcp.CallToolResult, vomit.Result, error) {
-		if !opt.AllowOutputWrite && !args.ReturnBody && !args.SaveRecipe {
-			return nil, vomit.Result{}, deny("vomit filesystem output")
-		}
-		var roots []string
-		if r := strings.TrimSpace(args.RootName); r != "" {
-			roots = []string{r}
-		}
-		res, err := vomit.Generate(ctx, st, vomit.Request{
-			Subject:          args.Subject,
-			OutPath:          args.OutPath,
-			Limit:            args.Limit,
-			MaxCharsPerDoc:   args.MaxCharsPerDoc,
-			RootNames:        roots,
-			OutputRoot:       opt.OutputRoot,
-			AllowWrite:       opt.AllowOutputWrite,
-			ReturnBody:       true, // always return recipe body to the agent
-			MaxPlaybookBytes: 2 << 20,
-			SaveRecipe:       args.SaveRecipe,
-			Technology:       args.Technology,
-			Language:         args.Language,
-		})
-		if err != nil {
-			var need *store.ErrNeedsRoot
-			if asNeedsRoot(err, &need) {
-				payload, _ := json.MarshalIndent(need.Inference, "", "  ")
-				return &mcp.CallToolResult{
-					Content: []mcp.Content{&mcp.TextContent{Text: string(payload)}},
-					IsError: true,
-				}, vomit.Result{}, nil
+	if opt.AdminEnabled() {
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "delete_by_uri_prefix",
+			Description: "Delete all documents whose URI starts with the given prefix (e.g. file:///)",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args deletePrefixArgs) (*mcp.CallToolResult, deletePrefixResult, error) {
+			if !opt.AllowDelete {
+				return nil, deletePrefixResult{}, deny("delete")
 			}
-			return nil, vomit.Result{}, err
-		}
-		payload, _ := json.MarshalIndent(res, "", "  ")
-		return textResult(string(payload)), *res, nil
-	})
+			n, err := st.DeleteDocumentsByURIPrefix(ctx, args.Prefix)
+			if err != nil {
+				return nil, deletePrefixResult{}, err
+			}
+			out := deletePrefixResult{Deleted: n, Prefix: args.Prefix}
+			return textResult(fmt.Sprintf("deleted=%d prefix=%s", n, args.Prefix)), out, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "list_documents",
+			Description: "List ingested documents, optionally filtered by sourceType (markdown|source)",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args listDocumentsArgs) (*mcp.CallToolResult, listDocumentsResult, error) {
+			docs, err := st.ListDocuments(ctx, args.SourceType)
+			if err != nil {
+				return nil, listDocumentsResult{}, err
+			}
+			out := listDocumentsResult{Documents: docs, Count: len(docs)}
+			b, _ := json.MarshalIndent(out, "", "  ")
+			return textResult(string(b)), out, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "delete_document",
+			Description: "Delete a document and its chunks by uri",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args deleteDocumentArgs) (*mcp.CallToolResult, deleteDocumentResult, error) {
+			if !opt.AllowDelete {
+				return nil, deleteDocumentResult{}, deny("delete")
+			}
+			ok, err := st.DeleteDocument(ctx, args.URI)
+			if err != nil {
+				return nil, deleteDocumentResult{}, err
+			}
+			out := deleteDocumentResult{Deleted: ok, URI: args.URI}
+			msg := "not found"
+			if ok {
+				msg = "deleted"
+			}
+			return textResult(msg), out, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name: "vomit",
+			Description: "Compile a source-grounded implementation recipe/playbook from local knowledge. " +
+				"Returns body to the agent; optionally writes under -output-root and/or saves as a generated knowledge_entry. " +
+				"Generated recipes keep source lineage and are ranked below human-reviewed recipes.",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args vomitArgs) (*mcp.CallToolResult, vomit.Result, error) {
+			if !opt.AllowOutputWrite && !args.ReturnBody && !args.SaveRecipe {
+				return nil, vomit.Result{}, deny("vomit filesystem output")
+			}
+			var roots []string
+			if r := strings.TrimSpace(args.RootName); r != "" {
+				roots = []string{r}
+			}
+			res, err := vomit.Generate(ctx, st, vomit.Request{
+				Subject:          args.Subject,
+				OutPath:          args.OutPath,
+				Limit:            args.Limit,
+				MaxCharsPerDoc:   args.MaxCharsPerDoc,
+				RootNames:        roots,
+				OutputRoot:       opt.OutputRoot,
+				AllowWrite:       opt.AllowOutputWrite,
+				ReturnBody:       true, // always return recipe body to the agent
+				MaxPlaybookBytes: 2 << 20,
+				SaveRecipe:       args.SaveRecipe,
+				Technology:       args.Technology,
+				Language:         args.Language,
+			})
+			if err != nil {
+				var need *store.ErrNeedsRoot
+				if asNeedsRoot(err, &need) {
+					payload, _ := json.MarshalIndent(need.Inference, "", "  ")
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: string(payload)}},
+						IsError: true,
+					}, vomit.Result{}, nil
+				}
+				return nil, vomit.Result{}, err
+			}
+			payload, _ := json.MarshalIndent(res, "", "  ")
+			return textResult(string(payload)), *res, nil
+		})
+	}
+
+	return registered
 }
 
 func asNeedsRoot(err error, target **store.ErrNeedsRoot) bool {
@@ -360,9 +409,9 @@ func asNeedsRoot(err error, target **store.ErrNeedsRoot) bool {
 }
 
 type implContextArgs struct {
-	Task             string   `json:"task" jsonschema:"Coding task, e.g. register a menubar pushbutton"`
+	Task             string   `json:"task" jsonschema:"Coding task, e.g. register a plugin command handler"`
 	Language         string   `json:"language,omitempty" jsonschema:"Language hint (C, C++, Go, …)"`
-	Technology       string   `json:"technology,omitempty" jsonschema:"Platform/library hint (Creo TOOLKIT, NetBurner, …)"`
+	Technology       string   `json:"technology,omitempty" jsonschema:"Platform/library hint (Example Plugin SDK, …)"`
 	ProjectRoot      string   `json:"projectRoot,omitempty" jsonschema:"Preferred current-project knowledge root"`
 	PreferredRoots   []string `json:"preferredRoots,omitempty" jsonschema:"Ordered knowledge roots to search"`
 	RootGroup        string   `json:"rootGroup,omitempty" jsonschema:"Named root group with priorities"`
@@ -370,7 +419,7 @@ type implContextArgs struct {
 }
 
 type findSymbolArgs struct {
-	Name           string   `json:"name" jsonschema:"Symbol or API name (e.g. ProCmdActionAdd)"`
+	Name           string   `json:"name" jsonschema:"Symbol or API name (e.g. RegisterHandler)"`
 	RootName       string   `json:"rootName,omitempty"`
 	PreferredRoots []string `json:"preferredRoots,omitempty"`
 	Limit          int      `json:"limit,omitempty"`
@@ -404,7 +453,7 @@ type ingestProjectArgs struct {
 type searchArgs struct {
 	Query    string `json:"query" jsonschema:"Full-text search query"`
 	Limit    int    `json:"limit,omitempty" jsonschema:"Max hits to return (default 20, max 100)"`
-	RootName string `json:"rootName,omitempty" jsonschema:"Optional knowledge root (e.g. ccw_help). If omitted, inferred from query; if ambiguous, tool asks you to choose."`
+	RootName string `json:"rootName,omitempty" jsonschema:"Optional knowledge root (e.g. example-device-sdk). If omitted, inferred from query; if ambiguous, tool asks you to choose."`
 }
 
 type searchResult struct {
@@ -453,11 +502,11 @@ type deleteDocumentResult struct {
 }
 
 type vomitArgs struct {
-	Subject        string `json:"subject" jsonschema:"Subject to research (e.g. user_initialize menubar pushbutton)"`
+	Subject        string `json:"subject" jsonschema:"Subject to research (e.g. RegisterHandler initialization sequence)"`
 	OutPath        string `json:"outPath,omitempty" jsonschema:"Relative path under the server output root (default: {slug}.md)"`
 	Limit          int    `json:"limit,omitempty" jsonschema:"Max documents to cite (default 8, max 20)"`
 	MaxCharsPerDoc int    `json:"maxCharsPerDoc,omitempty" jsonschema:"Soft scan budget per source body (default 12000)"`
-	RootName       string `json:"rootName,omitempty" jsonschema:"Optional knowledge root (e.g. ccw_help). If omitted, inferred from subject; if ambiguous, tool asks you to choose."`
+	RootName       string `json:"rootName,omitempty" jsonschema:"Optional knowledge root (e.g. example-plugin-sdk). If omitted, inferred from subject; if ambiguous, tool asks you to choose."`
 	ReturnBody     bool   `json:"returnBody,omitempty" jsonschema:"Deprecated: body is always returned"`
 	SaveRecipe     bool   `json:"saveRecipe,omitempty" jsonschema:"Persist as a generated knowledge_entry with source lineage"`
 	Technology     string `json:"technology,omitempty"`

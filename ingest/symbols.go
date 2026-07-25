@@ -13,9 +13,10 @@ import (
 )
 
 var (
-	reGoFunc    = regexp.MustCompile(`(?m)^func\s+(?:\([^)]+\)\s+)?([A-Z][A-Za-z0-9_]*)\s*\(`)
-	reCFunc     = regexp.MustCompile(`(?m)^(?:static\s+|extern\s+|inline\s+)*[A-Za-z_][\w\s\*]+\s+([A-Za-z_][\w]*)\s*\([^;]*\)\s*\{`)
-	reProAPI    = regexp.MustCompile(`\b(Pro[A-Z][A-Za-z0-9_]{3,})\s*\(`)
+	reGoFunc = regexp.MustCompile(`(?m)^func\s+(?:\([^)]+\)\s+)?([A-Z][A-Za-z0-9_]*)\s*\(`)
+	reCFunc  = regexp.MustCompile(`(?m)^(?:static\s+|extern\s+|inline\s+)*[A-Za-z_][\w\s\*]+\s+([A-Za-z_][\w]*)\s*\([^;]*\)\s*\{`)
+	// Demo / SDK-style API calls (PascalCase helpers used in fixtures and samples).
+	reDemoAPI   = regexp.MustCompile(`\b((?:RegisterHandler|RegisterCommand|AddMenuItem|SpiTransfer|RetryPolicy|Client\.Connect)[A-Za-z0-9_]*)\s*\(`)
 	reInclude   = regexp.MustCompile(`(?m)^#\s*include\s*[<"]([^>"]+)[>"]`)
 	reClassLike = regexp.MustCompile(`(?m)^(?:class|struct|interface)\s+([A-Za-z_][\w]*)`)
 )
@@ -49,7 +50,7 @@ func ExtractSymbols(path string, body string) []store.SymbolInput {
 			line := 1 + strings.Count(body[:m[2]], "\n")
 			add(name, "function", strings.TrimSpace(lineAt(lines, line)), line)
 		}
-		for _, m := range reProAPI.FindAllStringSubmatchIndex(body, -1) {
+		for _, m := range reDemoAPI.FindAllStringSubmatchIndex(body, -1) {
 			name := body[m[2]:m[3]]
 			line := 1 + strings.Count(body[:m[2]], "\n")
 			add(name, "api", name+"()", line)
@@ -60,7 +61,7 @@ func ExtractSymbols(path string, body string) []store.SymbolInput {
 			add(name, "type", strings.TrimSpace(lineAt(lines, line)), line)
 		}
 	default:
-		for _, m := range reProAPI.FindAllStringSubmatchIndex(body, -1) {
+		for _, m := range reDemoAPI.FindAllStringSubmatchIndex(body, -1) {
 			name := body[m[2]:m[3]]
 			line := 1 + strings.Count(body[:m[2]], "\n")
 			add(name, "api", name+"()", line)

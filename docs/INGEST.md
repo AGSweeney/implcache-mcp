@@ -17,7 +17,7 @@ Ingest loads files into SQLite as `documents` + `chunks` (+ `symbols` when extra
 - Walks a source tree for text-like files
 - Skips common junk dirs, binaries, and **symlinks**
 - Assigns `source_type=source`
-- Runs pragmatic symbol extraction (Go, C/C++, Pro\* APIs)
+- Runs pragmatic symbol extraction (Go, C/C++, demo SDK APIs)
 - Infers language and a best-effort authority
 
 ### Delete by prefix (CLI `-mode delete-prefix` / tool `delete_by_uri_prefix`)
@@ -30,7 +30,7 @@ Removes all documents whose URI starts with a given prefix (cascades chunks/symb
 go build -o ingestcli ./cmd/ingestcli
 
 # Documentation tree
-./ingestcli -db ./implcache.db -mode markdown -root ccw_help -path "C:/path/to/help"
+./ingestcli -db ./implcache.db -mode markdown -root example-control-app -path "C:/path/to/help"
 
 # Application sources
 ./ingestcli -db ./implcache.db -mode project -root my_app -path "D:/work/my_app"
@@ -63,9 +63,10 @@ Use stable, descriptive ids:
 
 | Example | Use |
 |---------|-----|
-| `ccw_help` | Rockwell / CCW help |
-| `creo_toolkit_help` | Creo TOOLKIT C docs |
-| `otk_cpp_doc` | Creo OTK C++ docs |
+| `example-control-app` | Control-app help corpus |
+| `example-device-sdk` | Device SDK C docs |
+| `example-plugin-sdk` | Plugin SDK C++ docs |
+| `example-network-sdk` | Network SDK docs |
 | `my_app` | Current project sources |
 
 Root names feed cue-based inference (`store/roots.go`). Add aliases there when you introduce a new long-lived corpus.
@@ -84,7 +85,7 @@ For each file:
 ## Tips
 
 - Ingest **project code** as its own root (`current_project` authority when inferred) so ranking prefers it.
-- Keep vendor help in separate roots; never mix CCW and Creo into one root.
+- Keep vendor help in separate roots; never mix example-control-app and example-device-sdk into one root.
 - Re-run ingest after vendor updates; hash skip makes repeats cheap.
 - Large corpora are fine; responses stay small via context budgets.
 - Symlinked trees are refused/skipped for safety.

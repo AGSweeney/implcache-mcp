@@ -1,0 +1,65 @@
+tasks:
+  - id: register-plugin-command
+    task: Add a custom command to an example desktop plugin.
+    technology: Example Plugin SDK
+    language: cpp
+    preferred_roots:
+      - example-plugin-app
+      - example-plugin-sdk
+    expected_symbols:
+      - RegisterCommand
+      - AddMenuItem
+    expected_sources:
+      - project://example-plugin-app/src/commands.cpp
+    forbidden_symbols:
+      - AddCommandAutomatically
+    max_context_tokens: 2200
+
+  - id: reconnect-network-client
+    task: Add reconnect and backoff handling to a network client.
+    technology: Example Networking SDK
+    language: cpp
+    preferred_roots:
+      - example-network-service
+      - example-network-sdk
+    expected_symbols:
+      - Connect
+      - Disconnect
+      - RetryPolicy
+    max_context_tokens: 2000
+
+  - id: add-database-migration
+    task: Add an atomic SQLite schema migration.
+    technology: SQLite
+    language: go
+    preferred_roots:
+      - example-database-tool
+      - sqlite-reference
+    expected_symbols:
+      - PRAGMA user_version
+      - BeginTx
+    max_context_tokens: 1800
+
+  - id: add-device-driver
+    task: Add an SPI GPIO-expander driver to an embedded application.
+    technology: Example Embedded SDK
+    language: cpp
+    preferred_roots:
+      - demo-embedded-project
+      - example-device-sdk
+    expected_symbols:
+      - SpiTransfer
+      - ConfigurePin
+    max_context_tokens: 2400
+
+  - id: add-mcp-tool
+    task: Add a new MCP tool to a Go server.
+    technology: Model Context Protocol
+    language: go
+    preferred_roots:
+      - example-mcp-server
+      - mcp-sdk-docs
+    expected_symbols:
+      - AddTool
+      - CallToolResult
+    max_context_tokens: 2000

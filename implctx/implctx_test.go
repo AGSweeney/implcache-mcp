@@ -27,14 +27,14 @@ func TestGetImplementationContextBudgeted(t *testing.T) {
 		Path: "menu.c", RootName: "demo", Authority: store.AuthorityOfficialExample,
 		Language: "c", Hash: "1",
 		Chunks: []store.Chunk{{
-			Heading:   "user_initialize",
-			Body:      "#include <ProMenuBar.h>\nint user_initialize(){\n  ProCmdActionAdd(\"App.Hello\", ...);\n  ProMenubarmenuPushbuttonAdd(...);\n  return 0;\n}\n",
+			Heading:   "RegisterHandler",
+			Body:      "#include <MenuBar.h>\nint RegisterHandler(){\n  RegisterCommand(\"App.Hello\", ...);\n  AddMenuItem(...);\n  return 0;\n}\n",
 			StartLine: 1, EndLine: 10,
 		}},
 		Symbols: []store.SymbolInput{
-			{Name: "ProCmdActionAdd", Kind: "api", Language: "c", StartLine: 3},
-			{Name: "ProMenubarmenuPushbuttonAdd", Kind: "api", Language: "c", StartLine: 4},
-			{Name: "user_initialize", Kind: "function", Language: "c", StartLine: 2},
+			{Name: "RegisterCommand", Kind: "api", Language: "c", StartLine: 3},
+			{Name: "AddMenuItem", Kind: "api", Language: "c", StartLine: 4},
+			{Name: "RegisterHandler", Kind: "function", Language: "c", StartLine: 2},
 		},
 	})
 	if err != nil {
@@ -42,9 +42,9 @@ func TestGetImplementationContextBudgeted(t *testing.T) {
 	}
 
 	res, err := Get(ctx, st, Request{
-		Task:             "user_initialize ProCmdActionAdd menubar pushbutton",
+		Task:             "RegisterHandler RegisterCommand menubar pushbutton",
 		Language:         "c",
-		Technology:       "Creo TOOLKIT",
+		Technology:       "example-device-sdk",
 		PreferredRoots:   []string{"demo"},
 		MaxContextTokens: 2000,
 	})
@@ -58,7 +58,7 @@ func TestGetImplementationContextBudgeted(t *testing.T) {
 		t.Fatal("expected citations")
 	}
 	joined := strings.Join(res.RequiredAPIs, " ")
-	if !strings.Contains(joined, "ProCmdActionAdd") {
+	if !strings.Contains(joined, "RegisterCommand") {
 		t.Fatalf("missing API in %v", res.RequiredAPIs)
 	}
 	if res.EstimatedTokens <= 0 || res.EstimatedTokens > 2500 {

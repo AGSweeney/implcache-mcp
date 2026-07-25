@@ -15,14 +15,14 @@ import (
 )
 
 func TestHTMLToMarkdownStripsChrome(t *testing.T) {
-	html := `<!doctype html><html><head><title>Core of a Creo Toolkit Application</title></head>
+	html := `<!doctype html><html><head><title>Core of an example-device-sdk Application</title></head>
 <body>
 <header id="wwconnect_header"><div class="ww_skin_breadcrumbs"><a href="x.html">User's Guide</a> &gt; Core</div>
 <div class="ww_skin_page_toolbar"><a href="#" title="Print"></a></div></header>
 <div id="page_content">
-  <div class="Heading_3">Core of a Creo Toolkit Application</div>
-  <div class="Body">A Creo TOOLKIT application must always contain user_initialize() and user_terminate().</div>
-  <div class="Body">user_initialize() must contain at least one Creo TOOLKIT API call.</div>
+  <div class="Heading_3">Core of an example-device-sdk Application</div>
+  <div class="Body">An example-device-sdk application must always contain RegisterHandler() and a matching shutdown hook.</div>
+  <div class="Body">RegisterHandler() must contain at least one example-device-sdk API call.</div>
 </div>
 </body></html>`
 
@@ -30,10 +30,10 @@ func TestHTMLToMarkdownStripsChrome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(md, "User's Guide") && strings.Contains(md, "](") && !strings.Contains(md, "user_initialize") {
+	if strings.Contains(md, "User's Guide") && strings.Contains(md, "](") && !strings.Contains(md, "RegisterHandler") {
 		t.Fatalf("still chrome-dominated: %q", md)
 	}
-	if !strings.Contains(md, "user_initialize") {
+	if !strings.Contains(md, "RegisterHandler") {
 		t.Fatalf("missing prose: %q", md)
 	}
 	if strings.Contains(md, "[](") {
@@ -44,7 +44,7 @@ func TestHTMLToMarkdownStripsChrome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if doc.Title != "Core of a Creo Toolkit Application" {
+	if doc.Title != "Core of an example-device-sdk Application" {
 		t.Fatalf("title=%q", doc.Title)
 	}
 }
@@ -54,34 +54,34 @@ func TestShouldSkipHelpPath(t *testing.T) {
 		t.Fatal("expected skip connect")
 	}
 	if !ShouldSkipHelpPath(`/online_help/creo_toolkit.html`) {
-		t.Fatal("expected skip TOC")
+		t.Fatal("expected skip TOC shell")
 	}
 	if ShouldSkipHelpPath(`/online_help/creo_toolkit/user_guide/Core.html`) {
 		t.Fatal("should not skip real guide page")
 	}
-	if !ShouldSkipHelpPath(`C:\Rockwell\Help\CCW\Common\1033\mft\jquery\jquery.js`) {
-		t.Fatal("expected skip CCW mft assets")
+	if !ShouldSkipHelpPath(`C:\Help\Vendor\Common\1033\mft\jquery\jquery.js`) {
+		t.Fatal("expected skip mft assets")
 	}
-	if !ShouldSkipHelpPath(`/CCW/Common/1033/index.htm`) {
-		t.Fatal("expected skip CCW index shell")
+	if !ShouldSkipHelpPath(`/Help/Common/1033/index.htm`) {
+		t.Fatal("expected skip index shell")
 	}
-	if ShouldSkipHelpPath(`/CCW/Common/1033/101790.htm`) {
-		t.Fatal("should not skip CCW topic page")
+	if ShouldSkipHelpPath(`/Help/Common/1033/101790.htm`) {
+		t.Fatal("should not skip topic page")
 	}
 }
 
-func TestCCWHTMLToMarkdown(t *testing.T) {
+func TestControlAppHTMLToMarkdown(t *testing.T) {
 	html := `<!doctype html><html><head><title> Instruction blocks in FBD programs </title></head>
 <body>
-<div id="page_header"><p class="breadcrumbs"><a href="a.htm">Micro800</a> &gt; FBD</p>
+<div id="page_header"><p class="breadcrumbs"><a href="a.htm">DemoController</a> &gt; FBD</p>
 <form id="search_form"><input id="keyword"></form></div>
 <div id="content_section">
 <table class="relatedtopics aboveheading"><tr><td><a href="toc1.htm"><img src="122.gif" alt="Book Contents"></a></td></tr></table>
 <h1>Instruction blocks in FBD programs</h1>
-<p>The Connected Components Workbench instruction set includes IEC 61131-3 compliant instruction blocks.</p>
+<p>The example-control-app instruction set includes IEC 61131-3 compliant instruction blocks.</p>
 </div>
 <div id="related_and_nav_column"><div id="TOCBoxContents"></div></div>
-<div id="page_footer">Copyright c 2025 Rockwell Automation</div>
+<div id="page_footer">Copyright c 2025 Example Automation Demo</div>
 </body></html>`
 
 	doc, err := ContentForDocIngest("101790.htm", []byte(html))

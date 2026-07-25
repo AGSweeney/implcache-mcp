@@ -13,7 +13,6 @@
 implcache.db*
 
 # Generated playbooks (default -output-root)
-/vomit/
 /vomit-output/
 /*.md.bak
 /REVIEW.local.md

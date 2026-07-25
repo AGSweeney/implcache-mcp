@@ -7,28 +7,74 @@ package store
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"unicode"
 )
 
+// Match type labels for symbol lookup (deterministic retrieval stages).
+const (
+	MatchExactCanonical   = "exact"
+	MatchExactNormalized  = "exact_normalized"
+	MatchExactQualified   = "exact_qualified"
+	MatchExactUnqualified = "exact_unqualified"
+	MatchPrefix           = "prefix"
+	MatchSuffix           = "suffix"
+	MatchToken            = "token"
+)
+
 // Symbol is a stored code symbol.
 type Symbol struct {
-	ID         int64  `json:"id"`
-	DocumentID int64  `json:"documentId"`
-	RootName   string `json:"rootName"`
-	Name       string `json:"name"`
-	NameNorm   string `json:"nameNorm"`
-	Kind       string `json:"kind"`
-	Language   string `json:"language"`
-	Signature  string `json:"signature"`
-	StartLine  int    `json:"startLine"`
-	EndLine    int    `json:"endLine"`
-	URI        string `json:"uri,omitempty"`
-	Title      string `json:"title,omitempty"`
-	Authority  string `json:"authority,omitempty"`
+	ID              int64   `json:"id"`
+	DocumentID      int64   `json:"documentId"`
+	RootName        string  `json:"rootName"`
+	Name            string  `json:"name"`
+	QualifiedName   string  `json:"qualifiedName,omitempty"`
+	UnqualifiedName string  `json:"unqualifiedName,omitempty"`
+	NameNorm        string  `json:"nameNorm"`
+	Kind            string  `json:"kind,omitempty"`
+	Language        string  `json:"language,omitempty"`
+	Namespace       string  `json:"namespace,omitempty"`
+	Signature       string  `json:"signature,omitempty"`
+	SignatureNorm   string  `json:"signatureNorm,omitempty"`
+	StartLine       int     `json:"startLine,omitempty"`
+	EndLine         int     `json:"endLine,omitempty"`
+	URI             string  `json:"uri,omitempty"`
+	Title           string  `json:"title,omitempty"`
+	Authority       string  `json:"authority,omitempty"`
+	MatchType       string  `json:"matchType,omitempty"`
+	Confidence      float64 `json:"confidence,omitempty"`
 }
 
-// NormalizeSymbol lowercases and strips trivial call punctuation for lookup.
+// SymbolForms holds searchable forms derived from a displayed symbol name.
+type SymbolForms struct {
+	Name            string
+	QualifiedName   string
+	UnqualifiedName string
+	Namespace       string
+	NameNorm        string
+	SignatureNorm   string
+}
+
+// DeriveSymbolForms preserves the original spelling and adds alternate lookup keys.
+func DeriveSymbolForms(name, signature string) SymbolForms {
+	name = strings.TrimSpace(name)
+	sig := strings.TrimSpace(signature)
+	qual := name
+	unqual := UnqualifiedSymbol(name)
+	ns := NamespaceOfSymbol(name)
+	return SymbolForms{
+		Name:            name,
+		QualifiedName:   qual,
+		UnqualifiedName: unqual,
+		Namespace:       ns,
+		NameNorm:        NormalizeSymbol(name),
+		SignatureNorm:   NormalizeSymbol(sig),
+	}
+}
+
+// NormalizeSymbol lowercases and strips whitespace / trailing () for lookup keys.
+// It does not remove :: . _ # <> [] punctuation that distinguishes symbols.
 func NormalizeSymbol(name string) string {
 	name = strings.TrimSpace(name)
 	name = strings.TrimSuffix(name, "()")
@@ -46,9 +92,45 @@ func NormalizeSymbol(name string) string {
 	return b.String()
 }
 
-// FindSymbols looks up symbols by exact normalized name within optional roots.
+// UnqualifiedSymbol returns the rightmost identifier segment.
+func UnqualifiedSymbol(name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.TrimSuffix(name, "()")
+	if name == "" {
+		return ""
+	}
+	if i := strings.LastIndex(name, "::"); i >= 0 {
+		return name[i+2:]
+	}
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		return name[i+1:]
+	}
+	if i := strings.LastIndex(name, "#"); i >= 0 {
+		return name[i+1:]
+	}
+	return name
+}
+
+// NamespaceOfSymbol returns the qualifier prefix, if any.
+func NamespaceOfSymbol(name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.TrimSuffix(name, "()")
+	if i := strings.LastIndex(name, "::"); i >= 0 {
+		return name[:i]
+	}
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		return name[:i]
+	}
+	if i := strings.LastIndex(name, "#"); i >= 0 {
+		return name[:i]
+	}
+	return ""
+}
+
+// FindSymbols looks up symbols with staged exact → qualified → prefix/suffix matching.
 func (s *Store) FindSymbols(ctx context.Context, name string, roots []string, limit int) ([]Symbol, error) {
-	norm := NormalizeSymbol(name)
+	raw := strings.TrimSpace(name)
+	norm := NormalizeSymbol(raw)
 	if norm == "" {
 		return nil, fmt.Errorf("symbol name is required")
 	}
@@ -58,15 +140,94 @@ func (s *Store) FindSymbols(ctx context.Context, name string, roots []string, li
 	if limit > 100 {
 		limit = 100
 	}
+	unqual := NormalizeSymbol(UnqualifiedSymbol(raw))
+	qualNorm := NormalizeSymbol(raw)
 
-	q := `
-		SELECT s.id, s.document_id, s.root_name, s.name, s.name_norm, s.kind, s.language,
-		       s.signature, s.start_line, s.end_line,
+	type stage struct {
+		matchType  string
+		confidence float64
+		where      string
+		arg        string
+	}
+	stages := []stage{
+		{MatchExactNormalized, 1.0, `s.name_norm = ?`, norm},
+		{MatchExactQualified, 0.98, `LOWER(s.qualified_name) = ? OR s.name_norm = ?`, qualNorm},
+		{MatchExactUnqualified, 0.92, `LOWER(s.unqualified_name) = ? OR s.name_norm = ?`, unqual},
+		{MatchPrefix, 0.75, `s.name_norm LIKE ? ESCAPE '\'`, escapeLike(norm) + `%`},
+		{MatchSuffix, 0.7, `s.name_norm LIKE ? ESCAPE '\'`, `%` + escapeLike(unqual)},
+		{MatchToken, 0.55, `s.name_norm LIKE ? ESCAPE '\'`, `%` + escapeLike(unqual) + `%`},
+	}
+
+	seen := map[int64]struct{}{}
+	var out []Symbol
+	for _, stg := range stages {
+		if len(out) >= limit {
+			break
+		}
+		// Skip redundant stages when query has no qualifier.
+		if stg.matchType == MatchExactQualified && NamespaceOfSymbol(raw) == "" && !strings.ContainsAny(raw, ".#") {
+			continue
+		}
+		if (stg.matchType == MatchSuffix || stg.matchType == MatchToken) && len(unqual) < 3 {
+			continue
+		}
+		remain := limit - len(out)
+		syms, err := s.querySymbols(ctx, stg.where, stg.arg, roots, remain*2, stg.matchType, stg.confidence)
+		if err != nil {
+			return nil, err
+		}
+		for _, sym := range syms {
+			if _, ok := seen[sym.ID]; ok {
+				continue
+			}
+			// Prefix/suffix/token: require the unqualified needle to appear.
+			if stg.matchType == MatchPrefix || stg.matchType == MatchSuffix || stg.matchType == MatchToken {
+				if !strings.Contains(sym.NameNorm, unqual) && sym.NameNorm != norm {
+					continue
+				}
+			}
+			if stg.matchType == MatchExactNormalized && sym.Name == raw {
+				sym.MatchType = MatchExactCanonical
+				sym.Confidence = 1.0
+			}
+			seen[sym.ID] = struct{}{}
+			out = append(out, sym)
+			if len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) querySymbols(ctx context.Context, where, arg string, roots []string, limit int, matchType string, conf float64) ([]Symbol, error) {
+	// Special-case exact_qualified / exact_unqualified which use two placeholders.
+	var q string
+	var args []any
+	switch matchType {
+	case MatchExactQualified, MatchExactUnqualified:
+		q = `
+		SELECT s.id, s.document_id, s.root_name, s.name, COALESCE(s.qualified_name, ''),
+		       COALESCE(s.unqualified_name, ''), s.name_norm, s.kind, s.language,
+		       COALESCE(s.namespace, ''), s.signature, COALESCE(s.signature_norm, ''),
+		       s.start_line, s.end_line,
 		       d.uri, d.title, COALESCE(d.authority, 'unknown')
 		FROM symbols s
 		JOIN documents d ON d.id = s.document_id
-		WHERE s.name_norm = ?`
-	args := []any{norm}
+		WHERE (` + where + `)`
+		args = []any{arg, arg}
+	default:
+		q = `
+		SELECT s.id, s.document_id, s.root_name, s.name, COALESCE(s.qualified_name, ''),
+		       COALESCE(s.unqualified_name, ''), s.name_norm, s.kind, s.language,
+		       COALESCE(s.namespace, ''), s.signature, COALESCE(s.signature_norm, ''),
+		       s.start_line, s.end_line,
+		       d.uri, d.title, COALESCE(d.authority, 'unknown')
+		FROM symbols s
+		JOIN documents d ON d.id = s.document_id
+		WHERE ` + where
+		args = []any{arg}
+	}
 	if len(roots) > 0 {
 		ph := make([]string, len(roots))
 		for i, r := range roots {
@@ -81,7 +242,7 @@ func (s *Store) FindSymbols(ctx context.Context, name string, roots []string, li
 		WHEN 'curated_internal_recipe' THEN 2
 		WHEN 'official_example' THEN 3
 		WHEN 'official_documentation' THEN 4
-		ELSE 9 END, s.start_line
+		ELSE 9 END, COALESCE(d.archived, 0), s.start_line
 		LIMIT ?`
 	args = append(args, limit)
 
@@ -95,12 +256,22 @@ func (s *Store) FindSymbols(ctx context.Context, name string, roots []string, li
 	for rows.Next() {
 		var sym Symbol
 		if err := rows.Scan(
-			&sym.ID, &sym.DocumentID, &sym.RootName, &sym.Name, &sym.NameNorm, &sym.Kind, &sym.Language,
-			&sym.Signature, &sym.StartLine, &sym.EndLine, &sym.URI, &sym.Title, &sym.Authority,
+			&sym.ID, &sym.DocumentID, &sym.RootName, &sym.Name, &sym.QualifiedName,
+			&sym.UnqualifiedName, &sym.NameNorm, &sym.Kind, &sym.Language,
+			&sym.Namespace, &sym.Signature, &sym.SignatureNorm,
+			&sym.StartLine, &sym.EndLine, &sym.URI, &sym.Title, &sym.Authority,
 		); err != nil {
 			return nil, err
 		}
+		sym.MatchType = matchType
+		sym.Confidence = conf
 		out = append(out, sym)
 	}
 	return out, rows.Err()
+}
+
+// BasenamePath returns the final path segment using slash or OS separators.
+func BasenamePath(p string) string {
+	p = strings.ReplaceAll(p, `\`, `/`)
+	return filepath.Base(p)
 }

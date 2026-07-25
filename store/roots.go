@@ -13,74 +13,64 @@ import (
 
 // RootInference is the result of resolving which knowledge root(s) to search.
 type RootInference struct {
-	// Roots to search when NeedsChoice is false.
-	Roots []string `json:"roots,omitempty"`
-	// NeedsChoice means the caller should ask the user to pick a rootName.
-	NeedsChoice bool `json:"needsChoice"`
-	// Message is a human/agent-facing prompt when NeedsChoice is true.
-	Message string `json:"message,omitempty"`
-	// AvailableRoots are distinct root_name values present in the DB.
+	Roots          []string `json:"roots,omitempty"`
+	NeedsChoice    bool     `json:"needsChoice"`
+	Message        string   `json:"message,omitempty"`
 	AvailableRoots []string `json:"availableRoots,omitempty"`
-	// MatchedHints explains which context cues fired (debug / UI).
-	MatchedHints []string `json:"matchedHints,omitempty"`
+	MatchedHints   []string `json:"matchedHints,omitempty"`
 }
 
 // rootAlias maps a lowercase cue to preferred root names (intersected with DB).
-// More specific cues should win when we score.
+// Sanitized demo corpora only — add production aliases via the aliases table.
 var rootAliases = []struct {
 	cue    string
 	roots  []string
 	weight int
 }{
-	// Explicit root ids
-	{"ccw_help", []string{"ccw_help"}, 100},
-	{"creo_toolkit_help", []string{"creo_toolkit_help"}, 100},
-	{"otk_cpp_doc", []string{"otk_cpp_doc"}, 100},
-	{"project://ccw_help", []string{"ccw_help"}, 100},
-	{"project://creo_toolkit_help", []string{"creo_toolkit_help"}, 100},
-	{"project://otk_cpp_doc", []string{"otk_cpp_doc"}, 100},
-	{"project://otk/", []string{"otk"}, 100},
+	{"example-device-sdk", []string{"example-device-sdk"}, 100},
+	{"example-control-app", []string{"example-control-app"}, 100},
+	{"example-plugin-sdk", []string{"example-plugin-sdk"}, 100},
+	{"example-network-sdk", []string{"example-network-sdk"}, 100},
+	{"demo-embedded-project", []string{"demo-embedded-project"}, 100},
+	{"example-database-tool", []string{"example-database-tool"}, 100},
+	{"sqlite-reference", []string{"sqlite-reference"}, 100},
 
-	// CCW / Rockwell
-	{"connected components workbench", []string{"ccw_help"}, 90},
-	{"connected components", []string{"ccw_help"}, 80},
-	{"micro800", []string{"ccw_help"}, 90},
-	{"panelview", []string{"ccw_help"}, 70},
-	{"rockwell", []string{"ccw_help"}, 60},
-	{"ccw", []string{"ccw_help"}, 85},
+	{"device sdk", []string{"example-device-sdk"}, 80},
+	{"gpio expander", []string{"example-device-sdk", "demo-embedded-project"}, 85},
+	{"spitransfer", []string{"example-device-sdk"}, 80},
+	{"configurepin", []string{"example-device-sdk"}, 75},
 
-	// Creo TOOLKIT (C)
-	{"user_initialize", []string{"creo_toolkit_help"}, 90},
-	{"user_terminate", []string{"creo_toolkit_help"}, 80},
-	{"promenubar", []string{"creo_toolkit_help"}, 90},
-	{"procmdaction", []string{"creo_toolkit_help"}, 85},
-	{"protoolkit", []string{"creo_toolkit_help"}, 90},
-	{"creotk.dat", []string{"creo_toolkit_help"}, 90},
-	{"protk.dat", []string{"creo_toolkit_help"}, 80},
-	{"creo toolkit", []string{"creo_toolkit_help"}, 85},
-	{"pro/toolkit", []string{"creo_toolkit_help"}, 85},
+	{"control app", []string{"example-control-app"}, 80},
+	{"plugin sdk", []string{"example-plugin-sdk"}, 80},
+	{"registercommand", []string{"example-plugin-sdk", "example-control-app"}, 85},
+	{"addmenuitem", []string{"example-plugin-sdk"}, 80},
 
-	// OTK
-	{"object toolkit", []string{"otk_cpp_doc", "otk"}, 90},
-	{"otk c++", []string{"otk_cpp_doc", "otk"}, 90},
-	{"otk", []string{"otk_cpp_doc", "otk"}, 80},
-	{"pfcsession", []string{"otk_cpp_doc", "otk"}, 90},
-	{"uicreatecommand", []string{"otk_cpp_doc", "otk"}, 85},
-	{"wfc", []string{"otk_cpp_doc", "otk"}, 60},
-	{"pfc", []string{"otk_cpp_doc", "otk"}, 50},
+	{"network sdk", []string{"example-network-sdk"}, 80},
+	{"retrypolicy", []string{"example-network-sdk"}, 85},
+	{"reconnect", []string{"example-network-sdk"}, 70},
+
+	{"sqlite", []string{"example-database-tool", "sqlite-reference"}, 70},
+	{"user_version", []string{"example-database-tool"}, 80},
+	{"schema migration", []string{"example-database-tool"}, 75},
 }
 
-// family of a root for conflict detection.
 func rootFamily(root string) string {
-	switch strings.ToLower(root) {
-	case "ccw_help":
-		return "ccw"
-	case "creo_toolkit_help":
-		return "creo_toolkit"
-	case "otk", "otk_cpp_doc":
-		return "otk"
+	r := strings.ToLower(root)
+	switch {
+	case strings.Contains(r, "device"):
+		return "device"
+	case strings.Contains(r, "plugin"):
+		return "plugin"
+	case strings.Contains(r, "network"):
+		return "network"
+	case strings.Contains(r, "database") || strings.Contains(r, "sqlite"):
+		return "database"
+	case strings.Contains(r, "embedded"):
+		return "embedded"
+	case strings.Contains(r, "control"):
+		return "control"
 	default:
-		return "other:" + strings.ToLower(root)
+		return "other:" + r
 	}
 }
 
@@ -106,8 +96,7 @@ func (s *Store) ListRootNames(ctx context.Context) ([]string, error) {
 }
 
 // ResolveRoots picks knowledge roots from an optional explicit list and/or
-// query/subject context. When the space is ambiguous, NeedsChoice is set and
-// the caller should prompt the user (do not search all roots).
+// query/subject context. When the space is ambiguous, NeedsChoice is set.
 func (s *Store) ResolveRoots(ctx context.Context, query string, explicit []string) (RootInference, error) {
 	available, err := s.ListRootNames(ctx)
 	if err != nil {
@@ -120,7 +109,6 @@ func (s *Store) ResolveRoots(ctx context.Context, query string, explicit []strin
 
 	inf := RootInference{AvailableRoots: available}
 
-	// Explicit wins (validated).
 	var explicitClean []string
 	for _, r := range explicit {
 		r = strings.TrimSpace(r)
@@ -170,14 +158,10 @@ func (s *Store) ResolveRoots(ctx context.Context, query string, explicit []strin
 	for _, r := range inferred {
 		families[rootFamily(r)] = struct{}{}
 	}
-	// CCW vs Creo/OTK is a hard conflict — ask.
-	_, hasCCW := families["ccw"]
-	_, hasCreo := families["creo_toolkit"]
-	_, hasOTK := families["otk"]
-	if hasCCW && (hasCreo || hasOTK) {
+	if len(families) > 1 {
 		inf.NeedsChoice = true
 		inf.Message = formatRootPrompt(
-			"Query matches both Rockwell CCW and Creo/OTK cues — pick a root.",
+			"Query matches multiple product families — pick a root.",
 			query, available)
 		inf.MatchedHints = hints
 		return inf, nil
@@ -201,7 +185,6 @@ func inferRootsFromText(query string, avail map[string]struct{}) (roots []string
 			}
 		}
 	}
-	// Also: bare root name token in the query.
 	for r := range avail {
 		rl := strings.ToLower(r)
 		if rl != "" && strings.Contains(q, rl) {
@@ -226,7 +209,6 @@ func inferRootsFromText(query string, avail map[string]struct{}) (roots []string
 		}
 		return list[i].v > list[j].v
 	})
-	// Keep roots within 40% of the top score (same family cluster).
 	top := list[0].v
 	for _, item := range list {
 		if item.v*100 >= top*60 {
@@ -251,7 +233,7 @@ func formatRootPrompt(lead, query string, available []string) string {
 		b.WriteString(r)
 		b.WriteString("\n")
 	}
-	b.WriteString("\nRe-run with rootName set to one of the above (e.g. rootName=\"ccw_help\").")
+	b.WriteString("\nRe-run with rootName set to one of the above (e.g. rootName=\"example-device-sdk\").")
 	return b.String()
 }
 

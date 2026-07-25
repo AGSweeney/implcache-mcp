@@ -9,7 +9,7 @@ import (
 	"fmt"
 )
 
-const currentSchemaVersion = 3
+const currentSchemaVersion = 4
 
 const schemaV1 = `
 CREATE TABLE documents (
@@ -143,6 +143,30 @@ CREATE TABLE IF NOT EXISTS root_group_members (
 CREATE INDEX IF NOT EXISTS idx_root_group_members_group ON root_group_members(group_name, priority DESC);
 `
 
+// schemaV4 adds richer symbol forms and denormalized root_name on chunks for query plans.
+const schemaV4 = `
+ALTER TABLE symbols ADD COLUMN qualified_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE symbols ADD COLUMN unqualified_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE symbols ADD COLUMN namespace TEXT NOT NULL DEFAULT '';
+ALTER TABLE symbols ADD COLUMN signature_norm TEXT NOT NULL DEFAULT '';
+
+UPDATE symbols SET
+  qualified_name = name,
+  unqualified_name = name,
+  namespace = '',
+  signature_norm = LOWER(REPLACE(signature, ' ', ''))
+WHERE unqualified_name = '' OR unqualified_name IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_symbols_unqualified ON symbols(unqualified_name);
+CREATE INDEX IF NOT EXISTS idx_symbols_qualified ON symbols(qualified_name);
+
+ALTER TABLE chunks ADD COLUMN root_name TEXT NOT NULL DEFAULT '';
+UPDATE chunks SET root_name = COALESCE((
+  SELECT d.root_name FROM documents d WHERE d.id = chunks.document_id
+), '') WHERE root_name = '';
+CREATE INDEX IF NOT EXISTS idx_chunks_root_name ON chunks(root_name);
+`
+
 func migrate(db *sql.DB) error {
 	var version int
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
@@ -172,6 +196,9 @@ func applyMigration(db *sql.DB, version int) error {
 		return err
 	case 3:
 		_, err := db.Exec(schemaV3)
+		return err
+	case 4:
+		_, err := db.Exec(schemaV4)
 		return err
 	default:
 		return fmt.Errorf("unknown schema version %d", version)

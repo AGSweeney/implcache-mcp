@@ -22,7 +22,7 @@ var ignoredDirNames = map[string]struct{}{
 	".venv":        {},
 	".idea":        {},
 	".vscode":      {},
-	"mft":          {}, // Rockwell CCW help framework assets
+	"mft":          {}, // mobile help-framework assets
 }
 
 var ignoredExts = map[string]struct{}{

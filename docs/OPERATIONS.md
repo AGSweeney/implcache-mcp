@@ -71,7 +71,7 @@ Safety defaults:
 | `-allow-ingest` | `true` | Enable ingest tools |
 | `-allow-delete` | `true` | Enable delete tools |
 | `-allow-output-write` | `true` | Allow `vomit` file writes |
-| `-output-root` | `./vomit` | Jail for recipe output paths |
+| `-output-root` | `./vomit-output` | Jail for recipe output paths |
 | `-max-results` | `20` | Search result cap |
 | `-max-ingest-files` | `50000` | Per-ingest file cap |
 | `-max-document-bytes` | `8MiB` | Per-file size cap |

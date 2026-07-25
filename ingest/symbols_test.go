@@ -6,7 +6,7 @@ package ingest
 
 import "testing"
 
-func TestExtractSymbolsGoAndPro(t *testing.T) {
+func TestExtractSymbolsGoAndDemo(t *testing.T) {
 	goSrc := "package p\n\nfunc OpenStore(path string) error {\n\treturn nil\n}\n"
 	syms := ExtractSymbols("store.go", goSrc)
 	found := false
@@ -19,9 +19,9 @@ func TestExtractSymbolsGoAndPro(t *testing.T) {
 		t.Fatalf("missing OpenStore: %+v", syms)
 	}
 
-	cSrc := `#include <ProMenuBar.h>
-int user_initialize(void) {
-  ProCmdActionAdd("x", 0, 0, 0, 0, 0, 0);
+	cSrc := `#include <MenuBar.h>
+int RegisterHandler(void) {
+  RegisterCommand("x", 0, 0, 0, 0, 0, 0);
   return 0;
 }
 `
@@ -30,7 +30,7 @@ int user_initialize(void) {
 	for _, s := range syms {
 		names[s.Name] = true
 	}
-	if !names["ProCmdActionAdd"] && !names["user_initialize"] {
+	if !names["RegisterCommand"] && !names["RegisterHandler"] {
 		t.Fatalf("expected C symbols, got %+v", syms)
 	}
 }

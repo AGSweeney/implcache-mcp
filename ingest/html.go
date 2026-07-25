@@ -33,14 +33,14 @@ func IsDocExt(name string) bool {
 }
 
 // ShouldSkipHelpPath skips help shells, TOC indexes, and non-content trees
-// (WebWorks / Creo online help and Rockwell CCW help).
+// (common online-help chrome layouts).
 func ShouldSkipHelpPath(relOrAbs string) bool {
 	p := filepath.ToSlash(strings.ToLower(relOrAbs))
 	base := filepath.Base(p)
 
 	for _, seg := range []string{
 		"/connect/", "/wwhelp/", "/scripts/", "/css/",
-		"/mft/", // Rockwell mobile framework assets
+		"/mft/", // mobile help-framework assets
 	} {
 		if strings.Contains(p, seg) {
 			return true
@@ -49,6 +49,7 @@ func ShouldSkipHelpPath(relOrAbs string) bool {
 	switch base {
 	case "index.html", "index.htm", "creo_toolkit.html", "creo_toolkit_sx.js",
 		"heading.htm", "search_results.htm", "search_results.html":
+		// Named shell/TOC files remain as functional skip markers for that help layout.
 		return true
 	}
 	return false
@@ -93,7 +94,7 @@ func PrepareHTML(htmlStr string) (preparedHTML, error) {
 	if content == nil {
 		content = findByID(root, "page_content_container")
 	}
-	// Rockwell Connected Components Workbench (CCW) help.
+	// Alternate help layout used by some control-app style corpora.
 	if content == nil {
 		content = findByID(root, "content_section")
 	}

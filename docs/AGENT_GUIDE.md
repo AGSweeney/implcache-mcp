@@ -28,14 +28,14 @@ The package is already budgeted. Extra tools spend tokens.
 Pass one of:
 
 - `projectRoot` — current app corpus  
-- `preferredRoots` — ordered list, e.g. `["my_app", "creo_toolkit_help"]`  
+- `preferredRoots` — ordered list, e.g. `["my_app", "example-device-sdk"]`  
 - `rootGroup` — named DB group  
 
 If the tool returns `needsChoice` / `availableRoots`:
 
 1. Ask the user which corpus applies  
 2. Retry with explicit `rootName` or `preferredRoots`  
-3. Do **not** guess across product families (e.g. CCW vs Creo)
+3. Do **not** guess across product families (e.g. example-control-app vs example-device-sdk)
 
 ## Reading the package
 
@@ -58,7 +58,7 @@ Treat these fields as authoritative for local knowledge:
 When the package names an API you’re unsure about:
 
 ```text
-find_symbol { "name": "ProCmdActionAdd", "preferredRoots": ["creo_toolkit_help"] }
+find_symbol { "name": "RegisterCommand", "preferredRoots": ["example-device-sdk"] }
 ```
 
 Use the returned signature / URI. Do not invent overloads.
@@ -89,16 +89,16 @@ Prefer the offline CLI for large corpora so the MCP session stays responsive.
 
 ## Minimal example
 
-**User:** Add a Creo menubar pushbutton in our app.
+**User:** Add an example-device-sdk menubar pushbutton in our app.
 
 **Agent:**
 
 ```json
 {
-  "task": "register a Creo TOOLKIT menubar pushbutton in user_initialize",
+  "task": "register an example-device-sdk menubar pushbutton in RegisterHandler",
   "language": "c",
-  "technology": "Creo TOOLKIT",
-  "preferredRoots": ["my_app", "creo_toolkit_help"],
+  "technology": "example-device-sdk",
+  "preferredRoots": ["my_app", "example-device-sdk"],
   "maxContextTokens": 2500
 }
 ```

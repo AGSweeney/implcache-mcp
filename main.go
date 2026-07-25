@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -17,24 +18,42 @@ import (
 	"syscall"
 	"time"
 
+	"implcache-mcp/manifest"
 	"implcache-mcp/store"
 	"implcache-mcp/tools"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// version is overridden at build time via:
+//
+//	go build -ldflags "-X main.version=$(git describe --tags --always)"
+var version = "0.2.0"
+
 func main() {
 	dbPath := flag.String("db", "./implcache.db", "path to SQLite ImplCache database")
 	httpAddr := flag.String("http", "", "if set, serve streamable HTTP (default bind rewrites bare :port to 127.0.0.1:port)")
+	mode := flag.String("mode", "agent", "tool surface: agent (retrieval only) or admin (includes ingest/delete/vomit)")
+	enableAdmin := flag.Bool("enable-admin-tools", false, "register administrative tools even when -mode=agent")
 	readOnly := flag.Bool("readonly", false, "disable ingest, delete, and filesystem vomit output; open DB read-only when possible")
-	allowIngest := flag.Bool("allow-ingest", true, "allow ingest_* tools")
-	allowDelete := flag.Bool("allow-delete", true, "allow delete_* tools")
-	allowOutput := flag.Bool("allow-output-write", true, "allow vomit to write files under -output-root")
-	outputRoot := flag.String("output-root", "./vomit", "directory that confines vomit output paths")
+	allowIngest := flag.Bool("allow-ingest", true, "allow ingest_* tools when admin tools are enabled")
+	allowDelete := flag.Bool("allow-delete", true, "allow delete_* tools when admin tools are enabled")
+	allowOutput := flag.Bool("allow-output-write", true, "allow vomit to write files under -output-root when admin tools are enabled")
+	enableHTTPMutations := flag.Bool("enable-http-mutations", false, "when serving -http, allow ingest/delete/output writes (default: mutations off over HTTP)")
+	allowRemoteHTTP := flag.Bool("allow-remote-http", false, "allow binding HTTP to a non-loopback address")
+	workspace := flag.String("workspace", "", "optional workspace directory; loads .implcache.yaml for default project roots")
+	projectRoot := flag.String("project-root", "", "default knowledge root treated as current_project (overrides manifest rootName)")
+	outputRoot := flag.String("output-root", "./vomit-output", "directory that confines vomit output paths")
 	maxResults := flag.Int("max-results", store.DefaultSearchLimit, "default/max search results per query")
 	maxIngestFiles := flag.Int("max-ingest-files", 50000, "max files per ingest operation")
 	maxDocBytes := flag.Int64("max-document-bytes", 8<<20, "max bytes per ingested file")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	log.SetOutput(os.Stderr)
 	log.SetFlags(log.Ltime | log.Lshortfile)
@@ -42,6 +61,45 @@ func main() {
 	absOut, err := filepath.Abs(*outputRoot)
 	if err != nil {
 		log.Fatalf("output-root: %v", err)
+	}
+
+	toolMode := tools.ModeAgent
+	switch strings.ToLower(strings.TrimSpace(*mode)) {
+	case "", "agent":
+		toolMode = tools.ModeAgent
+	case "admin":
+		toolMode = tools.ModeAdmin
+	default:
+		log.Fatalf("invalid -mode %q (want agent or admin)", *mode)
+	}
+
+	defaultProject := strings.TrimSpace(*projectRoot)
+	var defaultPreferred []string
+	if ws := strings.TrimSpace(*workspace); ws != "" {
+		m, err := manifest.LoadFromDir(ws)
+		if err != nil {
+			log.Fatalf("workspace manifest: %v", err)
+		}
+		if m != nil {
+			if defaultProject == "" {
+				defaultProject = m.RootName
+			}
+			defaultPreferred = m.PreferredRoots()
+			log.Printf("loaded %s rootName=%s related=%v", manifest.DefaultFilename, m.RootName, m.RelatedRoots)
+		}
+	}
+
+	// HTTP defaults to non-mutating unless explicitly enabled.
+	allowIngestEff := *allowIngest && !*readOnly
+	allowDeleteEff := *allowDelete && !*readOnly
+	allowOutputEff := *allowOutput && !*readOnly
+	if *httpAddr != "" && !*enableHTTPMutations {
+		allowIngestEff = false
+		allowDeleteEff = false
+		allowOutputEff = false
+		if toolMode == tools.ModeAdmin || *enableAdmin {
+			log.Printf("HTTP: mutations disabled (pass -enable-http-mutations to allow ingest/delete/writes)")
+		}
 	}
 
 	st, err := store.OpenWithOptions(*dbPath, store.OpenOptions{ReadOnly: *readOnly})
@@ -52,23 +110,31 @@ func main() {
 
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "implcache-mcp",
-		Version: "v1.1.0",
+		Version: version,
 	}, nil)
 
 	toolOpt := tools.Options{
-		ReadOnly:         *readOnly,
-		AllowIngest:      *allowIngest && !*readOnly,
-		AllowDelete:      *allowDelete && !*readOnly,
-		AllowOutputWrite: *allowOutput && !*readOnly,
-		OutputRoot:       absOut,
-		MaxResults:       *maxResults,
-		MaxIngestFiles:   *maxIngestFiles,
-		MaxDocumentBytes: *maxDocBytes,
+		Mode:                  toolMode,
+		EnableAdminTools:      *enableAdmin,
+		ReadOnly:              *readOnly,
+		AllowIngest:           allowIngestEff,
+		AllowDelete:           allowDeleteEff,
+		AllowOutputWrite:      allowOutputEff,
+		OutputRoot:            absOut,
+		DefaultProjectRoot:    defaultProject,
+		DefaultPreferredRoots: defaultPreferred,
+		MaxResults:            *maxResults,
+		MaxIngestFiles:        *maxIngestFiles,
+		MaxDocumentBytes:      *maxDocBytes,
 	}
-	tools.RegisterWithOptions(server, st, toolOpt)
+	registered := tools.RegisterWithOptions(server, st, toolOpt)
+	log.Printf("implcache-mcp %s mode=%s tools=%v", version, toolOpt.EffectiveMode(), registered)
 
 	if *httpAddr != "" {
-		addr := normalizeHTTPAddr(*httpAddr)
+		addr, err := normalizeHTTPAddr(*httpAddr, *allowRemoteHTTP)
+		if err != nil {
+			log.Fatal(err)
+		}
 		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 			return server
 		}, nil)
@@ -79,7 +145,8 @@ func main() {
 			IdleTimeout:       120 * time.Second,
 			MaxHeaderBytes:    1 << 20,
 		}
-		log.Printf("implcache-mcp HTTP at %s (db=%s readonly=%v output-root=%s)", addr, *dbPath, *readOnly, absOut)
+		log.Printf("HTTP at %s (db=%s readonly=%v mutations=%v output-root=%s)",
+			addr, *dbPath, *readOnly, *enableHTTPMutations && !*readOnly, absOut)
 
 		errCh := make(chan error, 1)
 		go func() { errCh <- srv.ListenAndServe() }()
@@ -100,29 +167,43 @@ func main() {
 		return
 	}
 
-	log.Printf("implcache-mcp stdio (db=%s readonly=%v output-root=%s)", *dbPath, *readOnly, absOut)
+	log.Printf("stdio (db=%s readonly=%v output-root=%s)", *dbPath, *readOnly, absOut)
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
 	}
 }
 
-// normalizeHTTPAddr rewrites bare ":8080" to loopback to avoid accidental LAN exposure.
-func normalizeHTTPAddr(addr string) string {
+// normalizeHTTPAddr rewrites bare ":8080" to loopback. Non-loopback binds require -allow-remote-http.
+func normalizeHTTPAddr(addr string, allowRemote bool) (string, error) {
 	addr = strings.TrimSpace(addr)
 	if addr == "" {
-		return "127.0.0.1:8080"
+		return "127.0.0.1:8080", nil
 	}
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		// Allow "8080" shorthand.
 		if !strings.Contains(addr, ":") {
-			return net.JoinHostPort("127.0.0.1", addr)
+			return net.JoinHostPort("127.0.0.1", addr), nil
 		}
-		return addr
+		return "", fmt.Errorf("http address: %w", err)
 	}
 	if host == "" || host == "0.0.0.0" || host == "::" {
-		log.Printf("warning: binding %q rewritten to 127.0.0.1:%s (pass an explicit non-loopback host to override)", addr, port)
-		return net.JoinHostPort("127.0.0.1", port)
+		log.Printf("warning: binding %q rewritten to 127.0.0.1:%s", addr, port)
+		return net.JoinHostPort("127.0.0.1", port), nil
 	}
-	return addr
+	if !allowRemote && !isLoopbackHost(host) {
+		return "", fmt.Errorf("refusing non-loopback HTTP bind %q without -allow-remote-http (no built-in auth)", addr)
+	}
+	if allowRemote && !isLoopbackHost(host) {
+		log.Printf("warning: binding non-loopback %s; ImplCache has no built-in HTTP authentication", addr)
+	}
+	return net.JoinHostPort(host, port), nil
+}
+
+func isLoopbackHost(host string) bool {
+	h := strings.ToLower(strings.TrimSpace(host))
+	if h == "localhost" || h == "127.0.0.1" || h == "::1" {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
 }

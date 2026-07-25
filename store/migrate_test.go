@@ -26,8 +26,8 @@ func TestSchemaMigratesToV2WithIndexes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v != 3 {
-		t.Fatalf("schema version=%d want 3", v)
+	if v != 4 {
+		t.Fatalf("schema version=%d want 4", v)
 	}
 
 	db, err := sql.Open("sqlite", dbPath)
@@ -75,7 +75,7 @@ func TestMigrationFromV1ToV2(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v != 3 {
+	if v != 4 {
 		t.Fatalf("got v%d", v)
 	}
 }

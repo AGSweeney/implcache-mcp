@@ -16,7 +16,7 @@ When root scope is ambiguous, several tools return a JSON payload with `needsCho
 |----------|------|----------|-------------|
 | `task` | string | yes | Coding task in plain language |
 | `language` | string | no | e.g. `c`, `cpp`, `go` |
-| `technology` | string | no | e.g. `Creo TOOLKIT`, `NetBurner` |
+| `technology` | string | no | e.g. `example-device-sdk`, `example-network-sdk` |
 | `projectRoot` | string | no | Preferred current-project root name |
 | `preferredRoots` | string[] | no | Ordered roots to search |
 | `rootGroup` | string | no | Named root group (DB) |
@@ -40,7 +40,7 @@ Exact/near-exact lookup of APIs, functions, and types from the `symbols` table.
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
-| `name` | string | yes | Symbol name (e.g. `ProCmdActionAdd`) |
+| `name` | string | yes | Symbol name (e.g. `RegisterCommand`) |
 | `rootName` | string | no | Single root filter |
 | `preferredRoots` | string[] | no | Multi-root filter |
 | `limit` | int | no | Default 20 |
@@ -178,7 +178,7 @@ Walks text-like files, skips common junk / symlinks, extracts symbols where poss
 |-----------|------|
 | “Help me implement X” | `get_implementation_context` |
 | “Does `FooBar` exist / what’s the signature?” | `find_symbol` |
-| “What’s in the CCW help about timers?” | `search_knowledge` + `rootName` |
+| “What’s in the example-control-app help about timers?” | `search_knowledge` + `rootName` |
 | “Show me the whole sample file” | `get_document` with `includeBody` |
 | “Write a reusable playbook for X” | `vomit` (+ optional `saveRecipe`) |
 | “What corpora are loaded?” | `list_roots` |

@@ -20,7 +20,7 @@ func TestResolveRootsInfersAndPrompts(t *testing.T) {
 	defer st.Close()
 	ctx := context.Background()
 
-	for _, root := range []string{"ccw_help", "creo_toolkit_help", "otk_cpp_doc"} {
+	for _, root := range []string{"example-device-sdk", "example-plugin-sdk", "example-network-sdk"} {
 		_, err := st.UpsertDocument(ctx, UpsertInput{
 			URI:        "project://" + root + "/doc.md",
 			Title:      root,
@@ -35,20 +35,20 @@ func TestResolveRootsInfersAndPrompts(t *testing.T) {
 		}
 	}
 
-	inf, err := st.ResolveRoots(ctx, "Micro800 download project", nil)
+	inf, err := st.ResolveRoots(ctx, "gpio expander SpiTransfer", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inf.NeedsChoice || len(inf.Roots) != 1 || inf.Roots[0] != "ccw_help" {
-		t.Fatalf("ccw infer: %+v", inf)
+	if inf.NeedsChoice || len(inf.Roots) == 0 || !contains(inf.Roots, "example-device-sdk") {
+		t.Fatalf("device infer: %+v", inf)
 	}
 
-	inf, err = st.ResolveRoots(ctx, "user_initialize menubar pushbutton", nil)
+	inf, err = st.ResolveRoots(ctx, "RegisterCommand AddMenuItem", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inf.NeedsChoice || !contains(inf.Roots, "creo_toolkit_help") {
-		t.Fatalf("creo infer: %+v", inf)
+	if inf.NeedsChoice || !contains(inf.Roots, "example-plugin-sdk") {
+		t.Fatalf("plugin infer: %+v", inf)
 	}
 
 	inf, err = st.ResolveRoots(ctx, "create a project", nil)
@@ -58,15 +58,15 @@ func TestResolveRootsInfersAndPrompts(t *testing.T) {
 	if !inf.NeedsChoice {
 		t.Fatalf("expected prompt for ambiguous query, got roots=%v", inf.Roots)
 	}
-	if !strings.Contains(inf.Message, "rootName") || !strings.Contains(inf.Message, "ccw_help") {
+	if !strings.Contains(inf.Message, "rootName") || !strings.Contains(inf.Message, "example-device-sdk") {
 		t.Fatalf("prompt missing roots: %s", inf.Message)
 	}
 
-	inf, err = st.ResolveRoots(ctx, "anything", []string{"ccw_help"})
+	inf, err = st.ResolveRoots(ctx, "anything", []string{"example-device-sdk"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inf.NeedsChoice || inf.Roots[0] != "ccw_help" {
+	if inf.NeedsChoice || inf.Roots[0] != "example-device-sdk" {
 		t.Fatalf("explicit: %+v", inf)
 	}
 }
@@ -81,17 +81,17 @@ func TestSearchOptsFiltersRoot(t *testing.T) {
 	ctx := context.Background()
 
 	_, _ = st.UpsertDocument(ctx, UpsertInput{
-		URI: "project://ccw_help/a.md", Title: "ccw", SourceType: SourceMarkdown,
-		Path: "a.md", RootName: "ccw_help", Hash: "1",
+		URI: "project://example-device-sdk/a.md", Title: "device", SourceType: SourceMarkdown,
+		Path: "a.md", RootName: "example-device-sdk", Hash: "1",
 		Chunks: []Chunk{{Body: "download the controller project", StartLine: 1, EndLine: 1}},
 	})
 	_, _ = st.UpsertDocument(ctx, UpsertInput{
-		URI: "project://creo_toolkit_help/b.md", Title: "creo", SourceType: SourceMarkdown,
-		Path: "b.md", RootName: "creo_toolkit_help", Hash: "2",
+		URI: "project://example-plugin-sdk/b.md", Title: "plugin", SourceType: SourceMarkdown,
+		Path: "b.md", RootName: "example-plugin-sdk", Hash: "2",
 		Chunks: []Chunk{{Body: "download the feature project", StartLine: 1, EndLine: 1}},
 	})
 
-	hits, err := st.SearchOpts(ctx, SearchOptions{Query: "download project", Limit: 10, Roots: []string{"ccw_help"}})
+	hits, err := st.SearchOpts(ctx, SearchOptions{Query: "download project", Limit: 10, Roots: []string{"example-device-sdk"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,8 +99,8 @@ func TestSearchOptsFiltersRoot(t *testing.T) {
 		t.Fatal("expected hits")
 	}
 	for _, h := range hits {
-		if !strings.Contains(h.URI, "ccw_help") {
-			t.Fatalf("leaked non-ccw hit: %s", h.URI)
+		if !strings.Contains(h.URI, "example-device-sdk") {
+			t.Fatalf("leaked non-device hit: %s", h.URI)
 		}
 	}
 }

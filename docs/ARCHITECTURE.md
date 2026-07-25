@@ -102,7 +102,7 @@ Token estimate in API responses is **labeled as estimate** (`utf8_runes / 4`).
 Search and context tools scope by `root_name`:
 
 1. Explicit `rootName` / `preferredRoots` / `projectRoot` / `rootGroup`
-2. Else cue matching against known aliases (e.g. `ccw`, `user_initialize`, `otk`)
+2. Else cue matching against known aliases (e.g. `control-app`, `RegisterHandler`, `plugin-sdk`)
 3. If multiple product families match → `needsChoice` + `availableRoots` (agent must ask the user)
 
 Roots are never silently merged across conflicting product families.

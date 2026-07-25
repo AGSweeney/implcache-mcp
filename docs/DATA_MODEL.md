@@ -13,9 +13,9 @@ project://{rootName}/{relative/path}
 Examples:
 
 ```text
-project://ccw_help/help/topics/timers.md
+project://example-control-app/help/topics/timers.md
 project://my_app/src/menu.c
-project://creo_toolkit_help/ug/user_initialize.html
+project://example-device-sdk/ug/RegisterHandler.html
 ```
 
 - **`rootName`** — corpus id (set at ingest; default = directory basename)

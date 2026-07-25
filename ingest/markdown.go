@@ -17,7 +17,7 @@ import (
 	"implcache-mcp/store"
 )
 
-const maxFileBytes = 8 << 20 // 8 MiB (Creo/help HTML can exceed 1 MiB)
+const maxFileBytes = 8 << 20 // 8 MiB (vendor help HTML can exceed 1 MiB)
 
 // MarkdownResult summarizes an ingest_markdown run.
 type MarkdownResult struct {

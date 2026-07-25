@@ -6,7 +6,10 @@ package implctx
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 
 	"implcache-mcp/store"
@@ -43,11 +46,12 @@ type ExampleRef struct {
 }
 
 // Response is a budgeted implementation-context package.
+// Empty slices/strings with omitempty are omitted from JSON.
 type Response struct {
 	Task                 string         `json:"task"`
 	Technology           string         `json:"technology,omitempty"`
 	Language             string         `json:"language,omitempty"`
-	Summary              string         `json:"summary"`
+	Summary              string         `json:"summary,omitempty"`
 	RequiredAPIs         []string       `json:"requiredApis,omitempty"`
 	RelevantSymbols      []store.Symbol `json:"relevantSymbols,omitempty"`
 	Includes             []string       `json:"includes,omitempty"`
@@ -56,16 +60,17 @@ type Response struct {
 	Constraints          []string       `json:"constraints,omitempty"`
 	Pitfalls             []string       `json:"pitfalls,omitempty"`
 	ProjectConventions   []string       `json:"projectConventions,omitempty"`
-	Citations            []Citation     `json:"citations"`
-	Coverage             string         `json:"coverage"` // high|medium|low
-	Freshness            string         `json:"freshness"`
-	WebSearchRecommended bool           `json:"webSearchRecommended"`
+	Citations            []Citation     `json:"citations,omitempty"`
+	Coverage             string         `json:"coverage,omitempty"` // high|medium|low
+	Freshness            string         `json:"freshness,omitempty"`
+	WebSearchRecommended bool           `json:"webSearchRecommended,omitempty"`
 	MissingInformation   []string       `json:"missingInformation,omitempty"`
 	RecommendedFollowUp  []string       `json:"recommendedFollowUp,omitempty"`
-	RootsUsed            []string       `json:"rootsUsed"`
-	EstimatedTokens      int            `json:"estimatedTokens"`
-	Chars                int            `json:"chars"`
-	TokenEstimateNote    string         `json:"tokenEstimateNote"`
+	RootsUsed            []string       `json:"rootsUsed,omitempty"`
+	ContextFingerprint   string         `json:"contextFingerprint,omitempty"`
+	EstimatedTokens      int            `json:"estimatedTokens,omitempty"`
+	Chars                int            `json:"chars,omitempty"`
+	TokenEstimateNote    string         `json:"tokenEstimateNote,omitempty"`
 }
 
 // Get assembles a compact implementation package from local knowledge.
@@ -184,7 +189,7 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 		for _, inc := range extractIncludes(h.Snippet) {
 			resp.Includes = appendUnique(resp.Includes, inc)
 		}
-		for _, api := range extractProAPIs(h.Snippet) {
+		for _, api := range extractDemoAPIs(h.Snippet) {
 			resp.RequiredAPIs = appendUnique(resp.RequiredAPIs, api)
 		}
 	}
@@ -216,13 +221,61 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 
 	// Deduplicate citations
 	resp.Citations = dedupeCitations(resp.Citations)
+	// Prefer implementation evidence ordering: APIs → examples → sequence → pitfalls → summary last.
+	if resp.Summary != "" && (len(resp.RequiredAPIs) > 0 || len(resp.Examples) > 0) {
+		// Keep summary short when code-level evidence exists.
+		resp.Summary = firstSentence(resp.Summary)
+	}
 	body := resp.Summary + strings.Join(resp.RequiredAPIs, " ") + strings.Join(resp.Sequence, " ")
 	for _, e := range resp.Examples {
 		body += e.Excerpt
 	}
 	resp.Chars = len([]rune(body))
 	resp.EstimatedTokens = store.EstimateTokens(body)
+	resp.ContextFingerprint = fingerprintResponse(ctx, st, req, resp)
 	return resp, nil
+}
+
+func fingerprintResponse(ctx context.Context, st *store.Store, req Request, resp *Response) string {
+	var b strings.Builder
+	b.WriteString(strings.TrimSpace(strings.ToLower(req.Task)))
+	b.WriteByte('|')
+	b.WriteString(strings.ToLower(req.Language))
+	b.WriteByte('|')
+	b.WriteString(strings.ToLower(req.Technology))
+	b.WriteByte('|')
+	roots := append([]string{}, resp.RootsUsed...)
+	sort.Strings(roots)
+	b.WriteString(strings.Join(roots, ","))
+	b.WriteByte('|')
+	apis := append([]string{}, resp.RequiredAPIs...)
+	sort.Strings(apis)
+	b.WriteString(strings.Join(apis, ","))
+	b.WriteByte('|')
+	for _, c := range resp.Citations {
+		b.WriteString(c.URI)
+		b.WriteByte('#')
+		b.WriteString(c.Lines)
+		if h, err := st.GetHashByURI(ctx, c.URI); err == nil && h != "" {
+			b.WriteByte('@')
+			b.WriteString(h)
+		}
+		b.WriteByte(';')
+	}
+	for _, s := range resp.RelevantSymbols {
+		b.WriteString(s.NameNorm)
+		b.WriteByte('@')
+		b.WriteString(s.URI)
+		b.WriteByte(';')
+	}
+	for _, e := range resp.Examples {
+		b.WriteString(e.URI)
+		b.WriteByte('|')
+		b.WriteString(e.Excerpt)
+		b.WriteByte(';')
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return "sha256:" + hex.EncodeToString(sum[:16])
 }
 
 func resolveRoots(ctx context.Context, st *store.Store, req Request) ([]string, error) {
@@ -275,7 +328,7 @@ func looksIdent(s string) bool {
 	if len(s) < 3 {
 		return false
 	}
-	return strings.ContainsAny(s, "_:.#") || (hasUpper(s) && hasLower(s)) || strings.HasPrefix(s, "Pro") || strings.HasPrefix(s, "pfc")
+	return strings.ContainsAny(s, "_:.#<>[]") || (hasUpper(s) && hasLower(s))
 }
 
 func hasUpper(s string) bool {
@@ -306,14 +359,12 @@ func extractIncludes(s string) []string {
 	return out
 }
 
-func extractProAPIs(s string) []string {
+func extractDemoAPIs(s string) []string {
+	// Generic identifier harvest for CamelCase / qualified API-looking tokens in prose.
 	var out []string
 	for _, f := range strings.Fields(s) {
-		f = strings.Trim(f, "`,.;()<>\"")
-		if strings.HasPrefix(f, "Pro") && len(f) > 5 {
-			out = append(out, f)
-		}
-		if strings.HasPrefix(f, "pfc") || strings.HasPrefix(f, "wfc") {
+		f = strings.Trim(f, "`,.;()<>\"'")
+		if looksIdent(f) && len(f) > 4 {
 			out = append(out, f)
 		}
 	}

@@ -74,13 +74,15 @@ type SearchHit struct {
 	Authority  string  `json:"authority,omitempty"`
 	Language   string  `json:"language,omitempty"`
 	Technology string  `json:"technology,omitempty"`
+	Archived   bool    `json:"archived,omitempty"`
 	Ordinal    int     `json:"ordinal"`
 	Heading    string  `json:"heading"`
 	Snippet    string  `json:"snippet"`
 	StartLine  int     `json:"startLine"`
 	EndLine    int     `json:"endLine"`
 	Rank       float64 `json:"rank"`
-	Score      float64 `json:"score,omitempty"` // composite score after authority/symbol boosts
+	Score      float64 `json:"score,omitempty"`     // composite score after authority/symbol boosts
+	MatchKind  string  `json:"matchKind,omitempty"` // symbol|filename|path|heading|body
 }
 
 // Limits for query / result size (overridable via SearchOptions).
@@ -114,12 +116,15 @@ type UpsertInput struct {
 
 // SymbolInput is a symbol extracted during ingest.
 type SymbolInput struct {
-	Name      string
-	Kind      string
-	Language  string
-	Signature string
-	StartLine int
-	EndLine   int
+	Name            string
+	QualifiedName   string
+	UnqualifiedName string
+	Namespace       string
+	Kind            string
+	Language        string
+	Signature       string
+	StartLine       int
+	EndLine         int
 }
 
 // Store wraps the SQLite knowledge database.
@@ -295,23 +300,37 @@ func (s *Store) UpsertDocument(ctx context.Context, in UpsertInput) (bool, error
 
 	for i, c := range in.Chunks {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO chunks (document_id, ordinal, heading, body, start_line, end_line)
-			VALUES (?, ?, ?, ?, ?, ?)`,
-			docID, i, c.Heading, c.Body, c.StartLine, c.EndLine,
+			INSERT INTO chunks (document_id, ordinal, heading, body, start_line, end_line, root_name)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			docID, i, c.Heading, c.Body, c.StartLine, c.EndLine, in.RootName,
 		); err != nil {
 			return false, fmt.Errorf("insert chunk %d: %w", i, err)
 		}
 	}
 	for _, sym := range in.Symbols {
-		norm := NormalizeSymbol(sym.Name)
-		if norm == "" {
+		forms := DeriveSymbolForms(sym.Name, sym.Signature)
+		if forms.NameNorm == "" {
 			continue
+		}
+		qual := sym.QualifiedName
+		if qual == "" {
+			qual = forms.QualifiedName
+		}
+		unqual := sym.UnqualifiedName
+		if unqual == "" {
+			unqual = forms.UnqualifiedName
+		}
+		ns := sym.Namespace
+		if ns == "" {
+			ns = forms.Namespace
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT OR IGNORE INTO symbols (
-				document_id, root_name, name, name_norm, kind, language, signature, start_line, end_line)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			docID, in.RootName, sym.Name, norm, sym.Kind, sym.Language, sym.Signature, sym.StartLine, sym.EndLine,
+				document_id, root_name, name, name_norm, qualified_name, unqualified_name, namespace,
+				kind, language, signature, signature_norm, start_line, end_line)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			docID, in.RootName, forms.Name, forms.NameNorm, qual, unqual, ns,
+			sym.Kind, sym.Language, sym.Signature, forms.SignatureNorm, sym.StartLine, sym.EndLine,
 		); err != nil {
 			return false, fmt.Errorf("insert symbol %s: %w", sym.Name, err)
 		}
@@ -474,6 +493,7 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 		rows *sql.Rows
 		err  error
 	)
+	// bm25 column weights: heading (col 0) heavier than body (col 1).
 	baseSelect := `
 			SELECT
 				c.id,
@@ -485,12 +505,13 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 				COALESCE(d.authority, 'unknown'),
 				COALESCE(d.language, ''),
 				COALESCE(d.technology, ''),
+				COALESCE(d.archived, 0),
 				c.ordinal,
 				c.heading,
 				snippet(chunks_fts, 1, '<b>', '</b>', '…', 32) AS snip,
 				c.start_line,
 				c.end_line,
-				bm25(chunks_fts) AS rank
+				bm25(chunks_fts, 10.0, 1.0) AS rank
 			FROM chunks_fts
 			JOIN chunks c ON c.id = chunks_fts.rowid
 			JOIN documents d ON d.id = c.document_id
@@ -508,11 +529,19 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 			args = append(args, r)
 		}
 		args = append(args, candidateLimit)
+		// Prefer denormalized chunks.root_name (indexed) with documents.root_name as fallback.
 		q := baseSelect + `
-			  AND d.root_name IN (` + strings.Join(placeholders, ",") + `)
+			  AND (c.root_name IN (` + strings.Join(placeholders, ",") + `)
+			       OR (c.root_name = '' AND d.root_name IN (` + strings.Join(placeholders, ",") + `)))
 			ORDER BY rank
 			LIMIT ?`
-		rows, err = s.db.QueryContext(ctx, q, args...)
+		// Duplicate root args for both IN lists.
+		args2 := make([]any, 0, 1+2*len(roots)+1)
+		args2 = append(args2, ftsQuery)
+		args2 = append(args2, args[1:1+len(roots)]...)
+		args2 = append(args2, args[1:1+len(roots)]...)
+		args2 = append(args2, candidateLimit)
+		rows, err = s.db.QueryContext(ctx, q, args2...)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("fts search: %w", err)
@@ -522,18 +551,36 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 	var candidates []SearchHit
 	for rows.Next() {
 		var h SearchHit
+		var archived int
 		if err := rows.Scan(
 			&h.ChunkID, &h.DocumentID, &h.URI, &h.Title, &h.RootName, &h.Path,
-			&h.Authority, &h.Language, &h.Technology,
+			&h.Authority, &h.Language, &h.Technology, &archived,
 			&h.Ordinal, &h.Heading, &h.Snippet, &h.StartLine, &h.EndLine, &h.Rank,
 		); err != nil {
 			return nil, err
 		}
-		h.Score = compositeScore(h, query)
+		h.Archived = archived != 0
+		h.Score, h.MatchKind = compositeScore(h, query)
 		candidates = append(candidates, h)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	// Path/title/filename are first-class: include docs whose path matches even if body does not.
+	pathHits, err := s.pathTitleCandidates(ctx, query, roots, candidateLimit)
+	if err != nil {
+		return nil, err
+	}
+	seenChunk := map[int64]struct{}{}
+	for _, h := range candidates {
+		seenChunk[h.ChunkID] = struct{}{}
+	}
+	for _, h := range pathHits {
+		if _, ok := seenChunk[h.ChunkID]; ok {
+			continue
+		}
+		seenChunk[h.ChunkID] = struct{}{}
+		candidates = append(candidates, h)
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
 		if candidates[i].Score == candidates[j].Score {
@@ -544,31 +591,117 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 	return diversifyHits(candidates, limit, maxPerDoc), nil
 }
 
-func compositeScore(h SearchHit, query string) float64 {
+// pathTitleCandidates finds documents whose path, basename, or title matches the query.
+func (s *Store) pathTitleCandidates(ctx context.Context, query string, roots []string, limit int) ([]SearchHit, error) {
+	q := strings.TrimSpace(query)
+	if q == "" || limit <= 0 {
+		return nil, nil
+	}
+	like := "%" + escapeLike(q) + "%"
+	sqlText := `
+		SELECT c.id, c.document_id, d.uri, d.title, COALESCE(d.root_name, ''), COALESCE(d.path, ''),
+		       COALESCE(d.authority, 'unknown'), COALESCE(d.language, ''), COALESCE(d.technology, ''),
+		       COALESCE(d.archived, 0), c.ordinal, c.heading, substr(c.body, 1, 240), c.start_line, c.end_line
+		FROM documents d
+		JOIN chunks c ON c.document_id = d.id AND c.ordinal = 0
+		WHERE (d.path LIKE ? ESCAPE '\' OR d.title LIKE ? ESCAPE '\' OR d.uri LIKE ? ESCAPE '\')`
+	args := []any{like, like, like}
+	if len(roots) > 0 {
+		ph := make([]string, len(roots))
+		for i, r := range roots {
+			ph[i] = "?"
+			args = append(args, r)
+		}
+		sqlText += ` AND d.root_name IN (` + strings.Join(ph, ",") + `)`
+	}
+	sqlText += ` LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SearchHit
+	for rows.Next() {
+		var h SearchHit
+		var archived int
+		if err := rows.Scan(
+			&h.ChunkID, &h.DocumentID, &h.URI, &h.Title, &h.RootName, &h.Path,
+			&h.Authority, &h.Language, &h.Technology, &archived,
+			&h.Ordinal, &h.Heading, &h.Snippet, &h.StartLine, &h.EndLine,
+		); err != nil {
+			return nil, err
+		}
+		h.Archived = archived != 0
+		h.Rank = 0
+		h.Score, h.MatchKind = compositeScore(h, query)
+		if h.MatchKind == "body" {
+			h.MatchKind = "path"
+			h.Score += 8
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+func compositeScore(h SearchHit, query string) (float64, string) {
 	// BM25: more negative/lower is better in SQLite; invert for a positive score.
 	score := -h.Rank
 	score += AuthorityBoost(h.Authority)
-	q := strings.ToLower(query)
-	if h.Path != "" && strings.Contains(strings.ToLower(h.Path), strings.TrimSpace(q)) {
-		score += 8
+	q := strings.ToLower(strings.TrimSpace(query))
+	pathLower := strings.ToLower(strings.ReplaceAll(h.Path, `\`, `/`))
+	base := strings.ToLower(BasenamePath(h.Path))
+	titleLower := strings.ToLower(h.Title)
+	headingLower := strings.ToLower(h.Heading)
+	matchKind := "body"
+
+	if base != "" && (base == q || strings.TrimSuffix(base, filepath.Ext(base)) == q) {
+		score += 28
+		matchKind = "filename"
+	} else if base != "" && strings.Contains(base, q) {
+		score += 18
+		matchKind = "filename"
+	} else if pathLower != "" && strings.Contains(pathLower, q) {
+		score += 12
+		matchKind = "path"
 	}
-	if strings.Contains(strings.ToLower(h.Title), q) {
-		score += 4
+	if titleLower != "" && strings.Contains(titleLower, q) {
+		score += 6
+		if matchKind == "body" {
+			matchKind = "heading"
+		}
 	}
-	// Exact-ish symbol tokens in snippet/heading
+	if headingLower != "" && strings.Contains(headingLower, q) {
+		score += 10
+		if matchKind == "body" {
+			matchKind = "heading"
+		}
+	}
 	for _, tok := range tokenizeQuery(query) {
-		if looksLikeSymbol(tok) && (strings.Contains(h.Snippet, tok) || strings.Contains(h.Heading, tok) || strings.Contains(h.Title, tok)) {
-			score += 12
+		if !looksLikeSymbol(tok) {
+			continue
+		}
+		tl := strings.ToLower(tok)
+		if strings.Contains(strings.ToLower(h.Snippet), tl) || strings.Contains(headingLower, tl) || strings.Contains(titleLower, tl) {
+			score += 14
+			matchKind = "symbol"
+		}
+		if base != "" && strings.Contains(base, tl) {
+			score += 8
 		}
 	}
 	if h.ArchivedHint() {
-		score -= 20
+		score -= 25
 	}
-	return score
+	return score, matchKind
 }
 
-// ArchivedHint is true when authority/path suggests obsolete material.
+// ArchivedHint is true when the document is marked archived or path suggests obsolete material.
 func (h SearchHit) ArchivedHint() bool {
+	if h.Archived {
+		return true
+	}
 	a := strings.ToLower(h.Authority)
 	return a == "archived" || strings.Contains(strings.ToLower(h.Path), "/archive/")
 }
