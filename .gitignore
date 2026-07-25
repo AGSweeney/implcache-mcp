@@ -1,0 +1,26 @@
+# Binaries
+/implcache-mcp
+/implcache-mcp.exe
+/implcache-mcp.exe~
+/ingestcli
+/ingestcli.exe
+*.exe
+
+# Local knowledge databases (never publish ingested corpora)
+*.db
+*.db-wal
+*.db-shm
+implcache.db*
+
+# Generated playbooks (default -output-root)
+/vomit/
+/vomit-output/
+/*.md.bak
+/REVIEW.local.md
+
+# Go / editor
+.idea/
+.vscode/
+*.swp
+*.tmp
+tmp_*.go
