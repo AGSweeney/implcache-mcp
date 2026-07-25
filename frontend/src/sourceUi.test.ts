@@ -5,6 +5,7 @@ import {
   sourceDisplayName,
   sourceSecondaryLine,
   sourceVersion,
+  sourceWarningInfo,
   typeLabel,
 } from "./sourceUi";
 import type { SourceSummary } from "./api";
@@ -98,7 +99,19 @@ describe("local placeholders", () => {
   it("labels local version and last-indexed instead of dashes", () => {
     const local = src({ kind: "local", id: "Docs", documentCount: 10 });
     expect(sourceVersion(local)).toBe("Local root");
-    expect(formatLastIndexed(local).text).toBe("On ingest");
+    expect(formatLastIndexed(local).text).toBe("Initial ingest");
     expect(formatLastIndexed(local).title).toMatch(/do not track refresh/i);
+  });
+});
+
+describe("sourceWarningInfo", () => {
+  it("returns zero when healthy", () => {
+    expect(sourceWarningInfo(src({ kind: "local", id: "a", documentCount: 3, lastStatus: "ok" })).count).toBe(0);
+  });
+
+  it("returns a count and label when failed", () => {
+    const w = sourceWarningInfo(src({ kind: "web", id: "a", lastStatus: "failed:boom" }));
+    expect(w.count).toBe(1);
+    expect(w.label).toBe("Failed");
   });
 });

@@ -21,7 +21,7 @@ import {
   sourceDisplayName,
   sourceSecondaryLine,
   sourceVersion,
-  sourceWarning,
+  sourceWarningInfo,
 } from "../sourceUi";
 
 const FILTERS_KEY = "implcache.librarian.sources.filters";
@@ -111,7 +111,7 @@ export default function Sources() {
       if (filters.type && s.kind !== filters.type) return false;
       if (filters.root && s.rootName !== filters.root) return false;
       if (!matchesStatus(s, filters.status)) return false;
-      if (filters.warningsOnly && !sourceWarning(s)) return false;
+      if (filters.warningsOnly && sourceWarningInfo(s).count === 0) return false;
       if (!matchesSearch(s, filters.search)) return false;
       return true;
     });
@@ -279,7 +279,7 @@ export default function Sources() {
             <tbody>
               {rows.map((s) => {
                 const st = mapSourceStatus(s);
-                const warn = sourceWarning(s);
+                const warn = sourceWarningInfo(s);
                 const lastIndexed = formatLastIndexed(s);
                 const selectedRow = selected?.kind === s.kind && selected?.id === s.id;
                 return (
@@ -313,7 +313,15 @@ export default function Sources() {
                     <td className={`col-hide-md ${lastIndexed.title ? "muted" : ""}`} title={lastIndexed.title}>
                       {lastIndexed.text}
                     </td>
-                    <td className="col-hide-sm">{warn || "—"}</td>
+                    <td className="col-hide-sm">
+                      {warn.count > 0 ? (
+                        <StatusBadge variant="warning" title={warn.label}>
+                          {warn.count}
+                        </StatusBadge>
+                      ) : (
+                        <span className="muted warn-none">None</span>
+                      )}
+                    </td>
                     <td>
                       <div className="actions-cell">
                         {(s.kind === "web" || s.kind === "repo") && (

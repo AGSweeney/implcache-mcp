@@ -119,7 +119,8 @@ export const api = {
   documents: (q: URLSearchParams) =>
     request<{ documents: Doc[]; total: number; count: number }>(`/api/v1/library/documents?${q}`),
   document: (id: number) => request(`/api/v1/library/documents/${id}`),
-  documentSymbols: (id: number) => request(`/api/v1/library/documents/${id}/symbols`),
+  documentSymbols: (id: number, limit = 200) =>
+    request(`/api/v1/library/documents/${id}/symbols?limit=${limit}`),
   roots: () => request<{ roots: string[]; count: number } | string[]>("/api/v1/roots"),
   rootGroups: () => request<{ groups: RootGroup[] } | RootGroup[]>("/api/v1/root-groups"),
   upsertRootGroup: (name: string, body: { description?: string; members: { rootName: string; priority: number }[] }) =>

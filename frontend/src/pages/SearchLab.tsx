@@ -1,5 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { api } from "../api";
+import { api, normalizeList } from "../api";
 import PageHead from "../PageHead";
 
 type Mode = "knowledge" | "symbol" | "context";
@@ -13,6 +14,13 @@ export default function SearchLab() {
   const [result, setResult] = useState<unknown>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const roots = useQuery({
+    queryKey: ["roots"],
+    queryFn: async () => normalizeList<string>(await api.roots(), "roots"),
+  });
+
+  const rootOptions = [...(roots.data || [])].sort((a, b) => a.localeCompare(b));
 
   async function run() {
     setBusy(true);
@@ -67,9 +75,21 @@ export default function SearchLab() {
           </label>
           <label>
             Root
-            <input value={rootName} onChange={(e) => setRootName(e.target.value)} placeholder="optional" />
+            <select
+              value={rootName}
+              onChange={(e) => setRootName(e.target.value)}
+              disabled={roots.isLoading}
+            >
+              <option value="">All roots</option>
+              {rootOptions.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
+        {roots.isError && <p className="muted">Could not load roots — {(roots.error as Error).message}</p>}
         {(mode === "knowledge" || mode === "context") && (
           <div className="row">
             <label>

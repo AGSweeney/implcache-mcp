@@ -66,7 +66,7 @@ export function formatLastIndexed(s: SourceSummary): { text: string; title?: str
   if (ts) return { text: formatEpoch(ts) };
   if (s.kind === "local") {
     return {
-      text: "On ingest",
+      text: "Initial ingest",
       title:
         "Local folder roots are indexed into the library but do not track refresh timestamps (unlike web/git sources).",
     };
@@ -114,10 +114,18 @@ export function formatEpoch(ts?: number): string {
   }
 }
 
-export function sourceWarning(s: SourceSummary): string {
+export type SourceWarningInfo = {
+  count: number;
+  label: string;
+};
+
+/** Warning signals available from the source summary (status-derived today). */
+export function sourceWarningInfo(s: SourceSummary): SourceWarningInfo {
   const st = mapSourceStatus(s);
-  if (st.ui === "failed" || st.ui === "attention") return st.label;
-  return "";
+  if (st.ui === "failed" || st.ui === "attention") {
+    return { count: 1, label: st.label };
+  }
+  return { count: 0, label: "" };
 }
 
 export function typeLabel(kind: string): string {
