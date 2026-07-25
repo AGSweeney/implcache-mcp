@@ -6,6 +6,18 @@
 /ingestcli.exe
 *.exe
 
+# End-user package: keep docs; ignore packed binaries and local DBs
+/dist/implcache-mcp
+/dist/implcache-mcp.exe
+/dist/ingestcli
+/dist/ingestcli.exe
+/dist/*.db
+/dist/*.db-wal
+/dist/*.db-shm
+/dist/vomit-output/
+/dist/uploads/
+/dist/.implcache/
+
 # Local knowledge databases (never publish ingested corpora)
 *.db
 *.db-wal
@@ -16,10 +28,17 @@ testdata/validation/reports/validation.db*
 # Managed Git clone cache (beside the DB; recreated by ingest/refresh)
 .implcache/
 
+# Librarian upload staging (default: <db-dir>/uploads)
+/uploads/
+
 # Generated playbooks (default -output-root)
 /vomit-output/
 /*.md.bak
 /REVIEW.local.md
+
+# Frontend toolchain (optional Vite SPA source)
+/frontend/node_modules/
+/frontend/dist/
 
 # Go / editor
 .idea/

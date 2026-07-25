@@ -1,50 +1,50 @@
 {
-  "database": "testdata\\validation\\reports\\validation.db",
+  "database": "D:\\GitHub\\implcache-mcp\\implcache.db",
   "finalInventory": {
-    "documents": 85,
-    "chunks": 792,
-    "symbols": 313,
-    "databaseBytes": 6279168
+    "documents": 18503,
+    "chunks": 53000,
+    "symbols": 53101,
+    "databaseBytes": 441167872
   },
-  "generatedAt": "2026-07-25T20:30:45.6914052Z",
+  "generatedAt": "2026-07-25T21:58:21.4613951Z",
   "scenarios": [
     {
       "name": "esp-idf-docs",
       "sourceType": "web",
       "description": "ESP-IDF stable API-reference/system prefix (Sphinx)",
-      "startedAt": "2026-07-25T20:30:25.3614825Z",
-      "finishedAt": "2026-07-25T20:30:36.3154386Z",
-      "elapsedMs": 10953,
+      "startedAt": "2026-07-25T21:57:55.9358674Z",
+      "finishedAt": "2026-07-25T21:58:11.6037112Z",
+      "elapsedMs": 15667,
       "before": {
-        "documents": 0,
-        "chunks": 0,
-        "symbols": 0,
-        "databaseBytes": 270336
+        "documents": 18404,
+        "chunks": 51827,
+        "symbols": 52774,
+        "databaseBytes": 432340992
       },
       "after": {
-        "documents": 14,
-        "chunks": 519,
-        "symbols": 0,
-        "databaseBytes": 4317184
+        "documents": 18428,
+        "chunks": 52718,
+        "symbols": 52774,
+        "databaseBytes": 438874112
       },
       "growth": {
-        "documents": 14,
-        "chunks": 519,
+        "documents": 24,
+        "chunks": 891,
         "symbols": 0,
-        "databaseBytes": 4046848
+        "databaseBytes": 6533120
       },
       "errors": [],
       "warnings": [
         "limitReached=maxPages"
       ],
       "detail": {
-        "bytesDownloaded": 2099756,
+        "bytesDownloaded": 3297246,
         "changed": 0,
-        "durationMs": 10938,
+        "durationMs": 15649,
         "failed": 0,
         "generation": 1,
         "limitReached": "maxPages",
-        "new": 15,
+        "new": 25,
         "pageErrorCount": 0,
         "rootName": "esp-idf-docs",
         "skipped": 0,
@@ -57,39 +57,37 @@
       "name": "netburner-docs",
       "sourceType": "web",
       "description": "NetBurner Developer Guide (Doxygen HTML)",
-      "startedAt": "2026-07-25T20:30:36.3154386Z",
-      "finishedAt": "2026-07-25T20:30:45.1258276Z",
-      "elapsedMs": 8810,
+      "startedAt": "2026-07-25T21:58:11.6037112Z",
+      "finishedAt": "2026-07-25T21:58:20.7073165Z",
+      "elapsedMs": 9103,
       "before": {
-        "documents": 14,
-        "chunks": 519,
-        "symbols": 0,
-        "databaseBytes": 4317184
+        "documents": 18428,
+        "chunks": 52718,
+        "symbols": 52774,
+        "databaseBytes": 438874112
       },
       "after": {
-        "documents": 29,
-        "chunks": 612,
-        "symbols": 0,
-        "databaseBytes": 4558848
+        "documents": 18445,
+        "chunks": 52813,
+        "symbols": 52774,
+        "databaseBytes": 439291904
       },
       "growth": {
-        "documents": 15,
-        "chunks": 93,
+        "documents": 17,
+        "chunks": 95,
         "symbols": 0,
-        "databaseBytes": 241664
+        "databaseBytes": 417792
       },
       "errors": [],
-      "warnings": [
-        "limitReached=maxPages"
-      ],
+      "warnings": [],
       "detail": {
-        "bytesDownloaded": 178397,
+        "bytesDownloaded": 193140,
         "changed": 0,
-        "durationMs": 8803,
+        "durationMs": 9092,
         "failed": 0,
         "generation": 1,
-        "limitReached": "maxPages",
-        "new": 15,
+        "limitReached": "",
+        "new": 17,
         "pageErrorCount": 0,
         "rootName": "netburner-docs",
         "skipped": 0,
@@ -102,26 +100,26 @@
       "name": "pdf-text-manual",
       "sourceType": "pdf",
       "description": "Representative text PDF fixture (Stage 1)",
-      "startedAt": "2026-07-25T20:30:45.1258276Z",
-      "finishedAt": "2026-07-25T20:30:45.1320913Z",
-      "elapsedMs": 6,
+      "startedAt": "2026-07-25T21:58:20.7073165Z",
+      "finishedAt": "2026-07-25T21:58:20.7240375Z",
+      "elapsedMs": 16,
       "before": {
-        "documents": 29,
-        "chunks": 612,
-        "symbols": 0,
-        "databaseBytes": 4558848
+        "documents": 18445,
+        "chunks": 52813,
+        "symbols": 52774,
+        "databaseBytes": 439291904
       },
       "after": {
-        "documents": 30,
-        "chunks": 613,
-        "symbols": 0,
-        "databaseBytes": 4558848
+        "documents": 18446,
+        "chunks": 52814,
+        "symbols": 52774,
+        "databaseBytes": 439296000
       },
       "growth": {
         "documents": 1,
         "chunks": 1,
         "symbols": 0,
-        "databaseBytes": 0
+        "databaseBytes": 4096
       },
       "errors": [],
       "warnings": [],
@@ -139,35 +137,35 @@
       "name": "git-local-owned",
       "sourceType": "git",
       "description": "Owned local Git checkout (sparse: store,ingest,gitrepo)",
-      "startedAt": "2026-07-25T20:30:45.1320913Z",
-      "finishedAt": "2026-07-25T20:30:45.6914052Z",
-      "elapsedMs": 559,
+      "startedAt": "2026-07-25T21:58:20.7240375Z",
+      "finishedAt": "2026-07-25T21:58:21.4613951Z",
+      "elapsedMs": 737,
       "before": {
-        "documents": 30,
-        "chunks": 613,
-        "symbols": 0,
-        "databaseBytes": 4558848
+        "documents": 18446,
+        "chunks": 52814,
+        "symbols": 52774,
+        "databaseBytes": 439296000
       },
       "after": {
-        "documents": 85,
-        "chunks": 792,
-        "symbols": 313,
-        "databaseBytes": 6279168
+        "documents": 18503,
+        "chunks": 53000,
+        "symbols": 53101,
+        "databaseBytes": 441167872
       },
       "growth": {
-        "documents": 55,
-        "chunks": 179,
-        "symbols": 313,
-        "databaseBytes": 1720320
+        "documents": 57,
+        "chunks": 186,
+        "symbols": 327,
+        "databaseBytes": 1871872
       },
       "errors": [],
       "warnings": [],
       "detail": {
-        "bytesProcessed": 351945,
-        "documentsIngested": 55,
-        "filesDiscovered": 55,
+        "bytesProcessed": 364660,
+        "documentsIngested": 57,
+        "filesDiscovered": 57,
         "filesSkipped": 0,
-        "resolvedCommit": "60938f4b2261e19ad08b3dd9fa8259e399d9fec7",
+        "resolvedCommit": "58d721e4ae79faa5bf535d2209abe30f6224f736",
         "rootName": "implcache-src",
         "status": "ingested"
       },

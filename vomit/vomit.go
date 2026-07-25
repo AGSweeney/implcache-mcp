@@ -403,7 +403,9 @@ func expandDocs(ctx context.Context, st *store.Store, hits []store.SearchHit, su
 		}
 		body := cleanupBody(b.String())
 		if scanBudget > 0 && len(body) > scanBudget {
-			body = body[:scanBudget]
+			// Prefer a subject/API-dense window over the document prefix
+			// (OCR PDFs often bury the callable APIs after a long TOC/intro).
+			body = truncateAroundSubject(body, tokens, scanBudget)
 		}
 		if strings.TrimSpace(body) == "" {
 			continue
@@ -435,6 +437,8 @@ func classifyDoc(uri, title string) string {
 		return "guide"
 	case strings.Contains(u, "/samples/") || strings.HasSuffix(u, ".c") || strings.Contains(u, "_c.html"):
 		return "sample"
+	case strings.Contains(u, "effs") || strings.Contains(u, "programmersguide") || strings.Contains(u, "programmer"):
+		return "guide"
 	case strings.Contains(u, "/user_guide/"):
 		return "guide"
 	case strings.Contains(u, "/api/") || strings.HasPrefix(strings.ToLower(title), "function ") || strings.HasPrefix(strings.ToLower(title), "class "):
@@ -442,6 +446,36 @@ func classifyDoc(uri, title string) string {
 	default:
 		return "other"
 	}
+}
+
+// truncateAroundSubject keeps ~budget bytes centered on the best subject/API line.
+// It anchors on the line index (not the whole window string) so a giant OCR intro
+// line cannot force the window back to byte 0 via strings.Index.
+func truncateAroundSubject(body string, tokens []string, budget int) string {
+	if budget <= 0 || len(body) <= budget {
+		return body
+	}
+	lines := strings.Split(body, "\n")
+	best := bestLineIndex(lines, tokens)
+	offset := 0
+	if best > 0 {
+		for i := 0; i < best; i++ {
+			offset += len(lines[i]) + 1
+		}
+	}
+	start := offset - budget/4
+	if start < 0 {
+		start = 0
+	}
+	end := start + budget
+	if end > len(body) {
+		end = len(body)
+		start = end - budget
+		if start < 0 {
+			start = 0
+		}
+	}
+	return body[start:end]
 }
 
 func isControlAppSubject(subject string, docs []expandedDoc) bool {
@@ -554,9 +588,9 @@ func renderPlaybook(subject string, docs []expandedDoc, hits []store.SearchHit) 
 		b.WriteString("## 3. Minimal call sequence\n\n")
 		b.WriteString("Work in this order (derived from high-signal APIs in the knowledge hits):\n\n")
 		if len(apis) == 0 {
-			b.WriteString("1. Open the top cited sample and copy its init/menu registration block.\n")
-			b.WriteString("2. Strip demo-only buttons; keep one command path.\n")
-			b.WriteString("3. Wire message-file labels and register the DLL.\n\n")
+			b.WriteString("1. Open the top cited source and locate the setup / init path for this subject.\n")
+			b.WriteString("2. Keep the documented call order (init → use → cleanup); drop unrelated demo paths.\n")
+			b.WriteString("3. Match headers, link libs, and host/device config shown in the citations.\n\n")
 		} else {
 			for i, api := range apis {
 				b.WriteString(fmt.Sprintf("%d. Call / use `%s`\n", i+1, api))
@@ -732,24 +766,32 @@ func min(a, b int) int {
 	return b
 }
 
+var (
+	// PascalCase / qualified / member calls (DeviceSdk, OSChangePrio, Client.Connect).
+	apiPascalRe = regexp.MustCompile(`\b((?:[A-Za-z_][\w]*::)?[A-Z][A-Za-z0-9]+(?:\.[A-Z][A-Za-z0-9]+)?)\s*\(`)
+	// C / snake_case calls (f_enterFS, f_mountfat, f_open, mmc_initfunc as callee).
+	apiSnakeRe = regexp.MustCompile(`\b([a-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+)\s*\(`)
+)
+
 func extractAPIs(docs []expandedDoc, hits []store.SearchHit, subject string, limit int) []string {
-	// General API-like tokens: PascalCase, qualified, and member calls — no hard-coded allow-list.
-	re := regexp.MustCompile(`\b((?:[A-Za-z_][\w]*::)?[A-Z][A-Za-z0-9]+(?:\.[A-Z][A-Za-z0-9]+)?)\s*\(`)
 	counts := map[string]int{}
 	add := func(s string, weight int) {
-		for _, m := range re.FindAllStringSubmatch(s, -1) {
-			name := m[1]
-			lower := strings.ToLower(name)
-			if apiNoise(lower, false) {
-				continue
+		for _, re := range []*regexp.Regexp{apiPascalRe, apiSnakeRe} {
+			for _, m := range re.FindAllStringSubmatch(s, -1) {
+				name := m[1]
+				lower := strings.ToLower(name)
+				if apiNoise(lower, false) {
+					continue
+				}
+				counts[name] += weight
 			}
-			counts[name] += weight
 		}
 	}
 	for _, h := range hits {
 		add(cleanupBody(h.Snippet), 4)
 	}
 	tokens := significantTokens(subject)
+	subjLower := strings.ToLower(subject)
 	for _, d := range docs {
 		weight := 1
 		if d.Kind == "sample" {
@@ -763,6 +805,12 @@ func extractAPIs(docs []expandedDoc, hits []store.SearchHit, subject string, lim
 			}
 		}
 		add(window, weight)
+	}
+	// Boost names that appear in the subject itself (e.g. f_enterFS f_mountfat …).
+	for name := range counts {
+		if strings.Contains(subjLower, strings.ToLower(name)) {
+			counts[name] += 6
+		}
 	}
 
 	type kv struct {
@@ -803,6 +851,12 @@ func menuRelevantAPI(name string) bool {
 }
 
 func apiNoise(lower string, menuSubject bool) bool {
+	switch lower {
+	case "if", "for", "while", "switch", "return", "sizeof", "typeof",
+		"printf", "scanf", "gets", "puts", "main", "usermain",
+		"sprintf", "snprintf", "fprintf", "malloc", "free", "memcpy", "memset":
+		return true
+	}
 	if strings.HasPrefix(lower, "dialog") || strings.HasPrefix(lower, "test") {
 		return true
 	}
@@ -963,35 +1017,55 @@ func relevantSnippet(s string, tokens []string) bool {
 	return hits >= 1
 }
 
-func windowAround(body string, tokens []string, maxLines int) string {
-	lines := strings.Split(body, "\n")
-	if len(lines) == 0 {
-		return ""
+func scoreLine(line string, tokens []string) int {
+	lower := strings.ToLower(line)
+	score := 0
+	for _, tok := range tokens {
+		if tok != "" && strings.Contains(lower, strings.ToLower(tok)) {
+			score += 2
+		}
 	}
+	// Prefer API-dense lines over OCR intro prose that only repeats the subject token.
+	if apiPascalRe.MatchString(line) || apiSnakeRe.MatchString(line) {
+		score += 6
+	}
+	if strings.Contains(lower, "f_") && strings.Contains(line, "(") {
+		score += 4
+	}
+	if strings.Contains(lower, "int f_") || strings.Contains(lower, "void f_") ||
+		strings.Contains(lower, "long f_") || strings.Contains(lower, "f_file *") {
+		score += 5
+	}
+	// Giant OCR blobs that only echo the subject should lose to short API lines.
+	if len(line) > 400 && score > 0 && !(apiPascalRe.MatchString(line) || apiSnakeRe.MatchString(line)) {
+		score = 1
+	}
+	return score
+}
+
+func bestLineIndex(lines []string, tokens []string) int {
 	best := -1
 	bestScore := 0
 	for i, line := range lines {
-		lower := strings.ToLower(line)
-		score := 0
-		for _, tok := range tokens {
-			if strings.Contains(lower, strings.ToLower(tok)) {
-				score += 2
-			}
-		}
-		if strings.Contains(lower, "addmenuitem") ||
-			strings.Contains(lower, "registercommand") ||
-			strings.Contains(lower, "registerhandler") ||
-			strings.Contains(lower, "spitransfer") ||
-			strings.Contains(lower, "client.connect") ||
-			strings.Contains(lower, "retrypolicy") {
-			score += 5
-		}
+		score := scoreLine(line, tokens)
 		if score > bestScore {
 			bestScore = score
 			best = i
 		}
 	}
-	if best < 0 || bestScore == 0 {
+	if bestScore == 0 {
+		return -1
+	}
+	return best
+}
+
+func windowAround(body string, tokens []string, maxLines int) string {
+	lines := strings.Split(body, "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	best := bestLineIndex(lines, tokens)
+	if best < 0 {
 		return ""
 	}
 	start := best - maxLines/3
@@ -1004,6 +1078,13 @@ func windowAround(body string, tokens []string, maxLines int) string {
 		start = end - maxLines
 		if start < 0 {
 			start = 0
+		}
+	}
+	// Drop a leading giant OCR line when the focus is later in the window.
+	if start < best && len(lines[start]) > 400 && !(apiPascalRe.MatchString(lines[start]) || apiSnakeRe.MatchString(lines[start])) {
+		start = best
+		if end < start+1 {
+			end = min(len(lines), start+maxLines)
 		}
 	}
 	return strings.TrimSpace(strings.Join(lines[start:end], "\n"))
@@ -1057,9 +1138,21 @@ func buildPitfalls(subject string, docs []expandedDoc, controlApp bool) string {
 		b.WriteString("- Don’t confuse **download to controller** with **upload from controller** (direction matters).\n")
 		return b.String()
 	}
-	b.WriteString("- Prefer header/API pages for signatures when sample bodies are truncated.\n")
-	b.WriteString("- Do not mix async bootstrap samples with the normal application entry path.\n")
+	b.WriteString("- Prefer header/API pages for signatures when sample bodies are truncated or OCR-noisy.\n")
 	b.WriteString("- Keep init/cleanup order from cited workflow sections; do not invent call sequences.\n")
+	b.WriteString("- Match the cited knowledge root/SDK — do not apply patterns from unrelated products.\n")
+	rootHint := playbookDomain(docs)
+	switch rootHint {
+	case "netburner":
+		b.WriteString("- Each task that uses EFFS typically needs its own `f_enterFS` / `f_releaseFS` pair.\n")
+		b.WriteString("- Mount before open/read/write; unmount with `f_delvolume` when the guide says so.\n")
+		if strings.Contains(sub, "sd") || strings.Contains(sub, "mmc") || strings.Contains(sub, "effs") {
+			b.WriteString("- SD/MMC EFFS often assumes exclusive QSPI use — check platform notes before sharing the bus.\n")
+		}
+	case "creo":
+		b.WriteString("- Don’t confuse menubar registration APIs with custom dialog UI menus.\n")
+		b.WriteString("- Sync DLL apps use the toolkit entrypoint; async spawn demos are a different path.\n")
+	}
 	if strings.Contains(sub, "plugin") {
 		b.WriteString("- Plugin hosts often require session/command registration beyond a single UI helper.\n")
 	}
@@ -1071,6 +1164,21 @@ func buildPitfalls(subject string, docs []expandedDoc, controlApp bool) string {
 		}
 	}
 	return b.String()
+}
+
+func playbookDomain(docs []expandedDoc) string {
+	for _, d := range docs {
+		r := strings.ToLower(d.RootName + " " + d.URI + " " + d.Title)
+		switch {
+		case strings.Contains(r, "netburner") || strings.Contains(r, "effs") || strings.Contains(r, "nburn"):
+			return "netburner"
+		case strings.Contains(r, "creo") || strings.Contains(r, "protoolkit") || strings.Contains(r, "otk"):
+			return "creo"
+		case strings.Contains(r, "example-control-app") || strings.Contains(r, "control-app"):
+			return "control-app"
+		}
+	}
+	return ""
 }
 
 func buildChecklist(subject string, apis, steps []string, controlApp bool) string {
@@ -1094,13 +1202,13 @@ func buildChecklist(subject string, apis, steps []string, controlApp bool) strin
 		}
 		return b.String()
 	}
-	b.WriteString("- [ ] Confirm the correct SDK / root for **")
+	b.WriteString("- [ ] Confirm the correct SDK / knowledge root for **")
 	b.WriteString(subject)
 	b.WriteString("**\n")
-	b.WriteString("- [ ] Add required headers / link libs\n")
-	b.WriteString("- [ ] Implement the entrypoint and callbacks cited in the sources\n")
-	b.WriteString("- [ ] Apply host registration / startup config from the samples\n")
-	b.WriteString("- [ ] Smoke-test on a real session\n")
+	b.WriteString("- [ ] Add required headers / link libs from citations\n")
+	b.WriteString("- [ ] Implement the entrypoint and call order cited in the sources\n")
+	b.WriteString("- [ ] Apply any host/device/startup config shown in the samples\n")
+	b.WriteString("- [ ] Smoke-test on real hardware or a real host session\n")
 	for i, api := range apis {
 		if i >= 6 {
 			break

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import PageHead from "../PageHead";
 
 type Kind = "local" | "git" | "web" | "pdf";
 
@@ -136,8 +137,8 @@ export default function AddSource() {
   if (!kind) {
     return (
       <div>
-        <h1>Add Source</h1>
-        <div className="grid-metrics">
+        <PageHead title="Add Source" blurb="Preview and ingest a new knowledge source." />
+        <div className="grid">
           {(
             [
               ["local", "Local directory"],
@@ -169,7 +170,7 @@ export default function AddSource() {
 
   return (
     <div>
-      <h1>Add {kind} source</h1>
+      <PageHead title={`Add ${kind} source`} blurb="Preview and ingest a new knowledge source." />
       <div className="wizard-steps">
         {steps.map((s, i) => (
           <span key={s} className={i === step ? "on" : ""}>

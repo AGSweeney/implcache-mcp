@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, getToken, setToken } from "../api";
+import PageHead from "../PageHead";
 
 export default function Settings() {
   const server = useQuery({ queryKey: ["server"], queryFn: api.server });
@@ -8,13 +9,13 @@ export default function Settings() {
 
   return (
     <div>
-      <h1>Settings</h1>
+      <PageHead title="Settings" blurb="Server capabilities and API token." />
       <div className="panel stack">
-        <h2>Connection</h2>
+        <h2 className="section-title">Connection</h2>
         <pre>{JSON.stringify(server.data, null, 2)}</pre>
       </div>
       <div className="panel stack">
-        <h2>API token</h2>
+        <h2 className="section-title">API token</h2>
         <p className="muted">
           When the server is started with <span className="mono">-librarian-token</span>, paste the bearer token here.
           Stored only in this browser&apos;s localStorage.

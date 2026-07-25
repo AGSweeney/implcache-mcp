@@ -4,7 +4,9 @@ ImplCache MCP is a local SQLite-backed implementation-context server for coding 
 
 > Return the smallest sufficient package of accurate, implementation-ready context for the current coding task.
 
-Full documentation: **[docs/README.md](docs/README.md)**
+**Users manual (source tree):** [docs/USERS_MANUAL.md](docs/USERS_MANUAL.md) · Full index: [docs/README.md](docs/README.md)
+
+**End-user package:** [dist/](dist/) — sanitized docs for binary installs; pack with `scripts/pack-dist.ps1`.
 
 ---
 
@@ -167,7 +169,7 @@ go test ./store -bench=Benchmark -benchtime=200ms
 - Schema and ranking will evolve; pin or vendor if you need stability.
 - Symbol extraction is heuristic (Go/C-family/Python/JS/Java); neural embeddings deferred — optional sparse semantic only.
 - `estimatedTokens` is approximate (`runes/4`).
-- HTTP has no auth — keep it on loopback or put a proxy in front. Mutations over HTTP stay off unless `-enable-http-mutations`.
+- Keep HTTP on loopback or put a reverse proxy + HTTPS in front. Librarian `/api/v1` supports optional Bearer auth (`-librarian-token` / `-librarian-viewer-token`); MCP-over-HTTP has no separate auth beyond bind and mutation flags. Mutations over HTTP stay off unless `-enable-http-mutations`.
 - Recipe quality needs human review; generated entries rank below curated/project sources.
 - SQLite WAL: fine for readers; serialize writers. Requires **Go 1.25+**.
 

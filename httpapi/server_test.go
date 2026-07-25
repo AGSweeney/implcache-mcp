@@ -5,9 +5,11 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -160,5 +162,64 @@ func TestViewerTokenCannotMutate(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for viewer mutate, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleDeleteLocalSource(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	_, err = st.UpsertDocument(ctx, store.UpsertInput{
+		URI: "project://NetBurner Examples/EFFS/main.cpp", Title: "main.cpp",
+		SourceType: store.SourceSource, Path: "EFFS/main.cpp", RootName: "NetBurner Examples",
+		Hash: "h1", Chunks: []store.Chunk{{Body: "int main() {}", StartLine: 1, EndLine: 1}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHandler(Options{Store: st, DBPath: dbPath, AllowIngest: true, AllowDelete: true, LibrarianEnabled: true})
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/sources/local/"+url.PathEscape("NetBurner Examples"), nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		DeletedDocuments int64 `json:"deletedDocuments"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.DeletedDocuments < 1 {
+		t.Fatalf("expected deleted documents, got %+v", got)
+	}
+}
+
+func TestHandleDeletePDFSourceKeepsFullURI(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	h := NewHandler(Options{Store: st, DBPath: dbPath, AllowIngest: true, AllowDelete: true, LibrarianEnabled: true})
+	uri := "pdf://NetBurner/guide.pdf"
+	// Missing source should still accept the full URI (not truncate at ':').
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/sources/pdf?uri="+url.QueryEscape(uri), nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), uri) {
+		t.Fatalf("response lost URI: %s", rec.Body.String())
 	}
 }

@@ -2,26 +2,26 @@
   "name": "pdf-text-manual",
   "sourceType": "pdf",
   "description": "Representative text PDF fixture (Stage 1)",
-  "startedAt": "2026-07-25T20:30:45.1258276Z",
-  "finishedAt": "2026-07-25T20:30:45.1320913Z",
-  "elapsedMs": 6,
+  "startedAt": "2026-07-25T21:58:20.7073165Z",
+  "finishedAt": "2026-07-25T21:58:20.7240375Z",
+  "elapsedMs": 16,
   "before": {
-    "documents": 29,
-    "chunks": 612,
-    "symbols": 0,
-    "databaseBytes": 4558848
+    "documents": 18445,
+    "chunks": 52813,
+    "symbols": 52774,
+    "databaseBytes": 439291904
   },
   "after": {
-    "documents": 30,
-    "chunks": 613,
-    "symbols": 0,
-    "databaseBytes": 4558848
+    "documents": 18446,
+    "chunks": 52814,
+    "symbols": 52774,
+    "databaseBytes": 439296000
   },
   "growth": {
     "documents": 1,
     "chunks": 1,
     "symbols": 0,
-    "databaseBytes": 0
+    "databaseBytes": 4096
   },
   "errors": [],
   "warnings": [],

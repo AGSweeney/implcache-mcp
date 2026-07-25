@@ -58,7 +58,7 @@ func (h *handler) withSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -184,6 +184,7 @@ func (h *handler) registerRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("POST "+apiPrefix+"sources/local/preview", h.handleLocalPreview)
 	mux.HandleFunc("POST "+apiPrefix+"sources/local/ingest", h.handleLocalIngest)
+	mux.HandleFunc("DELETE "+apiPrefix+"sources/local/{name}", h.handleDeleteLocalSource)
 
 	mux.HandleFunc("POST "+apiPrefix+"uploads", h.handleUploads)
 }

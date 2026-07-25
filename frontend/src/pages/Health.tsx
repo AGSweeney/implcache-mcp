@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, normalizeList, type HealthIssue } from "../api";
+import PageHead from "../PageHead";
 
 export default function Health() {
   const health = useQuery({
@@ -10,7 +11,7 @@ export default function Health() {
 
   return (
     <div>
-      <h1>Health</h1>
+      <PageHead title="Health" blurb="Library-wide issues and recommended actions." />
       {health.isError && <div className="error-box">{(health.error as Error).message}</div>}
       <div className="panel">
         <table>

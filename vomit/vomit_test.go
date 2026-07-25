@@ -202,6 +202,86 @@ func mustRead(t *testing.T, path string) []byte {
 	return data
 }
 
+func TestGenerateNetBurnerEFFSPlaybook(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "kb.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+
+	// Simulate OCR PDF: long intro, then the real API section later.
+	intro := strings.Repeat("EFFS introduction hardware setup NetBurner platforms SD MMC. ", 200)
+	apis := `
+3.1 Common EFFS Function Calls
+Create/delete working directory for current task priority:
+int f_enterFS( void );
+void f_releaseFS(void );
+Mount/dismount a flash card:
+int f_mountfat(MMC_DRV_NUM, mmc_initfunc, F_MMC_DRIVE0);
+int f_delvolume(int drivenum)
+Open/Close a file
+F_FILE *f_open(const char *filename, const char *mode);
+int f_close(F_FILE *filehandle)
+long f_write(const void *buf, long size,long size_st, F_FILE *filehandle)
+long f_read( void *buf, long size,long size_st, F_FILE *filehandle)
+`
+	body := intro + apis
+	_, err = st.UpsertDocument(ctx, store.UpsertInput{
+		URI:        "pdf://NetBurner/EFFS-ProgrammersGuide.pdf",
+		Title:      "EFFS Programmers Guide",
+		SourceType: store.SourceMarkdown,
+		Path:       "EFFS-ProgrammersGuide.pdf",
+		RootName:   "NetBurner",
+		Hash:       "effs1",
+		Chunks:     []store.Chunk{{Body: body, StartLine: 1, EndLine: 40}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(dir, "effs.md")
+	res, err := Generate(ctx, st, Request{
+		Subject:    "EFFS setup",
+		OutPath:    filepath.Base(out),
+		OutputRoot: filepath.Dir(out),
+		AllowWrite: true,
+		RootNames:  []string{"NetBurner"},
+		Limit:      5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(mustRead(t, out))
+	for _, want := range []string{
+		"f_enterFS",
+		"f_mountfat",
+		"pdf://NetBurner/EFFS-ProgrammersGuide.pdf",
+		"NetBurner",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in:\n%s", want, text)
+		}
+	}
+	for _, bad := range []string{
+		"creotk.dat",
+		"ProMenubar",
+		"user_initialize",
+		"text/usascii",
+		"Toolkit vs OTK",
+		"message-file labels and register the DLL",
+		"init/menu registration block",
+	} {
+		if strings.Contains(text, bad) {
+			t.Fatalf("Creo boilerplate leaked (%q) into NetBurner playbook:\n%s", bad, text)
+		}
+	}
+	if res.SourceCount < 1 {
+		t.Fatalf("sourceCount=%d", res.SourceCount)
+	}
+}
+
 func TestGeneratePromptsWhenRootAmbiguous(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "kb.db"))

@@ -1,0 +1,57 @@
+ImplCache MCP
+Copyright (c) 2026 Adam G. Sweeney <agsweeney@gmail.com>
+
+This product is original work by Adam G. Sweeney. It was developed against,
+depends on, and redistributes (via Go module linkage) components from the
+projects below. Full license texts are in the third_party/ directory.
+
+---------------------------------------------------------------------------
+Model Context Protocol Go SDK
+---------------------------------------------------------------------------
+Project:  https://github.com/modelcontextprotocol/go-sdk
+Module:   github.com/modelcontextprotocol/go-sdk
+
+Copyright (c) 2024-2025 Model Context Protocol a Series of LF Projects, LLC.
+Copyright The Go MCP SDK Authors.
+
+The MCP project is undergoing a licensing transition from the MIT License to
+the Apache License, Version 2.0 ("Apache-2.0"). New code and specification
+contributions are licensed under Apache-2.0; some contributions remain under
+the MIT License. See third_party/LICENSE.go-sdk for the complete notice.
+
+ImplCache uses the Go MCP SDK as a library to implement its MCP server
+(stdio and streamable HTTP transports, tool registration, and request
+handling). Patterns and APIs from that SDK informed this project's server
+wiring.
+
+---------------------------------------------------------------------------
+SQLite
+---------------------------------------------------------------------------
+Project:  https://sqlite.org/
+Source:   https://sqlite.org/src (also mirrored as github.com/sqlite/sqlite)
+
+SQLite source code is Public Domain. See third_party/LICENSE.sqlite and
+https://www.sqlite.org/copyright.html.
+
+In place of a legal notice, the SQLite authors offer this blessing:
+
+  May you do good and not evil.
+  May you find forgiveness for yourself and forgive others.
+  May you share freely, never taking more than you give.
+
+ImplCache's schema, FTS5 search, and local knowledge store are designed
+around SQLite capabilities (including FTS5).
+
+---------------------------------------------------------------------------
+modernc.org/sqlite (pure-Go SQLite driver)
+---------------------------------------------------------------------------
+Project:  https://gitlab.com/cznic/sqlite
+Module:   modernc.org/sqlite
+
+Copyright (c) 2017 The Sqlite Authors. All rights reserved.
+Licensed under the BSD 3-Clause License.
+See third_party/LICENSE.modernc-sqlite.
+
+ImplCache uses modernc.org/sqlite (no CGO) to open and query its knowledge
+database at runtime. That package incorporates a Go translation of SQLite;
+SQLite itself remains Public Domain as noted above.

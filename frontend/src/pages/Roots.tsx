@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, normalizeList, type RootGroup } from "../api";
+import PageHead from "../PageHead";
 
 export default function Roots() {
   const qc = useQueryClient();
@@ -33,9 +34,9 @@ export default function Roots() {
 
   return (
     <div>
-      <h1>Roots & groups</h1>
+      <PageHead title="Roots" blurb="Knowledge roots and prioritized root groups." />
       <div className="panel">
-        <h2>Roots</h2>
+        <h2 className="section-title">Roots</h2>
         <ul>
           {(roots.data || []).map((r) => (
             <li key={r} className="mono">
@@ -45,7 +46,7 @@ export default function Roots() {
         </ul>
       </div>
       <div className="panel">
-        <h2>Root groups</h2>
+        <h2 className="section-title">Root groups</h2>
         {(groups.data || []).map((g) => (
           <div key={g.name} style={{ marginBottom: "1rem" }}>
             <strong>{g.name}</strong>
@@ -68,7 +69,7 @@ export default function Roots() {
         ))}
       </div>
       <div className="panel stack">
-        <h2>Create / update group</h2>
+        <h2 className="section-title">Create / update group</h2>
         <label>
           Name
           <input value={name} onChange={(e) => setName(e.target.value)} />

@@ -2,8 +2,14 @@
 
 ImplCache MCP is a **local implementation-context server** for coding agents. It stores documentation and source in SQLite, then returns compact, cited packages that help agents write correct software.
 
+**Start here (developers / source tree):** [USERS_MANUAL.md](USERS_MANUAL.md) — install from source, ingest, Cursor/Librarian setup, agent usage, operations, and troubleshooting.
+
+**End-user release package:** [../dist/](../dist/) — sanitized install/config docs and users manual for binary consumers (no source-tree recreation). Pack binaries with `scripts/pack-dist.ps1`.
+
 | Document | Contents |
 |----------|----------|
+| [USERS_MANUAL.md](USERS_MANUAL.md) | **Source-tree operator manual** (developers) |
+| [../dist/README.md](../dist/README.md) | **End-user package** index (ship with binaries) |
 | [../README.md](../README.md) | Product overview, quick start, Cursor config |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Purpose, layers, retrieval pipeline, package layout |
 | [AGENT_GUIDE.md](AGENT_GUIDE.md) | How coding agents should call tools |

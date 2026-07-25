@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, getToken, normalizeList, type Operation } from "../api";
+import PageHead from "../PageHead";
 
 function formatProgress(p?: Operation["progress"]) {
   if (!p) return "";
@@ -89,7 +90,7 @@ export default function Jobs() {
 
   return (
     <div>
-      <h1>Jobs</h1>
+      <PageHead title="Jobs" blurb="Live ingest and refresh operations." />
       <div className="panel">
         <table>
           <thead>

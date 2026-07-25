@@ -2,39 +2,39 @@
   "name": "esp-idf-docs",
   "sourceType": "web",
   "description": "ESP-IDF stable API-reference/system prefix (Sphinx)",
-  "startedAt": "2026-07-25T20:30:25.3614825Z",
-  "finishedAt": "2026-07-25T20:30:36.3154386Z",
-  "elapsedMs": 10953,
+  "startedAt": "2026-07-25T21:57:55.9358674Z",
+  "finishedAt": "2026-07-25T21:58:11.6037112Z",
+  "elapsedMs": 15667,
   "before": {
-    "documents": 0,
-    "chunks": 0,
-    "symbols": 0,
-    "databaseBytes": 270336
+    "documents": 18404,
+    "chunks": 51827,
+    "symbols": 52774,
+    "databaseBytes": 432340992
   },
   "after": {
-    "documents": 14,
-    "chunks": 519,
-    "symbols": 0,
-    "databaseBytes": 4317184
+    "documents": 18428,
+    "chunks": 52718,
+    "symbols": 52774,
+    "databaseBytes": 438874112
   },
   "growth": {
-    "documents": 14,
-    "chunks": 519,
+    "documents": 24,
+    "chunks": 891,
     "symbols": 0,
-    "databaseBytes": 4046848
+    "databaseBytes": 6533120
   },
   "errors": [],
   "warnings": [
     "limitReached=maxPages"
   ],
   "detail": {
-    "bytesDownloaded": 2099756,
+    "bytesDownloaded": 3297246,
     "changed": 0,
-    "durationMs": 10938,
+    "durationMs": 15649,
     "failed": 0,
     "generation": 1,
     "limitReached": "maxPages",
-    "new": 15,
+    "new": 25,
     "pageErrorCount": 0,
     "rootName": "esp-idf-docs",
     "skipped": 0,

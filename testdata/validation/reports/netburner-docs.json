@@ -2,39 +2,37 @@
   "name": "netburner-docs",
   "sourceType": "web",
   "description": "NetBurner Developer Guide (Doxygen HTML)",
-  "startedAt": "2026-07-25T20:30:36.3154386Z",
-  "finishedAt": "2026-07-25T20:30:45.1258276Z",
-  "elapsedMs": 8810,
+  "startedAt": "2026-07-25T21:58:11.6037112Z",
+  "finishedAt": "2026-07-25T21:58:20.7073165Z",
+  "elapsedMs": 9103,
   "before": {
-    "documents": 14,
-    "chunks": 519,
-    "symbols": 0,
-    "databaseBytes": 4317184
+    "documents": 18428,
+    "chunks": 52718,
+    "symbols": 52774,
+    "databaseBytes": 438874112
   },
   "after": {
-    "documents": 29,
-    "chunks": 612,
-    "symbols": 0,
-    "databaseBytes": 4558848
+    "documents": 18445,
+    "chunks": 52813,
+    "symbols": 52774,
+    "databaseBytes": 439291904
   },
   "growth": {
-    "documents": 15,
-    "chunks": 93,
+    "documents": 17,
+    "chunks": 95,
     "symbols": 0,
-    "databaseBytes": 241664
+    "databaseBytes": 417792
   },
   "errors": [],
-  "warnings": [
-    "limitReached=maxPages"
-  ],
+  "warnings": [],
   "detail": {
-    "bytesDownloaded": 178397,
+    "bytesDownloaded": 193140,
     "changed": 0,
-    "durationMs": 8803,
+    "durationMs": 9092,
     "failed": 0,
     "generation": 1,
-    "limitReached": "maxPages",
-    "new": 15,
+    "limitReached": "",
+    "new": 17,
     "pageErrorCount": 0,
     "rootName": "netburner-docs",
     "skipped": 0,

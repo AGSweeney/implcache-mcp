@@ -15,6 +15,7 @@ import (
 
 	"implcache-mcp/ingest"
 	"implcache-mcp/internal/safePath"
+	"implcache-mcp/librarian"
 )
 
 type localIngestRequest struct {
@@ -22,6 +23,35 @@ type localIngestRequest struct {
 	RootName  string `json:"rootName,omitempty"`
 	Mode      string `json:"mode,omitempty"` // markdown|project
 	Recursive bool   `json:"recursive,omitempty"`
+}
+
+// handleDeleteLocalSource removes a synthesized local root's indexed documents
+// (project://{root}/…). Refuses roots owned by web/pdf/repo source rows.
+func (h *handler) handleDeleteLocalSource(w http.ResponseWriter, r *http.Request) {
+	if !h.allowMutation(w, r, "delete") {
+		return
+	}
+	root := strings.TrimSpace(r.PathValue("name"))
+	if root == "" {
+		WriteError(w, http.StatusBadRequest, "bad_request", "root name is required")
+		return
+	}
+	src, err := librarian.GetSource(r.Context(), h.opt.Store, librarian.KindLocal, root)
+	if err != nil {
+		WriteError(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+	if src.Kind != librarian.KindLocal {
+		WriteError(w, http.StatusBadRequest, "bad_request", "use the typed delete endpoint for "+string(src.Kind)+" sources")
+		return
+	}
+	prefix := "project://" + root + "/"
+	n, err := h.opt.Store.DeleteDocumentsByURIPrefix(r.Context(), prefix)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"rootName": root, "deletedDocuments": n, "prefix": prefix})
 }
 
 func (h *handler) handleLocalIngest(w http.ResponseWriter, r *http.Request) {

@@ -172,7 +172,8 @@ func (s *Store) ListWebSources(ctx context.Context) ([]WebSource, error) {
 	return out, rows.Err()
 }
 
-// DeleteWebSource removes a source and cascaded pages; also deletes documents under its root.
+// DeleteWebSource removes a web source, its pages, and only the documents linked
+// from those pages. It does not wipe other corpora that happen to share root_name.
 func (s *Store) DeleteWebSource(ctx context.Context, name string) (bool, error) {
 	ws, err := s.GetWebSourceByName(ctx, name)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -181,16 +182,56 @@ func (s *Store) DeleteWebSource(ctx context.Context, name string) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	prefix := "project://" + ws.RootName + "/"
-	if _, err := s.DeleteDocumentsByURIPrefix(ctx, prefix); err != nil {
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
 		return false, err
 	}
-	res, err := s.db.ExecContext(ctx, `DELETE FROM web_sources WHERE id = ?`, ws.ID)
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT DISTINCT document_id FROM web_pages
+		WHERE web_source_id = ? AND document_id IS NOT NULL AND document_id > 0`, ws.ID)
+	if err != nil {
+		return false, err
+	}
+	var docIDs []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return false, err
+		}
+		docIDs = append(docIDs, id)
+	}
+	if err := rows.Close(); err != nil {
+		return false, err
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+
+	if err := retractDocumentsSemanticStats(ctx, tx, docIDs); err != nil {
+		return false, err
+	}
+	for _, id := range docIDs {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM documents WHERE id = ?`, id); err != nil {
+			return false, err
+		}
+	}
+
+	res, err := tx.ExecContext(ctx, `DELETE FROM web_sources WHERE id = ?`, ws.ID)
 	if err != nil {
 		return false, err
 	}
 	n, err := res.RowsAffected()
-	return n > 0, err
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return n > 0, nil
 }
 
 // SetWebSourceDetectedVersion records a version inferred from crawled page titles.

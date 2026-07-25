@@ -511,10 +511,8 @@ func (s *Store) DeleteDocumentsByURIPrefix(ctx context.Context, prefix string) (
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
-	for _, id := range ids {
-		if err := retractDocumentSemanticStats(ctx, tx, id); err != nil {
-			return 0, err
-		}
+	if err := retractDocumentsSemanticStats(ctx, tx, ids); err != nil {
+		return 0, err
 	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM documents WHERE uri LIKE ? ESCAPE '\'`, escaped+"%")
 	if err != nil {

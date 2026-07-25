@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
+import PageHead from "../PageHead";
 
 export default function Logs() {
   const logs = useQuery({
@@ -10,9 +11,9 @@ export default function Logs() {
 
   return (
     <div>
-      <h1>Logs</h1>
+      <PageHead title="Logs" blurb="In-process Librarian diagnostics." />
       <div className="panel">
-        <p className="muted">In-process Librarian diagnostic ring (not durable across restart).</p>
+        <p className="muted">In-process diagnostic ring (not durable across restart).</p>
         {logs.isError && <div className="error-box">{(logs.error as Error).message}</div>}
         <table>
           <thead>

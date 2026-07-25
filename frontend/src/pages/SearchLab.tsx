@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api";
+import PageHead from "../PageHead";
 
 type Mode = "knowledge" | "symbol" | "context";
 
@@ -49,7 +50,7 @@ export default function SearchLab() {
 
   return (
     <div>
-      <h1>Search Lab</h1>
+      <PageHead title="Search Lab" blurb="Exercise retrieval against the live index." />
       <div className="panel stack">
         <div className="form-grid">
           <label>

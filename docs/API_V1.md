@@ -64,6 +64,7 @@ Common codes: `validation`, `authentication`, `authorization`, `not_found`, `con
 | DELETE | `/sources/pdf` | Remove by `?uri=` |
 | POST | `/sources/local/preview` | Dry-run local path walk (no index writes) |
 | POST | `/sources/local/ingest` | Ingest local markdown/project tree |
+| DELETE | `/sources/local/{name}` | Remove synthesized local root (`project://{name}/…`) |
 | POST | `/sources/git/inspect` | Inspect remote/local git repo (no ingest) |
 | POST | `/sources/web/preview` | Dry-run web crawl plan |
 | POST | `/uploads` | Upload file (multipart); returns server path token |

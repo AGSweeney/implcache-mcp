@@ -112,15 +112,23 @@ Terminate HTTPS at the reverse proxy; keep the Go process on loopback. Set `-lib
 
 ## Server flags
 
+Complete flag table (including `-mode`, `-enable-admin-tools`, `-workspace`, `-project-root`, `-enable-semantic`, `-version`): [USERS_MANUAL.md § Configuration reference](USERS_MANUAL.md#6-configuration-reference).
+
+The Go app does **not** read application environment variables; pass configuration via CLI flags and optional `.implcache.yaml` (`-workspace`).
+
 | Flag | Default | Purpose |
 |------|---------|---------|
 | `-db` | `./implcache.db` | SQLite path |
 | `-http` | _(stdio)_ | Streamable HTTP address |
+| `-mode` | `agent` | `agent` (retrieval) or `admin` |
+| `-enable-admin-tools` | `false` | Register admin tools even in agent mode |
 | `-enable-librarian` | `false` | Serve embedded Librarian UI + `/api/v1` |
 | `-librarian-base-path` | `/` | URL base path for the embedded UI |
 | `-librarian-token` | _(none)_ | Bearer token for administrator API access |
 | `-librarian-viewer-token` | _(none)_ | Bearer token for viewer (read-only) API access |
 | `-upload-dir` | `<db-dir>/uploads` | Librarian PDF upload directory |
+| `-workspace` | _(none)_ | Load `DIR/.implcache.yaml` for default roots |
+| `-project-root` | _(none)_ | Default `projectRoot` (overrides manifest) |
 | `-enable-http-mutations` | `false` | Allow ingest/delete over HTTP |
 | `-allow-remote-http` | `false` | Allow non-loopback HTTP bind |
 | `-readonly` | `false` | Search-only; opens DB read-only when possible |
@@ -131,6 +139,8 @@ Terminate HTTPS at the reverse proxy; keep the Go process on loopback. Set `-lib
 | `-max-results` | `20` | Search result cap |
 | `-max-ingest-files` | `50000` | Per-ingest file cap |
 | `-max-document-bytes` | `8MiB` | Per-file size cap |
+| `-enable-semantic` | `false` | Sparse term-vector similarity (not embeddings) |
+| `-version` | | Print version and exit |
 
 ## Security model (summary)
 

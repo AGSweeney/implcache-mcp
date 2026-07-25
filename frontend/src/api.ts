@@ -153,6 +153,8 @@ export const api = {
     request("/api/v1/sources/pdf/ingest", { method: "POST", body: JSON.stringify(body) }),
   deletePdf: (uri: string) =>
     request(`/api/v1/sources/pdf?uri=${encodeURIComponent(uri)}`, { method: "DELETE" }),
+  deleteLocal: (rootName: string) =>
+    request(`/api/v1/sources/local/${encodeURIComponent(rootName)}`, { method: "DELETE" }),
   previewLocal: (body: Record<string, unknown>) =>
     request("/api/v1/sources/local/preview", { method: "POST", body: JSON.stringify(body) }),
   inspectGit: (body: Record<string, unknown>) =>

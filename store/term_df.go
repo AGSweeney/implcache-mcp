@@ -95,19 +95,37 @@ func applyTermsDFDeltaTx(ctx context.Context, tx *sql.Tx, root, terms string, de
 // retractDocumentSemanticStats decrements persisted DF / chunk counts for all
 // chunks belonging to docID. Must run before those chunks are deleted.
 func retractDocumentSemanticStats(ctx context.Context, tx *sql.Tx, docID int64) error {
-	rows, err := tx.QueryContext(ctx, `
-		SELECT p.root_name, p.term, COUNT(*)
-		FROM chunk_term_postings p
-		JOIN chunks c ON c.id = p.chunk_id
-		WHERE c.document_id = ?
-		GROUP BY p.root_name, p.term`, docID)
-	if err != nil {
-		return err
+	return retractDocumentsSemanticStats(ctx, tx, []int64{docID})
+}
+
+// retractDocumentsSemanticStats batch-retracts semantic stats for many documents
+// in a few grouped queries (much faster than per-document loops on large roots).
+func retractDocumentsSemanticStats(ctx context.Context, tx *sql.Tx, docIDs []int64) error {
+	if len(docIDs) == 0 {
+		return nil
 	}
+	placeholders := make([]string, len(docIDs))
+	args := make([]any, len(docIDs))
+	for i, id := range docIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	inList := strings.Join(placeholders, ",")
+
 	type delta struct {
 		root string
 		term string
 		n    int
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT p.root_name, p.term, COUNT(*)
+		FROM chunk_term_postings p
+		JOIN chunks c ON c.id = p.chunk_id
+		WHERE c.document_id IN (`+inList+`)
+		GROUP BY p.root_name, p.term`, args...)
+	if err != nil {
+		return err
 	}
 	var termDeltas []delta
 	for rows.Next() {
@@ -133,8 +151,8 @@ func retractDocumentSemanticStats(ctx context.Context, tx *sql.Tx, docID int64) 
 	rows, err = tx.QueryContext(ctx, `
 		SELECT root_name, COUNT(*)
 		FROM chunks
-		WHERE document_id = ?
-		GROUP BY root_name`, docID)
+		WHERE document_id IN (`+inList+`)
+		GROUP BY root_name`, args...)
 	if err != nil {
 		return err
 	}
