@@ -326,12 +326,20 @@ func (s *Store) UpsertDocument(ctx context.Context, in UpsertInput) (bool, error
 	}
 
 	for i, c := range in.Chunks {
-		if _, err := tx.ExecContext(ctx, `
+		res, err := tx.ExecContext(ctx, `
 			INSERT INTO chunks (document_id, ordinal, heading, body, start_line, end_line, root_name)
 			VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			docID, i, c.Heading, c.Body, c.StartLine, c.EndLine, in.RootName,
-		); err != nil {
+		)
+		if err != nil {
 			return false, fmt.Errorf("insert chunk %d: %w", i, err)
+		}
+		chunkID, err := res.LastInsertId()
+		if err != nil {
+			return false, err
+		}
+		if err := s.upsertChunkTermVector(ctx, tx, chunkID, c.Heading, c.Body); err != nil {
+			return false, fmt.Errorf("term vector chunk %d: %w", i, err)
 		}
 	}
 	for _, sym := range in.Symbols {
@@ -462,6 +470,9 @@ type SearchOptions struct {
 	Limit     int
 	Roots     []string // optional root_name filter
 	MaxPerDoc int      // diversify: max chunks per document (default 3; 0 = default; <0 = unlimited)
+	// Semantic enables optional sparse term-vector similarity to supplement FTS.
+	// Requires chunk_term_vectors (schema v6). Off by default.
+	Semantic bool
 }
 
 // Search runs an FTS5 query and returns ranked hits with snippets.
@@ -539,6 +550,19 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 		}
 		seenChunk[h.ChunkID] = struct{}{}
 		candidates = append(candidates, h)
+	}
+	if opt.Semantic {
+		semHits, err := s.semanticCandidates(ctx, query, roots, candidateLimit)
+		if err != nil {
+			return nil, err
+		}
+		for _, h := range semHits {
+			if _, ok := seenChunk[h.ChunkID]; ok {
+				continue
+			}
+			seenChunk[h.ChunkID] = struct{}{}
+			candidates = append(candidates, h)
+		}
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
 		if candidates[i].Score == candidates[j].Score {

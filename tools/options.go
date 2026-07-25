@@ -31,6 +31,8 @@ type Options struct {
 	MaxResults            int
 	MaxIngestFiles        int
 	MaxDocumentBytes      int64
+	// EnableSemantic turns on optional sparse term-vector search alongside FTS.
+	EnableSemantic bool
 }
 
 // EffectiveMode returns the tool registration mode.
@@ -47,4 +49,14 @@ func (o Options) EffectiveMode() ToolMode {
 // AdminEnabled reports whether administrative tools should be registered.
 func (o Options) AdminEnabled() bool {
 	return o.EffectiveMode() == ModeAdmin
+}
+
+// Normalize applies read-only mutation overrides (ingest/delete/output writes off).
+func (o Options) Normalize() Options {
+	if o.ReadOnly {
+		o.AllowIngest = false
+		o.AllowDelete = false
+		o.AllowOutputWrite = false
+	}
+	return o
 }

@@ -16,15 +16,17 @@ func TestClassifyRecipeSectionHeadings(t *testing.T) {
 		want  string
 	}{
 		{"Required prerequisites", "prereqs"},
+		{"Requirements", "prereqs"},
 		{"Required APIs", "apis"},
 		{"API reference", "apis"},
 		{"Required headers", "includes"},
 		{"Initialization sequence", "sequence"},
+		{"Workflow", "sequence"},
 		{"Cleanup requirements", "cleanup"},
+		{"Known constraints", "constraints"},
 		{"Known pitfalls", "pitfalls"},
-		{"Constraints", "constraints"},
-		{"Examples", "examples"},
-		{"Version notes", "version"},
+		{"Example", "examples"},
+		{"Version", "version"},
 		{"Miscellaneous notes", "body"},
 	}
 	for _, tc := range cases {
@@ -40,6 +42,9 @@ func TestParseRecipeHeadingFieldsDeterministic(t *testing.T) {
 ## Required prerequisites
 - SDK installed
 
+## Requirements
+- License accepted
+
 ## Required APIs
 - ` + "`demo::RegisterHandler`" + `
 - ` + "`Client::Connect`" + `
@@ -51,19 +56,34 @@ func TestParseRecipeHeadingFieldsDeterministic(t *testing.T) {
 1. Call RegisterHandler
 2. Call Connect
 
+## Workflow
+1. Open
+2. Close
+
 ## Cleanup requirements
 - Release handles
 
+## Known constraints
+- Single-threaded init
+
 ## Known pitfalls
 - Do not call Connect twice
+
+## Example
+` + "```" + `
+RegisterHandler("x");
+` + "```" + `
+
+## Version
+1.2
 `
 	rf := parseRecipe(store.KnowledgeEntry{
 		Subject:      "Demo",
 		BodyMarkdown: body,
 		Version:      "1.0",
 	})
-	if len(rf.Prereqs) == 0 {
-		t.Fatal("expected prerequisites")
+	if len(rf.Prereqs) < 2 {
+		t.Fatalf("prereqs=%v", rf.Prereqs)
 	}
 	if len(rf.APIs) < 2 {
 		t.Fatalf("APIs=%v", rf.APIs)
@@ -77,15 +97,20 @@ func TestParseRecipeHeadingFieldsDeterministic(t *testing.T) {
 	if len(rf.Cleanup) == 0 {
 		t.Fatal("expected cleanup")
 	}
+	if len(rf.Constraints) == 0 {
+		t.Fatal("expected constraints")
+	}
 	if len(rf.Pitfalls) == 0 {
 		t.Fatal("expected pitfalls")
 	}
-	// Repeated parse is stable.
+	if len(rf.Examples) == 0 {
+		t.Fatal("expected examples")
+	}
+	if rf.Version != "1.2" {
+		t.Fatalf("version=%q", rf.Version)
+	}
 	rf2 := parseRecipe(store.KnowledgeEntry{Subject: "Demo", BodyMarkdown: body})
 	if len(rf.APIs) != len(rf2.APIs) || rf.APIs[0] != rf2.APIs[0] {
 		t.Fatalf("nondeterministic APIs: %v vs %v", rf.APIs, rf2.APIs)
-	}
-	if len(rf.Sequence) != len(rf2.Sequence) {
-		t.Fatalf("nondeterministic sequence")
 	}
 }

@@ -9,7 +9,7 @@ import (
 	"fmt"
 )
 
-const currentSchemaVersion = 5
+const currentSchemaVersion = 6
 
 const schemaV1 = `
 CREATE TABLE documents (
@@ -170,6 +170,16 @@ CREATE INDEX IF NOT EXISTS idx_chunks_root_name ON chunks(root_name);
 // schemaV5 re-derives symbol lookup forms for rows naively backfilled in v4.
 // Applied in Go via backfillSymbolForms (SQL alone cannot split :: / . namespaces).
 
+// schemaV6 adds sparse term vectors for optional semantic (related-term) search.
+const schemaV6 = `
+CREATE TABLE IF NOT EXISTS chunk_term_vectors (
+    chunk_id INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+    terms TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_chunk_term_vectors_terms ON chunk_term_vectors(terms);
+`
+
 func migrate(db *sql.DB) error {
 	var version int
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
@@ -205,6 +215,11 @@ func applyMigration(db *sql.DB, version int) error {
 		return err
 	case 5:
 		return backfillSymbolForms(db)
+	case 6:
+		if _, err := db.Exec(schemaV6); err != nil {
+			return err
+		}
+		return backfillChunkTermVectors(db)
 	default:
 		return fmt.Errorf("unknown schema version %d", version)
 	}

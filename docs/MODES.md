@@ -27,9 +27,23 @@ Administrative schemas are **not registered** in agent mode. Call-time permissio
 
 ## Version
 
+Local/development builds report **`dev`**. Inject a tag or commit at build time:
+
 ```bash
 ./implcache-mcp -version
 go build -ldflags "-X main.version=$(git describe --tags --always)" -o implcache-mcp .
 ```
 
-Current maturity line: **0.2.x** (pre-1.0; MCP contracts may still evolve).
+Pre-1.0: MCP tool contracts and schema may still evolve. Schema version is independent (`PRAGMA user_version`; currently **6**).
+
+## Optional semantic search
+
+```bash
+./implcache-mcp -mode agent -enable-semantic
+```
+
+Or per-call `semantic: true` on `search_knowledge` / `get_implementation_context`. Uses sparse term vectors over chunks (cosine), merged with FTS — not an embedding model.
+
+## Read-only
+
+`-readonly` opens the DB read-only when possible and clears ingest/delete/output-write permissions. Admin tool **schemas** may still register in admin mode; mutation calls are denied.

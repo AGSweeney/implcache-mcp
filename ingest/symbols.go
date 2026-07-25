@@ -99,6 +99,12 @@ func ExtractSymbols(path string, body string) []store.SymbolInput {
 		}
 	case "c", "cpp", "csharp":
 		extractCFamily(normBody, origLines, normLines, lang, add)
+	case "python":
+		extractPython(body, origLines, add)
+	case "javascript", "typescript":
+		extractJavaScript(body, origLines, add)
+	case "java":
+		extractJava(body, origLines, add)
 	default:
 		// Unknown / unsupported languages: do not run C-family regex (avoids
 		// false symbols from Markdown, config, scripts, etc.).

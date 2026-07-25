@@ -5,6 +5,10 @@
 package main
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -27,6 +31,38 @@ func TestParseToolMode(t *testing.T) {
 	_, err = parseToolMode("ops")
 	if err == nil || !strings.Contains(err.Error(), "invalid -mode") {
 		t.Fatalf("expected invalid mode error, got %v", err)
+	}
+}
+
+func TestVersionDefaultDev(t *testing.T) {
+	if version != "dev" {
+		t.Fatalf("source default version=%q want dev (rebuild without -X if injected)", version)
+	}
+}
+
+func TestVersionInjectedViaLdflags(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping build subprocess in short mode")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "implcache-mcp")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	build := exec.Command("go", "build", "-ldflags", "-X main.version=v0.2.0-test", "-o", bin, ".")
+	build.Dir = "."
+	build.Env = os.Environ()
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	cmd := exec.Command(bin, "-version")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("run -version: %v\n%s", err, out)
+	}
+	got := strings.TrimSpace(string(out))
+	if got != "v0.2.0-test" {
+		t.Fatalf("got %q want v0.2.0-test", got)
 	}
 }
 
@@ -53,11 +89,5 @@ func TestNormalizeHTTPAddrRemoteRefused(t *testing.T) {
 	got, err := normalizeHTTPAddr("192.168.1.10:8080", true)
 	if err != nil || got != "192.168.1.10:8080" {
 		t.Fatalf("got %q err=%v", got, err)
-	}
-}
-
-func TestVersionNonEmpty(t *testing.T) {
-	if version == "" {
-		t.Fatal("version empty")
 	}
 }

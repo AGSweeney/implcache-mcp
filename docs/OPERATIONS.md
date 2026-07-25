@@ -9,7 +9,7 @@ go build -o implcache-mcp .
 go build -o ingestcli ./cmd/ingestcli
 ```
 
-Module: `implcache-mcp` (Go 1.25+), development version `0.2.0` (override with `-ldflags "-X main.version=…"`). SQLite is pure Go (`modernc.org/sqlite`); **no CGO** required for build/test.
+Module: `implcache-mcp` (Go 1.25+). Default reported version is `dev` (override with `-ldflags "-X main.version=…"`). SQLite is pure Go (`modernc.org/sqlite`); **no CGO** required for build/test. Schema `PRAGMA user_version` is currently **6**.
 
 ### Race detector
 
@@ -114,8 +114,23 @@ Safety defaults:
 | Readonly | Disables ingest/delete/file output |
 | No full-body logging | Tool results are not dumped to server logs by default |
 | Generated recipes | Labeled; ranked below human-reviewed |
+| HTTP auth | **None** — loopback + flags by default; put a reverse proxy/auth in front for remote binds |
 
 Do not commit `*.db` or ingested vendor corpora (see `.gitignore`).
+
+## Limitations and risks
+
+Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still change. Development builds report `dev`; inject a tag with `-ldflags "-X main.version=…"`.
+
+| Area | Notes |
+|------|--------|
+| Symbol extraction | Heuristic regex for Go, C/C++/C#, Python, JS/TS, Java. Optional tree-sitter still future work. Unknown languages do not fall through to noisy C regex. |
+| Search model | FTS5 + authority ranking by default. Optional **sparse term-vector** similarity (`-enable-semantic` / `semantic: true`) supplements FTS — not neural embeddings. Pure keyword search can still miss related concepts. |
+| Token estimates | `estimatedTokens` is roughly `utf8_runes/4` on the serialized JSON. Use for budgeting only — approximate, not exact. |
+| HTTP | No built-in authentication. Loopback rewrite and `-allow-remote-http` are the safety defaults; remote exposure needs an external auth layer. |
+| Recipes | Quality depends on human review of `vomit` / `saveRecipe` output. Ranking already demotes generated entries vs human-reviewed and project code. |
+| Concurrency | SQLite **WAL** helps readers; multiple writers still need care (single writer process, or serialize admin ingest). See concurrent smoke tests; prefer one admin writer. |
+| Go version | Module requires **Go 1.25+** — note for downstream consumers. |
 
 ## Database files
 

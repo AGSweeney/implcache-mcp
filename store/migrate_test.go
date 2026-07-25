@@ -159,4 +159,85 @@ func TestMigrationV3SymbolBackfill(t *testing.T) {
 	if unqual2 != "RegisterHandler" {
 		t.Fatalf("idempotent backfill broke: %q", unqual2)
 	}
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM symbols`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("row count changed: %d", count)
+	}
+	syms, err := st2.FindSymbols(context.Background(), "RegisterHandler", []string{"example-plugin-sdk"}, 5)
+	if err != nil || len(syms) == 0 {
+		t.Fatalf("lookup after migration: %v %+v", err, syms)
+	}
+}
+
+func TestFreshAndMigratedSchemaObjectsMatch(t *testing.T) {
+	dir := t.TempDir()
+	freshPath := filepath.Join(dir, "fresh.db")
+	migratedPath := filepath.Join(dir, "migrated.db")
+
+	stFresh, err := Open(freshPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stFresh.Close()
+
+	db, err := sql.Open("sqlite", migratedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(schemaV1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 1`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	stMig, err := Open(migratedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stMig.Close()
+
+	objs := func(path string) map[string]string {
+		d, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer d.Close()
+		rows, err := d.Query(`SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		out := map[string]string{}
+		for rows.Next() {
+			var typ, name string
+			if err := rows.Scan(&typ, &name); err != nil {
+				t.Fatal(err)
+			}
+			out[typ+"/"+name] = typ
+		}
+		var v int
+		if err := d.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		if v != currentSchemaVersion {
+			t.Fatalf("%s user_version=%d", path, v)
+		}
+		return out
+	}
+	a, b := objs(freshPath), objs(migratedPath)
+	for k := range a {
+		if _, ok := b[k]; !ok {
+			t.Fatalf("migrated missing %s", k)
+		}
+	}
+	for k := range b {
+		if _, ok := a[k]; !ok {
+			t.Fatalf("fresh missing %s", k)
+		}
+	}
 }

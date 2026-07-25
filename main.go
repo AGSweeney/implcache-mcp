@@ -25,10 +25,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// version is overridden at build time via:
+// version is "dev" for local builds; override at build time via:
 //
 //	go build -ldflags "-X main.version=$(git describe --tags --always)"
-var version = "0.2.0"
+var version = "dev"
 
 func main() {
 	dbPath := flag.String("db", "./implcache.db", "path to SQLite ImplCache database")
@@ -47,6 +47,7 @@ func main() {
 	maxResults := flag.Int("max-results", store.DefaultSearchLimit, "default/max search results per query")
 	maxIngestFiles := flag.Int("max-ingest-files", 50000, "max files per ingest operation")
 	maxDocBytes := flag.Int64("max-document-bytes", 8<<20, "max bytes per ingested file")
+	enableSemantic := flag.Bool("enable-semantic", false, "supplement FTS with optional sparse term-vector similarity (not embeddings)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -121,6 +122,7 @@ func main() {
 		MaxResults:            *maxResults,
 		MaxIngestFiles:        *maxIngestFiles,
 		MaxDocumentBytes:      *maxDocBytes,
+		EnableSemantic:        *enableSemantic,
 	}
 	registered := tools.RegisterWithOptions(server, st, toolOpt)
 	log.Printf("implcache-mcp %s mode=%s tools=%v", version, toolOpt.EffectiveMode(), registered)

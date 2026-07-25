@@ -21,10 +21,13 @@ type Request struct {
 	Task             string   `json:"task"`
 	Language         string   `json:"language,omitempty"`
 	Technology       string   `json:"technology,omitempty"`
+	Version          string   `json:"version,omitempty"` // optional requested product/API version
 	ProjectRoot      string   `json:"projectRoot,omitempty"`
 	PreferredRoots   []string `json:"preferredRoots,omitempty"`
 	RootGroup        string   `json:"rootGroup,omitempty"`
 	MaxContextTokens int      `json:"maxContextTokens,omitempty"`
+	// Semantic supplements FTS with sparse term-vector similarity (server -enable-semantic).
+	Semantic bool `json:"semantic,omitempty"`
 }
 
 // Citation points at a grounded source.
@@ -198,6 +201,7 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 		Limit:     budget.MaxResults * 3,
 		Roots:     roots,
 		MaxPerDoc: budget.MaxPerDocument,
+		Semantic:  req.Semantic,
 	})
 	if err != nil {
 		return nil, err
@@ -294,7 +298,7 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 	}
 
 	resp.Coverage = coverageOf(resp)
-	resp.Freshness = freshnessFromSources(resp.Citations, versions, archivedHints)
+	resp.Freshness = freshnessFromSources(resp.Citations, versions, archivedHints, req.Version)
 	resp.WebSearchRecommended = webSearchFrom(resp.Coverage, resp.Freshness)
 	if resp.Coverage == "low" {
 		resp.MissingInformation = appendUnique(resp.MissingInformation, "Few grounded local hits; verify against current vendor docs if versions matter.")

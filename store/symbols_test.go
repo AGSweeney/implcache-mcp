@@ -136,6 +136,65 @@ func TestFindSymbolsStagedMatches(t *testing.T) {
 	}
 }
 
+func TestFindSymbolsRootFiltering(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	for _, root := range []string{"example-plugin-sdk", "other-sdk"} {
+		_, err = st.UpsertDocument(ctx, UpsertInput{
+			URI: "project://" + root + "/api.cpp", Title: "api",
+			SourceType: SourceSource, Path: "api.cpp", RootName: root,
+			Authority: AuthorityOfficialDocs, Hash: root,
+			Chunks:  []Chunk{{Body: "RegisterHandler", StartLine: 1, EndLine: 1}},
+			Symbols: []SymbolInput{{Name: "RegisterHandler", Kind: "function", Language: "cpp", StartLine: 1}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	syms, err := st.FindSymbols(ctx, "RegisterHandler", []string{"example-plugin-sdk"}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(syms) != 1 || syms[0].RootName != "example-plugin-sdk" {
+		t.Fatalf("root filter failed: %+v", syms)
+	}
+}
+
+func TestFindSymbolsDefinitionOverDeclaration(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	_, err = st.UpsertDocument(ctx, UpsertInput{
+		URI: "project://example-plugin-sdk/src/api.cpp", Title: "api",
+		SourceType: SourceSource, Path: "src/api.cpp", RootName: "example-plugin-sdk",
+		Authority: AuthorityOfficialDocs, Hash: "h-decl",
+		Chunks: []Chunk{{Body: "RegisterHandler", StartLine: 1, EndLine: 5}},
+		Symbols: []SymbolInput{
+			{Name: "RegisterHandler", Kind: "declaration", Language: "cpp", StartLine: 1, EndLine: 1},
+			{Name: "RegisterHandler", Kind: "function", Language: "cpp", StartLine: 3, EndLine: 5},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	syms, err := st.FindSymbols(ctx, "RegisterHandler", []string{"example-plugin-sdk"}, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(syms) == 0 || syms[0].Kind != "function" {
+		t.Fatalf("definition should beat declaration: %+v", syms)
+	}
+}
+
 func TestFindSymbolsDefinitionOverCall(t *testing.T) {
 	dir := t.TempDir()
 	st, err := Open(filepath.Join(dir, "s.db"))

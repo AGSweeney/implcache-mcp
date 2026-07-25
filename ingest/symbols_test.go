@@ -110,9 +110,71 @@ func TestUnknownLanguageNoFalseSymbols(t *testing.T) {
 	if syms := ExtractSymbols("config.yaml", yaml); len(syms) != 0 {
 		t.Fatalf("yaml should not extract symbols: %+v", syms)
 	}
-	// Known extensions without extractors also return empty (no C fallthrough).
-	if syms := ExtractSymbols("util.py", "def RegisterHandler(name):\n    return name\n"); len(syms) != 0 {
-		t.Fatalf("python should not use C-family extractor: %+v", syms)
+	// Shell/config-like extensions stay empty (no C fallthrough).
+	if syms := ExtractSymbols("run.sh", "RegisterHandler()\nClient.Connect()\n"); len(syms) != 0 {
+		t.Fatalf("shell should not extract symbols: %+v", syms)
+	}
+}
+
+func TestExtractPythonJSJava(t *testing.T) {
+	py := ExtractSymbols("client.py", `
+class RetryPolicy:
+    pass
+
+def connect(host):
+    return True
+
+async def disconnect():
+    pass
+
+    def _inner(self):
+        pass
+`)
+	got := map[string]string{}
+	for _, s := range py {
+		got[s.Name] = s.Kind
+	}
+	for _, name := range []string{"RetryPolicy", "connect", "disconnect"} {
+		if got[name] == "" {
+			t.Fatalf("python missing %s: %+v", name, py)
+		}
+	}
+	if got["RetryPolicy"] != KindType {
+		t.Fatalf("RetryPolicy kind=%s", got["RetryPolicy"])
+	}
+
+	js := ExtractSymbols("sdk.ts", `
+export class NetworkClient {}
+export function connect(host: string) {}
+export const writeJSON = (x) => x;
+const openSession = async function() {};
+`)
+	got = map[string]string{}
+	for _, s := range js {
+		got[s.Name] = s.Kind
+	}
+	for _, name := range []string{"NetworkClient", "connect", "writeJSON", "openSession"} {
+		if got[name] == "" {
+			t.Fatalf("js/ts missing %s: %+v", name, js)
+		}
+	}
+
+	java := ExtractSymbols("Client.java", `
+public class NetworkClient {
+  public void connect(String host) {
+  }
+  public Status disconnect();
+}
+`)
+	got = map[string]string{}
+	for _, s := range java {
+		got[s.Name] = s.Kind
+	}
+	if got["NetworkClient"] != KindType {
+		t.Fatalf("java type=%v", got)
+	}
+	if got["connect"] != KindMethod {
+		t.Fatalf("java connect=%v", got)
 	}
 }
 

@@ -2,7 +2,7 @@
 -- Use of this source code is governed by an MIT-style
 -- license that can be found in the LICENSE file.
 
--- Schema mirror for a fresh database after all migrations (PRAGMA user_version = 5).
+-- Schema mirror for a fresh database after all migrations (PRAGMA user_version = 6).
 -- Source of truth for stepwise upgrades remains migrate.go.
 
 CREATE TABLE documents (
@@ -134,3 +134,10 @@ CREATE INDEX idx_knowledge_entries_subject ON knowledge_entries(subject);
 CREATE INDEX idx_knowledge_entries_tech ON knowledge_entries(technology, language);
 CREATE INDEX idx_aliases_alias ON aliases(alias);
 CREATE INDEX idx_root_group_members_group ON root_group_members(group_name, priority DESC);
+
+CREATE TABLE chunk_term_vectors (
+    chunk_id INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+    terms TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_chunk_term_vectors_terms ON chunk_term_vectors(terms);

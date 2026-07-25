@@ -113,31 +113,34 @@ func parseRecipe(e store.KnowledgeEntry) recipeFields {
 }
 
 // classifyRecipeSection maps a markdown heading to a recipe field.
-// Specific phrases win over broad substrings (e.g. "required" alone is not APIs).
+// Order follows specific phrases first. "required" alone is never treated as APIs.
+// Cleanup is checked before bare "requirements" so "Cleanup requirements" stays cleanup.
 func classifyRecipeSection(title string) string {
 	key := strings.ToLower(strings.TrimSpace(title))
 	if key == "" {
 		return "body"
 	}
 	switch {
-	case containsAny(key, "pitfall", "gotcha", "warning", "common error", "avoid"):
-		return "pitfalls"
 	case containsAny(key, "cleanup", "teardown", "shutdown", "terminate"):
 		return "cleanup"
 	case containsAny(key, "include", "import") || strings.Contains(key, "header"):
 		return "includes"
+	case containsAny(key, "prereq", "prerequisite") ||
+		(containsAny(key, "requirement", "requirements") && !containsAny(key, "api", "cleanup")):
+		return "prereqs"
 	case containsAny(key, "required api", "required apis", "api reference") ||
 		(strings.Contains(key, "api") && !strings.Contains(key, "header")) ||
 		(containsAny(key, "functions", "symbols") && !containsAny(key, "sequence", "init")):
 		return "apis"
-	case containsAny(key, "prereq", "prerequisite") ||
-		(containsAny(key, "requirement", "requirements") && !strings.Contains(key, "cleanup")):
-		return "prereqs"
-	case containsAny(key, "sequence", "steps", "procedure", "workflow", "initialization", "init order", "call order"):
+	case containsAny(key, "initialization", "init order"):
+		return "sequence"
+	case containsAny(key, "sequence", "steps", "procedure", "workflow", "call order"):
 		return "sequence"
 	case containsAny(key, "constraint") || strings.Contains(key, "must not") ||
 		(strings.Contains(key, "rule") && !strings.Contains(key, "header")):
 		return "constraints"
+	case containsAny(key, "pitfall", "gotcha", "warning", "common error", "avoid"):
+		return "pitfalls"
 	case containsAny(key, "example", "sample"):
 		return "examples"
 	case containsAny(key, "version"):

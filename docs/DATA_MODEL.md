@@ -136,5 +136,6 @@ Runtime structure `store.ContextBudget` limits how much text `implctx` returns. 
 | 3 | Authority columns, symbols, recipes, aliases, root groups |
 | 4 | Symbol form columns (`qualified_name`, `unqualified_name`, `namespace`, `signature_norm`); `chunks.root_name` |
 | 5 | Go backfill of symbol forms via `DeriveSymbolForms` (idempotent; fixes naive v4 SQL backfill) |
+| 6 | `chunk_term_vectors` for optional sparse semantic search (not embeddings) |
 
-Opening a DB always migrates to the current version (`PRAGMA user_version = 5`). `store/schema.sql` mirrors a fresh post-migration database.
+Opening a DB always migrates to the current version (`PRAGMA user_version = 6`). `store/schema.sql` mirrors a fresh post-migration database.

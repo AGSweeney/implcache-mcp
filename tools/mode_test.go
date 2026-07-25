@@ -43,3 +43,17 @@ func TestReadOnlyDoesNotChangePlannedSurface(t *testing.T) {
 		t.Fatal("readonly should still register admin schemas when mode=admin")
 	}
 }
+
+func TestReadOnlyDisablesMutations(t *testing.T) {
+	opt := Options{
+		Mode: ModeAdmin, ReadOnly: true,
+		AllowIngest: true, AllowDelete: true, AllowOutputWrite: true,
+	}
+	opt = opt.Normalize()
+	if opt.AllowIngest || opt.AllowDelete || opt.AllowOutputWrite {
+		t.Fatalf("readonly must clear mutation flags: %+v", opt)
+	}
+	if (Options{}).EffectiveMode() != ModeAgent {
+		t.Fatal("default mode must be agent")
+	}
+}

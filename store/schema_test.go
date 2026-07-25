@@ -39,7 +39,7 @@ func TestFreshDBHasExpectedSchemaObjects(t *testing.T) {
 	tables := []string{
 		"documents", "chunks", "chunks_fts", "symbols",
 		"knowledge_entries", "knowledge_entry_sources", "aliases",
-		"root_groups", "root_group_members",
+		"root_groups", "root_group_members", "chunk_term_vectors",
 	}
 	for _, name := range tables {
 		var n int
@@ -86,5 +86,12 @@ func TestFreshDBHasExpectedSchemaObjects(t *testing.T) {
 		if !cols[c] {
 			t.Fatalf("symbols missing column %s", c)
 		}
+	}
+	var triggers int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='trigger'`).Scan(&triggers); err != nil {
+		t.Fatal(err)
+	}
+	if triggers < 3 {
+		t.Fatalf("expected FTS triggers, got %d", triggers)
 	}
 }

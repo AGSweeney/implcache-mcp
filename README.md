@@ -33,18 +33,22 @@ Requirements: Go 1.25+, pure-Go SQLite (`modernc.org/sqlite`, no CGO).
 
 ```bash
 go test ./...
-go build -ldflags "-X main.version=$(git describe --tags --always 2>/dev/null || echo 0.2.0)" -o implcache-mcp .
+go build -ldflags "-X main.version=$(git describe --tags --always 2>/dev/null || echo dev)" -o implcache-mcp .
 ./implcache-mcp -db ./implcache.db
+./implcache-mcp -version   # "dev" unless injected via -ldflags
 ```
 
-Default **`-mode agent`** registers retrieval tools only. Use **`-mode admin`** (or `-enable-admin-tools`) for ingest/delete/`vomit`.
+Default **`-mode agent`** registers retrieval tools only. Admin tools are **not** available in agent mode. Use **`-mode admin`** (or `-enable-admin-tools`) for ingest/delete/`vomit`. `-readonly` disables mutations even in admin mode.
 
 ```bash
-# Coding-agent default (stdio)
-./implcache-mcp -db ./implcache.db -workspace /path/to/repo
+# Coding-agent default (stdio, retrieval only)
+./implcache-mcp -db ./implcache.db -workspace ./example-data
 
 # Admin / corpus maintenance
 ./implcache-mcp -db ./implcache.db -mode admin
+
+# Read-only admin surface (schemas present; writes denied)
+./implcache-mcp -db ./implcache.db -mode admin -readonly
 
 # Optional HTTP (loopback; mutations off unless -enable-http-mutations)
 ./implcache-mcp -db ./implcache.db -http :8080
@@ -56,14 +60,20 @@ Default **`-mode agent`** registers retrieval tools only. Use **`-mode admin`** 
 {
   "mcpServers": {
     "implcache": {
-      "command": "D:/Tools/implcache/implcache-mcp.exe",
-      "args": ["-db", "D:/Tools/implcache/implcache.db", "-mode", "agent"]
+      "command": "D:/Tools/ImplCache/implcache-mcp.exe",
+      "args": ["-db", "D:/Tools/ImplCache/implcache.db", "-mode", "agent"]
     }
   }
 }
 ```
 
-Use absolute paths. Default mode is `agent` (retrieval only). Reload MCP after rebuilding.
+Use absolute paths. Reload MCP after rebuilding.
+
+**Symbol matching** (`find_symbol`): staged exact → normalized → qualified → unqualified → prefix/suffix/token → bounded fuzzy. Definitions outrank declarations and calls. Extractors: Go, C/C++/C#, Python, JS/TS, Java.
+
+**Optional semantic search**: `-enable-semantic` (or tool arg `semantic: true`) supplements FTS with sparse term-vector similarity — not embeddings.
+
+**Schema**: SQLite `PRAGMA user_version = 6` (see [docs/DATA_MODEL.md](docs/DATA_MODEL.md)). Pre-1.0; contracts may evolve.
 
 ---
 
@@ -131,6 +141,19 @@ Pass `-workspace /path/to/repo` or `-project-root example-control-app` so agents
 go run ./cmd/evaltasks -seed-demo
 go test ./store -bench=Benchmark -benchtime=200ms
 ```
+
+---
+
+## Limitations (pre-1.0)
+
+- Schema and ranking will evolve; pin or vendor if you need stability.
+- Symbol extraction is heuristic (Go/C-family/Python/JS/Java); neural embeddings deferred — optional sparse semantic only.
+- `estimatedTokens` is approximate (`runes/4`).
+- HTTP has no auth — keep it on loopback or put a proxy in front.
+- Recipe quality needs human review; generated entries rank below curated/project sources.
+- SQLite WAL: fine for readers; serialize writers. Requires **Go 1.25+**.
+
+Details: [docs/OPERATIONS.md](docs/OPERATIONS.md#limitations-and-risks).
 
 ---
 

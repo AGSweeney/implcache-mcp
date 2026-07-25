@@ -12,7 +12,8 @@ import (
 
 // freshnessFromSources derives freshness from selected citation authorities/versions.
 // States: current | version-specific | mixed | stale | unknown
-func freshnessFromSources(citations []Citation, versions []string, archivedHints int) string {
+// Authority alone never implies current; official docs without version stay unknown.
+func freshnessFromSources(citations []Citation, versions []string, archivedHints int, requestedVersion string) string {
 	if len(citations) == 0 && len(versions) == 0 {
 		return "unknown"
 	}
@@ -38,6 +39,21 @@ func freshnessFromSources(citations []Citation, versions []string, archivedHints
 			addVer(ingest.InferProductVersion(root, path, c.Title+" "+c.Section))
 		}
 	}
+
+	req := strings.ToLower(strings.TrimSpace(requestedVersion))
+	if req != "" && req != "unknown" {
+		if len(verSet) == 0 {
+			return "unknown"
+		}
+		if len(verSet) > 1 {
+			return "mixed"
+		}
+		if _, ok := verSet[req]; ok {
+			return "version-specific"
+		}
+		return "mixed"
+	}
+
 	if len(verSet) > 1 {
 		return "mixed"
 	}
@@ -56,12 +72,10 @@ func freshnessFromSources(citations []Citation, versions []string, archivedHints
 			hasGenerated = true
 		}
 	}
-	// Authority is not freshness: official docs without version/date stay unknown.
 	if hasGenerated && !hasProject && !hasDocs {
 		return "unknown"
 	}
 	if hasProject {
-		// current_project / curated recipe without conflicting versions.
 		return "current"
 	}
 	if hasDocs {

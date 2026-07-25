@@ -17,7 +17,7 @@ Ingest loads files into SQLite as `documents` + `chunks` (+ `symbols` when extra
 - Walks a source tree for text-like files
 - Skips common junk dirs, binaries, and **symlinks**
 - Assigns `source_type=source`
-- Runs pragmatic symbol extraction (Go, C/C++, demo SDK APIs)
+- Runs pragmatic symbol extraction (Go, C/C++/C#, Python, JavaScript/TypeScript, Java)
 - Infers language and a best-effort authority
 
 ### Delete by prefix (CLI `-mode delete-prefix` / tool `delete_by_uri_prefix`)

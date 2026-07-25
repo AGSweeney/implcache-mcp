@@ -63,6 +63,7 @@ func Register(server *mcp.Server, st *store.Store) []string {
 // RegisterWithOptions registers tools with explicit safety/limit options.
 // Agent mode (default) omits administrative schemas entirely.
 func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []string {
+	opt = opt.Normalize()
 	if opt.MaxResults <= 0 {
 		opt.MaxResults = store.DefaultSearchLimit
 	}
@@ -71,11 +72,6 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 	}
 	if opt.MaxDocumentBytes <= 0 {
 		opt.MaxDocumentBytes = 8 << 20
-	}
-	if opt.ReadOnly {
-		opt.AllowIngest = false
-		opt.AllowDelete = false
-		opt.AllowOutputWrite = false
 	}
 
 	deny := func(action string) error {
@@ -105,6 +101,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			PreferredRoots:   preferred,
 			RootGroup:        args.RootGroup,
 			MaxContextTokens: args.MaxContextTokens,
+			Semantic:         opt.EnableSemantic || args.Semantic,
 		})
 		if err != nil {
 			var need *store.ErrNeedsRoot
@@ -215,9 +212,10 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			}, out, nil
 		}
 		hits, err := st.SearchOpts(ctx, store.SearchOptions{
-			Query: args.Query,
-			Limit: limit,
-			Roots: inf.Roots,
+			Query:    args.Query,
+			Limit:    limit,
+			Roots:    inf.Roots,
+			Semantic: opt.EnableSemantic || args.Semantic,
 		})
 		if err != nil {
 			return nil, searchResult{}, err
@@ -398,6 +396,7 @@ type implContextArgs struct {
 	PreferredRoots   []string `json:"preferredRoots,omitempty" jsonschema:"Ordered knowledge roots to search"`
 	RootGroup        string   `json:"rootGroup,omitempty" jsonschema:"Named root group with priorities"`
 	MaxContextTokens int      `json:"maxContextTokens,omitempty" jsonschema:"Soft token budget (estimate; default 2500)"`
+	Semantic         bool     `json:"semantic,omitempty" jsonschema:"Supplement FTS with sparse term-vector similarity (also -enable-semantic)"`
 }
 
 type findSymbolArgs struct {
@@ -436,6 +435,7 @@ type searchArgs struct {
 	Query    string `json:"query" jsonschema:"Full-text search query"`
 	Limit    int    `json:"limit,omitempty" jsonschema:"Max hits to return (default 20, max 100)"`
 	RootName string `json:"rootName,omitempty" jsonschema:"Optional knowledge root (e.g. example-device-sdk). If omitted, inferred from query; if ambiguous, tool asks you to choose."`
+	Semantic bool   `json:"semantic,omitempty" jsonschema:"If true, also score related chunks via sparse term vectors (or enable server-wide with -enable-semantic)"`
 }
 
 type searchResult struct {
