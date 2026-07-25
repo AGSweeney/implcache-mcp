@@ -51,9 +51,15 @@ func TestFreshDBHasExpectedSchemaObjects(t *testing.T) {
 		}
 	}
 	indexes := []string{
+		"idx_documents_source_type",
 		"idx_documents_root_name",
+		"idx_documents_root_uri",
+		"idx_documents_root_source_type",
+		"idx_chunks_document_id",
 		"idx_symbols_name_norm",
+		"idx_symbols_root_name",
 		"idx_symbols_unqualified",
+		"idx_symbols_qualified",
 		"idx_chunks_root_name",
 		"idx_chunk_term_postings_root_term",
 	}

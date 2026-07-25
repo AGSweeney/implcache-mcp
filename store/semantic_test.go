@@ -23,6 +23,41 @@ func TestBuildTermVectorStable(t *testing.T) {
 	}
 }
 
+func TestTokenizeSemanticIdentifiers(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"NetworkClient", []string{"networkclient", "network", "client"}},
+		{"RegisterCommand", []string{"registercommand", "register", "command"}},
+		{"RetryPolicy", []string{"retrypolicy", "retry", "policy"}},
+		{"network_client", []string{"network_client", "network", "client"}},
+		{"namespace::RegisterHandler", []string{"namespace", "registerhandler", "register", "handler"}},
+		{"Client.Connect", []string{"client", "connect"}},
+		{"HTTPServer", []string{"httpserver", "http", "server"}},
+		{"reconnect", []string{"reconnect"}},
+		// Tiny components and stopwords are dropped; combined token survives.
+		{"toB", []string{"tob"}},
+		{"the and for", nil},
+	}
+	for _, tc := range cases {
+		got := tokenizeSemantic(tc.in)
+		if len(got) != len(tc.want) {
+			t.Fatalf("tokenizeSemantic(%q)=%v want %v", tc.in, got, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Fatalf("tokenizeSemantic(%q)=%v want %v", tc.in, got, tc.want)
+			}
+		}
+		// Deterministic across calls.
+		again := tokenizeSemantic(tc.in)
+		if strings.Join(again, " ") != strings.Join(got, " ") {
+			t.Fatalf("tokenizeSemantic(%q) unstable: %v vs %v", tc.in, got, again)
+		}
+	}
+}
+
 func TestSemanticSearchFindsRelatedChunk(t *testing.T) {
 	dir := t.TempDir()
 	st, err := Open(filepath.Join(dir, "s.db"))

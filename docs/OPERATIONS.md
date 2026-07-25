@@ -142,7 +142,7 @@ Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still ch
 | `implcache.db` | Main SQLite DB |
 | `implcache.db-wal` / `-shm` | WAL mode sidecars when present |
 
-Schema migrates automatically on open (see [DATA_MODEL.md](DATA_MODEL.md)).
+New databases are created at the canonical schema on open. A database with a different `user_version` is refused: delete `implcache.db` (and `-wal`/`-shm`) and re-ingest (see [DATA_MODEL.md](DATA_MODEL.md)).
 
 ## Evaluation
 
@@ -163,10 +163,12 @@ go test ./store -run TestSemanticPostingQueryPlan -count=1
 ```
 
 On the sanitized 12-task seed corpus, semantic off/on both produced top-1 and
-top-3 symbol recall of 1.0 and expected-source recall of 1.0. Semantic search
-increased average estimated response size from 646.7 to 653.3 tokens; observed
-median latency was 2–3 ms and p95 was 3 ms. It is therefore still
-opt-in: the seed corpus does not demonstrate a retrieval-quality improvement.
+top-3 symbol recall of 1.0, expected-source recall of 1.0, zero forbidden hits,
+and zero duplicate excerpts. Semantic search increased average estimated
+response size from 646.7 to 653.3 tokens and raised one task's coverage from
+medium to high; observed median latency was 2 ms and p95 was 3 ms in both
+modes. It is therefore still opt-in: the seed corpus does not demonstrate a
+retrieval-quality improvement that justifies changing the default.
 
 ## Typical ops loop
 

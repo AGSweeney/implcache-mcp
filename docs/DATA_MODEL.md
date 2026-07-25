@@ -1,6 +1,6 @@
 # Data model
 
-Schema version: **7** (`PRAGMA user_version`). Migrations live in `store/migrate.go` and apply forward-only on open; each step runs in a transaction with its `user_version` bump (rollback on failure). The checked-in `store/schema.sql` mirrors a fresh fully migrated database; migrations remain the source of truth for upgrades.
+Schema version: **7** (`PRAGMA user_version`). `store/schema.sql` is the single canonical schema, embedded by `store/schema.go`: new databases are created directly at version 7 in one transaction. `user_version` is a schema identity check, not a migration ladder — there is no upgrade path during pre-release development.
 
 Ingest extracts symbols from Go, C/C++/C#, Python, JavaScript/TypeScript, and Java only. Runtime **freshness** (`current` / `version-specific` / `mixed` / `stale` / `unknown`) is computed separately from document **authority**. Implementation-context responses include a **`contextFingerprint`** of the final trimmed payload (see [TOOLS.md](TOOLS.md)).
 
@@ -71,10 +71,19 @@ Optional sparse semantic-search support, one row per chunk.
 | `terms` | Deterministically sorted, top-48 normalized keyword terms (empty only for text without usable terms) |
 | `updated_at` | Unix time for the vector write |
 
-Term frequency chooses the top terms, then each selected term is stored once.
-Similarity is cosine over normalized term presence; it is **not TF-IDF**, embeddings,
+Term frequency chooses the top terms, then each selected term is stored once:
+deterministic sparse keyword-vector similarity. Scoring is cosine over
+normalized term presence; it is **not TF-IDF** (no IDF weighting), embeddings,
 or a vector database. Semantic search remains opt-in (`-enable-semantic` or
 `semantic: true`) and supplements FTS rather than replacing it.
+
+The tokenizer splits identifiers on camelCase/PascalCase boundaries and
+underscores *before* lowercasing, keeping both the combined identifier and its
+components (`RetryPolicy` → `retrypolicy`, `retry`, `policy`; acronym runs
+survive: `HTTPServer` → `httpserver`, `http`, `server`). Namespace (`::`) and
+member (`.`) separators split qualified names into parts. Tokens shorter than
+3 runes and stopwords are dropped. This differs deliberately from symbol
+normalization, which preserves qualification for exact lookup.
 
 ### `chunk_term_postings`
 
@@ -158,21 +167,19 @@ Composite score ≈ FTS rank + `AuthorityBoost(authority)` + light example/title
 
 Runtime structure `store.ContextBudget` limits how much text `implctx` returns. See [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Migrations
+## Schema versioning policy (pre-release)
 
-| Version | Change |
-|---------|--------|
-| 1 | documents, chunks, FTS5, triggers |
-| 2 | Indexes on `root_name` (+ uri/source_type) |
-| 3 | Authority columns, symbols, recipes, aliases, root groups |
-| 4 | Symbol form columns (`qualified_name`, `unqualified_name`, `namespace`, `signature_norm`); `chunks.root_name` |
-| 5 | Go backfill of symbol forms via `DeriveSymbolForms` (idempotent; fixes naive v4 SQL backfill) |
-| 6 | `chunk_term_vectors` for optional sparse semantic search (not embeddings) |
-| 7 | `chunk_term_postings` inverted index for root-scoped semantic candidates |
+One canonical schema, no migration ladder:
 
-Opening a DB always migrates to the current version (`PRAGMA user_version = 7`). `store/schema.sql` mirrors a fresh post-migration database.
+- **Version matches** (`user_version == 7`): open normally.
+- **Empty/new database**: create the full v7 schema directly from `store/schema.sql`, then set `user_version = 7`.
+- **Any other version** (or an unversioned non-empty file): refuse to open without modifying the file. The error reports the database path, the found version, and the expected version, and instructs the developer to delete the database (and its `-wal`/`-shm` sidecars) and re-ingest.
 
-The v6 vector table intentionally has no ordinary `terms` B-tree index: SQLite
-cannot use it for leading-wildcard `LIKE '%term%'`. V7 removes that lookup path
-entirely in favor of `idx_chunk_term_postings_root_term`; the query-plan test
-records indexed candidate selection.
+During development, delete and recreate databases after schema changes; no time is spent backfilling old versions or testing historical upgrades.
+
+> ImplCache has not yet shipped a persistent production database format. During pre-release development, schema changes require recreating the local database. Backward migrations will begin when the first persistent deployment is released.
+
+The vector table intentionally has no ordinary `terms` B-tree index: SQLite
+cannot use it for leading-wildcard `LIKE '%term%'`. Semantic candidate lookup
+instead uses `idx_chunk_term_postings_root_term`; the query-plan test records
+indexed candidate selection.

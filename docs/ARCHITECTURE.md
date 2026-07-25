@@ -19,7 +19,7 @@ Primary goal: reduce the tokens, retrieval time, web searches, file reads, compi
 7. **No CGO** — SQLite via `modernc.org/sqlite` for portable builds.
 8. **FTS-first search** — authority/root ranking by default; optional sparse term-vector semantic uses v7 indexed term postings (`-enable-semantic`); neural embeddings and TF-IDF weighting remain deferred.
 
-**Schema** is `PRAGMA user_version = 7` (atomic per-step migrations in `store/migrate.go`). **Symbol languages:** Go, C/C++/C#, Python, JS/TS, Java. **Freshness** is independent of authority. **`contextFingerprint`** hashes the final trimmed response (not pre-trim candidates).
+**Schema** is `PRAGMA user_version = 7` (canonical schema in `store/schema.sql`, created directly on open; incompatible databases are refused — delete and re-ingest). **Symbol languages:** Go, C/C++/C#, Python, JS/TS, Java. **Freshness** is independent of authority. **`contextFingerprint`** hashes the final trimmed response (not pre-trim candidates).
 
 Known limitations: [OPERATIONS.md](OPERATIONS.md#limitations-and-risks).
 
@@ -126,7 +126,7 @@ Roots are never silently merged across conflicting product families.
 | `main` | Flags, DB open, MCP stdio/HTTP, loopback rewrite, shutdown |
 | `tools` | Tool schemas, permission gates, root-need error shaping |
 | `implctx` | Budgeted implementation package assembly |
-| `store` | Migrations, CRUD, FTS, symbols, recipes, roots, ranking |
+| `store` | Schema bootstrap, CRUD, FTS, symbols, recipes, roots, ranking |
 | `ingest` | Walk, convert, chunk, hash skip, symbol extract, authority infer |
 | `vomit` | Playbook/recipe compilation |
 | `internal/safePath` | Confine output paths under a root |

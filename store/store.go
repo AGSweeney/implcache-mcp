@@ -208,7 +208,7 @@ func OpenWithOptions(path string, opt OpenOptions) (*Store, error) {
 		}
 	}
 
-	if err := migrate(db); err != nil {
+	if err := ensureSchema(db, path); err != nil {
 		db.Close()
 		return nil, err
 	}

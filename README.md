@@ -71,7 +71,7 @@ Use absolute paths. Reload MCP after rebuilding.
 
 **Symbol matching** (`find_symbol`): staged exact → normalized → qualified → unqualified → prefix/suffix/token → bounded fuzzy. Definitions outrank declarations and calls. Extractors: Go, C/C++/C#, Python, JS/TS, Java.
 
-**Optional semantic search**: `-enable-semantic` (or tool arg `semantic: true`) supplements FTS with sparse top-term presence cosine. Its v7 inverted term postings index avoids wildcard vector scans; it is not embeddings or TF-IDF.
+**Optional semantic search**: `-enable-semantic` (or tool arg `semantic: true`) supplements FTS with deterministic sparse keyword-vector cosine. The tokenizer splits identifiers on camelCase/underscore boundaries (keeping the combined token), and the v7 inverted term postings index avoids wildcard vector scans; it is not embeddings or TF-IDF.
 
 **Schema**: SQLite `PRAGMA user_version = 7` (see [docs/DATA_MODEL.md](docs/DATA_MODEL.md)). Pre-1.0; contracts may evolve.
 
@@ -148,7 +148,7 @@ go test ./store -bench=Benchmark -benchtime=200ms
 
 - **Freshness** is not inferred from authority alone (official docs without version metadata stay `unknown`).
 - **`contextFingerprint`** identifies the final trimmed package the client receives (source hash changes update it).
-- Migrations are atomic per version step (failed upgrades leave the prior `user_version`).
+- Pre-release schema policy: one canonical schema, no migrations. An incompatible database is refused with instructions to delete and re-ingest it.
 
 ## Limitations (pre-1.0)
 

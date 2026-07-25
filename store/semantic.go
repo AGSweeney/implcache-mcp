@@ -19,14 +19,9 @@ const MatchKindSemantic = "semantic"
 
 const maxTermVectorTerms = 48
 const (
-	semanticBackfillBatchSize = 256
 	minSemanticCandidates     = 1000
 	semanticCandidateMultiple = 50
 )
-
-// testTermPostingBackfillHook is used only to verify v7 rollback midway
-// through a posting backfill. It runs inside the migration transaction.
-var testTermPostingBackfillHook func(chunkID int64) error
 
 // BuildTermVector returns a deterministic top-N sparse term-presence vector.
 // Term frequency selects the top terms, but each selected term is serialized
@@ -68,38 +63,88 @@ func BuildTermVector(heading, body string) string {
 	return strings.Join(out, " ")
 }
 
+// tokenizeSemantic splits text into normalized terms. Identifiers keep their
+// combined lowercase form and additionally emit component tokens split on
+// camelCase/PascalCase boundaries and underscores (case boundaries are
+// detected before lowercasing). Namespace (::) and member (.) separators are
+// non-identifier runes, so qualified names split into their parts naturally.
+// Tokens shorter than 3 runes and stopwords are dropped. Output order is
+// deterministic. This is intentionally distinct from symbol normalization
+// (NormalizeSymbol), which preserves qualification for exact lookup.
 func tokenizeSemantic(s string) []string {
 	var out []string
 	var b strings.Builder
-	flush := func() {
-		if b.Len() == 0 {
-			return
-		}
-		tok := strings.ToLower(b.String())
-		b.Reset()
+	emit := func(tok string) {
 		if len(tok) < 3 || isSemanticStop(tok) {
 			return
 		}
 		out = append(out, tok)
-		// Split camelCase / PascalCase leftovers already lowercased — also emit
-		// underscore segments.
-		if strings.Contains(tok, "_") {
-			for _, p := range strings.Split(tok, "_") {
-				if len(p) >= 3 && !isSemanticStop(p) {
-					out = append(out, p)
-				}
+	}
+	flush := func() {
+		if b.Len() == 0 {
+			return
+		}
+		raw := b.String()
+		b.Reset()
+		combined := strings.ToLower(raw)
+		emit(combined)
+		parts := splitIdentifierParts(raw)
+		if len(parts) < 2 {
+			return
+		}
+		for _, p := range parts {
+			p = strings.ToLower(p)
+			if p != combined {
+				emit(p)
 			}
 		}
 	}
 	for _, r := range s {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' {
-			b.WriteRune(unicode.ToLower(r))
+			b.WriteRune(r)
 			continue
 		}
 		flush()
 	}
 	flush()
 	return out
+}
+
+// splitIdentifierParts splits an identifier on underscores and camelCase /
+// PascalCase boundaries, preserving acronym runs (HTTPServer → HTTP, Server).
+func splitIdentifierParts(tok string) []string {
+	var parts []string
+	runes := []rune(tok)
+	start := 0
+	flushPart := func(end int) {
+		if end > start {
+			parts = append(parts, string(runes[start:end]))
+		}
+	}
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		if r == '_' {
+			flushPart(i)
+			start = i + 1
+			continue
+		}
+		if i == start || !unicode.IsUpper(r) {
+			continue
+		}
+		prev := runes[i-1]
+		switch {
+		case unicode.IsLower(prev) || unicode.IsDigit(prev):
+			// lower/digit → Upper: networkClient → network | Client
+			flushPart(i)
+			start = i
+		case unicode.IsUpper(prev) && i+1 < len(runes) && unicode.IsLower(runes[i+1]):
+			// Acronym followed by a word: HTTPServer → HTTP | Server
+			flushPart(i)
+			start = i
+		}
+	}
+	flushPart(len(runes))
+	return parts
 }
 
 func isSemanticStop(t string) bool {
@@ -198,102 +243,6 @@ func upsertChunkTermPostingsTx(ctx context.Context, tx *sql.Tx, chunkID int64, r
 		}
 	}
 	return nil
-}
-
-// backfillChunkTermVectorsTx populates term vectors for existing chunks (migration v6).
-func backfillChunkTermVectorsTx(tx *sql.Tx) error {
-	rows, err := tx.Query(`SELECT id, heading, body FROM chunks`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	type row struct {
-		id            int64
-		heading, body string
-	}
-	var list []row
-	for rows.Next() {
-		var r row
-		if err := rows.Scan(&r.id, &r.heading, &r.body); err != nil {
-			return err
-		}
-		list = append(list, r)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if len(list) == 0 {
-		return nil
-	}
-	stmt, err := tx.Prepare(`
-		INSERT INTO chunk_term_vectors(chunk_id, terms, updated_at)
-		VALUES (?, ?, ?)
-		ON CONFLICT(chunk_id) DO UPDATE SET terms = excluded.terms, updated_at = excluded.updated_at`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-	now := time.Now().Unix()
-	for _, r := range list {
-		terms := BuildTermVector(r.heading, r.body)
-		if _, err := stmt.Exec(r.id, terms, now); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// backfillChunkTermPostingsTx streams v6 vectors in batches to avoid retaining
-// an entire corpus in memory while creating the v7 inverted term index.
-func backfillChunkTermPostingsTx(tx *sql.Tx) error {
-	var afterID int64
-	for {
-		rows, err := tx.Query(`
-			SELECT v.chunk_id, c.root_name, v.terms
-			FROM chunk_term_vectors v
-			JOIN chunks c ON c.id = v.chunk_id
-			WHERE v.chunk_id > ?
-			ORDER BY v.chunk_id
-			LIMIT ?`, afterID, semanticBackfillBatchSize)
-		if err != nil {
-			return err
-		}
-		type row struct {
-			chunkID  int64
-			rootName string
-			terms    string
-		}
-		var batch []row
-		for rows.Next() {
-			var r row
-			if err := rows.Scan(&r.chunkID, &r.rootName, &r.terms); err != nil {
-				rows.Close()
-				return err
-			}
-			batch = append(batch, r)
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return err
-		}
-		if err := rows.Close(); err != nil {
-			return err
-		}
-		if len(batch) == 0 {
-			return nil
-		}
-		for _, r := range batch {
-			if testTermPostingBackfillHook != nil {
-				if err := testTermPostingBackfillHook(r.chunkID); err != nil {
-					return err
-				}
-			}
-			if err := upsertChunkTermPostingsTx(context.Background(), tx, r.chunkID, r.rootName, r.terms); err != nil {
-				return err
-			}
-		}
-		afterID = batch[len(batch)-1].chunkID
-	}
 }
 
 // semanticCandidates returns related chunks by sparse term-presence cosine similarity.

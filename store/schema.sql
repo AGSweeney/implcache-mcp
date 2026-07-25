@@ -2,8 +2,10 @@
 -- Use of this source code is governed by an MIT-style
 -- license that can be found in the LICENSE file.
 
--- Schema mirror for a fresh database after all migrations (PRAGMA user_version = 7).
--- Source of truth for stepwise upgrades remains migrate.go.
+-- Canonical schema (PRAGMA user_version = 7). New databases are created
+-- directly from this file (embedded via store/schema.go). There is no
+-- migration ladder during pre-release development: incompatible databases
+-- must be deleted and re-ingested.
 
 CREATE TABLE documents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
