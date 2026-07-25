@@ -16,9 +16,9 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func TestCurrentSchemaVersionTen(t *testing.T) {
-	if currentSchemaVersion != 10 {
-		t.Fatalf("currentSchemaVersion=%d want 10", currentSchemaVersion)
+func TestCurrentSchemaVersionEleven(t *testing.T) {
+	if currentSchemaVersion != 11 {
+		t.Fatalf("currentSchemaVersion=%d want 11", currentSchemaVersion)
 	}
 }
 
@@ -77,7 +77,7 @@ func TestReopenCurrentVersionIsIdempotent(t *testing.T) {
 }
 
 func TestOpenRefusesMismatchedSchemaVersion(t *testing.T) {
-	for _, version := range []int{1, 5, 6, 7, 8, 9, currentSchemaVersion + 1} {
+	for _, version := range []int{1, 5, 6, 7, 8, 9, 10, currentSchemaVersion + 1} {
 		dbPath := filepath.Join(t.TempDir(), fmt.Sprintf("v%d.db", version))
 		db, err := sql.Open("sqlite", dbPath)
 		if err != nil {

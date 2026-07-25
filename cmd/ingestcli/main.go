@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
+	"implcache-mcp/gitrepo"
 	"implcache-mcp/ingest"
 	"implcache-mcp/pdf"
 	"implcache-mcp/store"
@@ -21,17 +23,24 @@ import (
 
 func main() {
 	dbPath := flag.String("db", "./implcache.db", "sqlite db path")
-	path := flag.String("path", "", "path to ingest (markdown/project/pdf) or unused for delete-prefix")
-	mode := flag.String("mode", "markdown", "markdown | project | delete-prefix | url | pdf-inspect | pdf-ingest | pdf-remove")
+	path := flag.String("path", "", "path to ingest (markdown/project/pdf/local repo)")
+	mode := flag.String("mode", "markdown", "markdown|project|delete-prefix|url|pdf-*|repo-*")
 	recursive := flag.Bool("recursive", true, "recurse for markdown mode")
-	rootName := flag.String("root", "", "rootName for project:// or pdf:// URIs")
-	prefix := flag.String("prefix", "", "URI prefix for delete-prefix mode (e.g. file:///)")
-	urlFlag := flag.String("url", "", "URL for url mode")
-	uriFlag := flag.String("uri", "", "Document URI for pdf-remove mode")
-	profile := flag.String("profile", "generic", "web extraction profile: generic|sphinx|doxygen")
+	rootName := flag.String("root", "", "rootName for project://, pdf://, or git:// URIs")
+	prefix := flag.String("prefix", "", "URI prefix for delete-prefix mode")
+	urlFlag := flag.String("url", "", "URL for url mode / remote for repo modes")
+	uriFlag := flag.String("uri", "", "Document URI for pdf-remove")
+	nameFlag := flag.String("name", "", "repo source name")
+	refFlag := flag.String("ref", "", "git branch/tag/commit")
+	acqMode := flag.String("acq", "", "snapshot|managed_clone|local_checkout")
+	sparse := flag.String("sparse", "", "comma-separated sparse paths")
+	profile := flag.String("profile", "generic", "web extraction profile")
 	allowHTTP := flag.Bool("allow-http", false, "permit http:// for url mode")
 	pageStart := flag.Int("page-start", 0, "1-based start page for PDF modes")
 	pageEnd := flag.Int("page-end", 0, "1-based end page for PDF modes")
+	workingTree := flag.Bool("working-tree", false, "index working tree for local_checkout")
+	removeIndex := flag.Bool("remove-index", true, "repo-remove: delete indexed docs")
+	removeClone := flag.Bool("remove-clone", false, "repo-remove: delete managed clone")
 	flag.Parse()
 
 	st, err := store.Open(*dbPath)
@@ -42,6 +51,7 @@ func main() {
 
 	ctx := context.Background()
 	start := time.Now()
+	cache := gitrepo.CacheRootForDB(*dbPath)
 
 	switch *mode {
 	case "markdown":
@@ -95,27 +105,19 @@ func main() {
 		if *path == "" {
 			log.Fatal("-path is required for pdf-inspect")
 		}
-		rep, err := pdf.InspectPDF(*path, pdf.InspectOptions{
-			PageStart: *pageStart,
-			PageEnd:   *pageEnd,
-		})
+		rep, err := pdf.InspectPDF(*path, pdf.InspectOptions{PageStart: *pageStart, PageEnd: *pageEnd})
 		if err != nil {
 			log.Fatal(err)
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(rep); err != nil {
-			log.Fatal(err)
-		}
+		_ = enc.Encode(rep)
 	case "pdf-ingest":
 		if *path == "" {
 			log.Fatal("-path is required for pdf-ingest")
 		}
 		res, err := pdf.IngestPDF(ctx, st, pdf.IngestOptions{
-			Path:      *path,
-			RootName:  *rootName,
-			PageStart: *pageStart,
-			PageEnd:   *pageEnd,
+			Path: *path, RootName: *rootName, PageStart: *pageStart, PageEnd: *pageEnd,
 		})
 		if err != nil {
 			log.Fatal(err)
@@ -124,21 +126,117 @@ func main() {
 			res.Status, res.DocumentURI, res.Skipped, res.Chunks, res.Classification,
 			time.Since(start).Round(time.Millisecond))
 	case "pdf-remove":
-		uri := *uriFlag
-		if uri == "" {
+		if *uriFlag == "" {
 			log.Fatal("-uri is required for pdf-remove")
 		}
-		ok, err := pdf.RemovePDF(ctx, st, uri)
+		ok, err := pdf.RemovePDF(ctx, st, *uriFlag)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("mode=pdf-remove deleted=%v uri=%s elapsed=%s\n",
-			ok, uri, time.Since(start).Round(time.Millisecond))
+		fmt.Printf("mode=pdf-remove deleted=%v uri=%s elapsed=%s\n", ok, *uriFlag, time.Since(start).Round(time.Millisecond))
+	case "repo-inspect":
+		rep, err := gitrepo.InspectRepo(ctx, gitrepo.InspectOptions{
+			RemoteURL: *urlFlag, LocalPath: *path, Ref: *refFlag,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(rep)
+	case "repo-add":
+		if *nameFlag == "" {
+			log.Fatal("-name is required")
+		}
+		wt := "HEAD"
+		if *workingTree {
+			wt = "working_tree"
+		}
+		rs, err := gitrepo.AddRepoSource(ctx, st, gitrepo.IngestOptions{
+			Name: *nameFlag, RemoteURL: *urlFlag, LocalPath: *path, RootName: *rootName,
+			AcquisitionMode: *acqMode, Ref: *refFlag, SparsePaths: splitCSV(*sparse),
+			WorkingTreeMode: wt,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(rs)
+	case "repo-ingest":
+		if *nameFlag == "" {
+			*nameFlag = "repo"
+		}
+		modeAcq := *acqMode
+		if modeAcq == "" {
+			if *path != "" {
+				modeAcq = "local_checkout"
+			} else {
+				modeAcq = "snapshot"
+			}
+		}
+		wt := "HEAD"
+		if *workingTree {
+			wt = "working_tree"
+		}
+		res, err := gitrepo.IngestRepo(ctx, st, gitrepo.IngestOptions{
+			Name: *nameFlag, RemoteURL: *urlFlag, LocalPath: *path, RootName: *rootName,
+			AcquisitionMode: modeAcq, Ref: *refFlag, SparsePaths: splitCSV(*sparse),
+			WorkingTreeMode: wt, PersistSource: true, CacheRoot: cache,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("mode=repo-ingest status=%s root=%s commit=%s ingested=%d elapsed=%s\n",
+			res.Status, res.RootName, res.ResolvedCommit, res.DocumentsIngested,
+			time.Since(start).Round(time.Millisecond))
+	case "repo-refresh":
+		if *nameFlag == "" {
+			log.Fatal("-name is required")
+		}
+		res, err := gitrepo.RefreshRepoSource(ctx, st, *nameFlag, cache, nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("mode=repo-refresh status=%s commit=%s ingested=%d deleted=%d elapsed=%s\n",
+			res.Status, res.ResolvedCommit, res.DocumentsIngested, res.FilesDeleted,
+			time.Since(start).Round(time.Millisecond))
+	case "repo-list":
+		list, err := st.ListRepoSources(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(list)
+	case "repo-remove":
+		if *nameFlag == "" {
+			log.Fatal("-name is required")
+		}
+		ok, err := gitrepo.RemoveRepoSource(ctx, st, *nameFlag, *removeIndex, *removeClone)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("mode=repo-remove deleted=%v name=%s\n", ok, *nameFlag)
 	default:
 		log.Fatalf("unknown mode %q", *mode)
 	}
 
 	os.Exit(0)
+}
+
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func printErrs(errs []string) {

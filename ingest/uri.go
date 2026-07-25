@@ -25,6 +25,15 @@ func FileURI(absPath string) string {
 // Root names are controlled ingest identifiers (not percent-encoded) for stable URIs.
 // ".." path segments are dropped.
 func ProjectURI(rootName, relPath string) string {
+	return schemeURI("project", rootName, relPath)
+}
+
+// GitURI builds git://{rootName}/{rel} for repository-ingested files.
+func GitURI(rootName, relPath string) string {
+	return schemeURI("git", rootName, relPath)
+}
+
+func schemeURI(scheme, rootName, relPath string) string {
 	rootName = strings.Trim(rootName, "/")
 	rel := filepath.ToSlash(relPath)
 	rel = strings.TrimPrefix(rel, "./")
@@ -37,7 +46,7 @@ func ProjectURI(rootName, relPath string) string {
 		}
 		clean = append(clean, p)
 	}
-	return "project://" + rootName + "/" + strings.Join(clean, "/")
+	return scheme + "://" + rootName + "/" + strings.Join(clean, "/")
 }
 
 // TitleFromPath returns a display title from a path.

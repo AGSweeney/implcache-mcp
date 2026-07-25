@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 
+	"implcache-mcp/gitrepo"
 	"implcache-mcp/implctx"
 	"implcache-mcp/ingest"
 	"implcache-mcp/pdf"
@@ -43,6 +44,12 @@ var AdminOnlyTools = []string{
 	"inspect_pdf",
 	"ingest_pdf",
 	"remove_pdf",
+	"inspect_repo",
+	"add_repo_source",
+	"ingest_repo",
+	"refresh_repo_source",
+	"list_repo_sources",
+	"remove_repo_source",
 	"list_documents",
 	"delete_document",
 	"delete_by_uri_prefix",
@@ -401,6 +408,124 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			out := deleteDocumentResult{Deleted: ok, URI: args.URI}
 			return textResult(fmt.Sprintf("deleted=%v uri=%s", ok, args.URI)), out, nil
 		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "inspect_repo",
+			Description: "Inspect a Git remote or local checkout (no ingest; admin-only)",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args repoInspectArgs) (*mcp.CallToolResult, gitrepo.InspectReport, error) {
+			if !opt.AllowIngest {
+				return nil, gitrepo.InspectReport{}, deny("ingest")
+			}
+			rep, err := gitrepo.InspectRepo(ctx, gitrepo.InspectOptions{
+				RemoteURL: args.RemoteURL, LocalPath: args.LocalPath, Ref: args.Ref,
+			})
+			if err != nil {
+				return nil, gitrepo.InspectReport{}, err
+			}
+			payload, _ := json.MarshalIndent(rep, "", "  ")
+			return textResult(string(payload)), *rep, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "add_repo_source",
+			Description: "Register a Git repository source configuration",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args repoAddArgs) (*mcp.CallToolResult, store.RepoSource, error) {
+			if !opt.AllowIngest {
+				return nil, store.RepoSource{}, deny("ingest")
+			}
+			rs, err := gitrepo.AddRepoSource(ctx, st, gitrepo.IngestOptions{
+				Name: args.Name, RemoteURL: args.RemoteURL, LocalPath: args.LocalPath,
+				RootName: args.RootName, AcquisitionMode: args.AcquisitionMode, Ref: args.Ref,
+				Authority: args.Authority, Product: args.Product, Version: args.Version,
+				CredentialRef: args.CredentialReference, IncludePatterns: args.IncludePatterns,
+				ExcludePatterns: args.ExcludePatterns, SparsePaths: args.SparsePaths,
+				SubmodulePolicy: args.SubmodulePolicy, SymlinkPolicy: args.SymlinkPolicy,
+				WorkingTreeMode: args.WorkingTreeMode, CloneDepth: args.CloneDepth,
+				PartialCloneFilter: args.PartialCloneFilter,
+			})
+			if err != nil {
+				return nil, store.RepoSource{}, err
+			}
+			payload, _ := json.MarshalIndent(rs, "", "  ")
+			return textResult(string(payload)), *rs, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "ingest_repo",
+			Description: "Acquire and ingest a Git repository into a versioned knowledge root (git:// URIs)",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args repoAddArgs) (*mcp.CallToolResult, gitrepo.IngestReport, error) {
+			if !opt.AllowIngest {
+				return nil, gitrepo.IngestReport{}, deny("ingest")
+			}
+			mode := args.AcquisitionMode
+			if mode == "" {
+				if args.LocalPath != "" {
+					mode = "local_checkout"
+				} else {
+					mode = "snapshot"
+				}
+			}
+			res, err := gitrepo.IngestRepo(ctx, st, gitrepo.IngestOptions{
+				Name: args.Name, RemoteURL: args.RemoteURL, LocalPath: args.LocalPath,
+				RootName: args.RootName, AcquisitionMode: mode, Ref: args.Ref,
+				Authority: args.Authority, Product: args.Product, Version: args.Version,
+				CredentialRef: args.CredentialReference, IncludePatterns: args.IncludePatterns,
+				ExcludePatterns: args.ExcludePatterns, SparsePaths: args.SparsePaths,
+				SubmodulePolicy: args.SubmodulePolicy, SymlinkPolicy: args.SymlinkPolicy,
+				WorkingTreeMode: args.WorkingTreeMode, CloneDepth: args.CloneDepth,
+				PartialCloneFilter: args.PartialCloneFilter, PersistSource: true,
+				MaxFiles: opt.MaxIngestFiles, MaxDocumentBytes: opt.MaxDocumentBytes,
+				CacheRoot: gitrepo.CacheRootForDB(""),
+			})
+			if err != nil {
+				return nil, gitrepo.IngestReport{}, err
+			}
+			payload, _ := json.MarshalIndent(res, "", "  ")
+			return textResult(string(payload)), *res, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "refresh_repo_source",
+			Description: "Fetch and incrementally reindex a registered Git repository source",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args nameArgs) (*mcp.CallToolResult, gitrepo.IngestReport, error) {
+			if !opt.AllowIngest {
+				return nil, gitrepo.IngestReport{}, deny("ingest")
+			}
+			res, err := gitrepo.RefreshRepoSource(ctx, st, args.Name, gitrepo.CacheRootForDB(""), nil)
+			if err != nil {
+				return nil, gitrepo.IngestReport{}, err
+			}
+			payload, _ := json.MarshalIndent(res, "", "  ")
+			return textResult(string(payload)), *res, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "list_repo_sources",
+			Description: "List registered Git repository sources",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, listRepoSourcesResult, error) {
+			list, err := st.ListRepoSources(ctx)
+			if err != nil {
+				return nil, listRepoSourcesResult{}, err
+			}
+			out := listRepoSourcesResult{Sources: list, Count: len(list)}
+			payload, _ := json.MarshalIndent(out, "", "  ")
+			return textResult(string(payload)), out, nil
+		})
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "remove_repo_source",
+			Description: "Remove a Git repository source; optionally delete indexed content and managed clone",
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args repoRemoveArgs) (*mcp.CallToolResult, deleteDocumentResult, error) {
+			if !opt.AllowDelete {
+				return nil, deleteDocumentResult{}, deny("delete")
+			}
+			ok, err := gitrepo.RemoveRepoSource(ctx, st, args.Name, args.RemoveIndex || !args.ConfigOnly, args.RemoveClone)
+			if err != nil {
+				return nil, deleteDocumentResult{}, err
+			}
+			out := deleteDocumentResult{Deleted: ok, URI: args.Name}
+			return textResult(fmt.Sprintf("deleted=%v name=%s", ok, args.Name)), out, nil
+		})
 	}
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -521,7 +646,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "list_documents",
-			Description: "List ingested documents, optionally filtered by sourceType (markdown|source)",
+			Description: "List ingested documents, optionally filtered by sourceType (markdown|source|web|pdf|git)",
 		}, func(ctx context.Context, _ *mcp.CallToolRequest, args listDocumentsArgs) (*mcp.CallToolResult, listDocumentsResult, error) {
 			docs, err := st.ListDocuments(ctx, args.SourceType)
 			if err != nil {
@@ -723,6 +848,45 @@ type pdfIngestArgs struct {
 	Force     bool   `json:"force,omitempty" jsonschema:"Reingest even if file hash unchanged"`
 }
 
+type repoInspectArgs struct {
+	RemoteURL string `json:"remoteUrl,omitempty" jsonschema:"Git remote or GitHub URL"`
+	LocalPath string `json:"localPath,omitempty" jsonschema:"Existing local checkout"`
+	Ref       string `json:"ref,omitempty" jsonschema:"Branch, tag, or commit"`
+}
+
+type repoAddArgs struct {
+	Name                string   `json:"name" jsonschema:"Unique source name"`
+	RemoteURL           string   `json:"remoteUrl,omitempty"`
+	LocalPath           string   `json:"localPath,omitempty"`
+	RootName            string   `json:"rootName,omitempty"`
+	AcquisitionMode     string   `json:"acquisitionMode,omitempty" jsonschema:"snapshot|managed_clone|local_checkout"`
+	Ref                 string   `json:"ref,omitempty"`
+	Authority           string   `json:"authority,omitempty"`
+	Product             string   `json:"product,omitempty"`
+	Version             string   `json:"version,omitempty"`
+	CredentialReference string   `json:"credentialReference,omitempty"`
+	IncludePatterns     []string `json:"includePatterns,omitempty"`
+	ExcludePatterns     []string `json:"excludePatterns,omitempty"`
+	SparsePaths         []string `json:"sparsePaths,omitempty"`
+	SubmodulePolicy     string   `json:"submodulePolicy,omitempty"`
+	SymlinkPolicy       string   `json:"symlinkPolicy,omitempty"`
+	WorkingTreeMode     string   `json:"workingTreeMode,omitempty" jsonschema:"HEAD|working_tree"`
+	CloneDepth          int      `json:"cloneDepth,omitempty"`
+	PartialCloneFilter  string   `json:"partialCloneFilter,omitempty"`
+}
+
+type repoRemoveArgs struct {
+	Name        string `json:"name"`
+	RemoveIndex bool   `json:"removeIndex,omitempty"`
+	RemoveClone bool   `json:"removeClone,omitempty"`
+	ConfigOnly  bool   `json:"configOnly,omitempty"`
+}
+
+type listRepoSourcesResult struct {
+	Sources []store.RepoSource `json:"sources"`
+	Count   int                `json:"count"`
+}
+
 type searchArgs struct {
 	Query    string `json:"query" jsonschema:"Full-text search query"`
 	Limit    int    `json:"limit,omitempty" jsonschema:"Max hits to return (default 20, max 100)"`
@@ -758,7 +922,7 @@ type documentResult struct {
 }
 
 type listDocumentsArgs struct {
-	SourceType string `json:"sourceType,omitempty" jsonschema:"Optional filter: markdown, source, web, or pdf"`
+	SourceType string `json:"sourceType,omitempty" jsonschema:"Optional filter: markdown, source, web, pdf, or git"`
 }
 
 type listDocumentsResult struct {

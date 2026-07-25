@@ -73,7 +73,7 @@ Use absolute paths. Reload MCP after rebuilding.
 
 **Optional semantic search**: `-enable-semantic` (or tool arg `semantic: true`) supplements FTS with IDF-weighted sparse cosine (persisted `term_df` IDF over presence vectors). The tokenizer splits identifiers on camelCase/underscore boundaries (keeping the combined token), and the inverted term postings index avoids wildcard vector scans; it is not embeddings or classic TF-IDF.
 
-**Schema**: SQLite `PRAGMA user_version = 10` (see [docs/DATA_MODEL.md](docs/DATA_MODEL.md)). Pre-1.0; contracts may evolve. Includes web mirror tables and PDF page citations.
+**Schema**: SQLite `PRAGMA user_version = 11` (see [docs/DATA_MODEL.md](docs/DATA_MODEL.md)). Pre-1.0; contracts may evolve. Includes web mirror, PDF, and Git repository source tables.
 
 ---
 
@@ -87,9 +87,10 @@ go build -o ingestcli ./cmd/ingestcli
 ./ingestcli -db ./implcache.db -mode project -root example-control-app -path /path/to/src
 ./ingestcli -db ./implcache.db -mode url -root web-docs -url "https://docs.example.com/api.html"
 ./ingestcli -db ./implcache.db -mode pdf-ingest -root manuals -path /path/to/manual.pdf
+./ingestcli -db ./implcache.db -mode repo-ingest -name sdk -root sdk-main -url https://github.com/org/sdk.git -ref main -acq managed_clone
 ```
 
-Or enable admin tools and call `ingest_markdown` / `ingest_project` / `ingest_url` / `ingest_pdf` (plus site crawl tools). Details: [docs/INGEST.md](docs/INGEST.md).
+Or enable admin tools and call `ingest_markdown` / `ingest_project` / `ingest_url` / `ingest_pdf` / `ingest_repo` (plus site crawl and repo refresh tools). Details: [docs/INGEST.md](docs/INGEST.md).
 
 ---
 

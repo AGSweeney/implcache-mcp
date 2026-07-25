@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"implcache-mcp/gitrepo"
 	"implcache-mcp/internal/netsafe"
 )
 
@@ -57,6 +58,9 @@ func FetchURL(ctx context.Context, raw string, opt FetchOptions) (*FetchedPage, 
 	}
 	if opt.RedirectLimit <= 0 {
 		opt.RedirectLimit = DefaultRedirectLimit
+	}
+	if gitrepo.LooksLikeGitRepoURL(raw) {
+		return nil, gitrepo.ErrLooksLikeGitRepo
 	}
 	safeOpt := netsafe.Options{
 		AllowInsecureHTTP: opt.AllowInsecureHTTP,

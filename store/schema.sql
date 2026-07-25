@@ -253,3 +253,54 @@ CREATE TABLE pdf_pages (
     UNIQUE(pdf_source_id, page_number)
 );
 CREATE INDEX idx_pdf_sources_root ON pdf_sources(root_name);
+
+CREATE TABLE repo_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    root_name TEXT NOT NULL,
+    remote_url TEXT NOT NULL DEFAULT '',
+    local_path TEXT NOT NULL DEFAULT '',
+    provider TEXT NOT NULL DEFAULT '',
+    owner TEXT NOT NULL DEFAULT '',
+    repository TEXT NOT NULL DEFAULT '',
+    acquisition_mode TEXT NOT NULL DEFAULT 'snapshot',
+    requested_ref TEXT NOT NULL DEFAULT '',
+    resolved_commit_sha TEXT NOT NULL DEFAULT '',
+    default_branch TEXT NOT NULL DEFAULT '',
+    authority TEXT NOT NULL DEFAULT 'current_project',
+    product TEXT NOT NULL DEFAULT '',
+    version TEXT NOT NULL DEFAULT '',
+    credential_reference TEXT NOT NULL DEFAULT '',
+    include_patterns TEXT NOT NULL DEFAULT '[]',
+    exclude_patterns TEXT NOT NULL DEFAULT '[]',
+    sparse_paths TEXT NOT NULL DEFAULT '[]',
+    submodule_policy TEXT NOT NULL DEFAULT 'ignore',
+    symlink_policy TEXT NOT NULL DEFAULT 'ignore',
+    working_tree_mode TEXT NOT NULL DEFAULT 'HEAD',
+    clone_depth INTEGER NOT NULL DEFAULT 1,
+    partial_clone_filter TEXT NOT NULL DEFAULT '',
+    checkout_path TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_attempt_at INTEGER NOT NULL DEFAULT 0,
+    last_success_at INTEGER NOT NULL DEFAULT 0,
+    last_status TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE repo_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_source_id INTEGER NOT NULL REFERENCES repo_sources(id) ON DELETE CASCADE,
+    document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+    relative_path TEXT NOT NULL,
+    blob_hash TEXT NOT NULL DEFAULT '',
+    content_hash TEXT NOT NULL DEFAULT '',
+    language TEXT NOT NULL DEFAULT '',
+    content_class TEXT NOT NULL DEFAULT 'unknown',
+    file_size INTEGER NOT NULL DEFAULT 0,
+    resolved_commit_sha TEXT NOT NULL DEFAULT '',
+    last_seen_generation INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(repo_source_id, relative_path)
+);
+CREATE INDEX idx_repo_sources_root ON repo_sources(root_name);
+CREATE INDEX idx_repo_files_source ON repo_files(repo_source_id, last_seen_generation);

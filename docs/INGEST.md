@@ -40,6 +40,15 @@ Site-wide mirroring uses admin tools `add_web_source` / `ingest_site` / `refresh
 - Text PDFs chunked with `start_page` / `end_page` citations; URI `pdf://{root}/{file}`
 - Image-only / encrypted PDFs are classified; OCR is **not** implemented (`ocrMode=off`)
 
+### Git repositories (`inspect_repo` / `ingest_repo` / CLI `-mode repo-*`)
+
+- Admin-only; **not** web crawling (GitHub HTML/`*.git` URLs are rejected by `ingest_url` / site crawl)
+- Acquisition: `snapshot`, `managed_clone`, or `local_checkout` (`HEAD` or `working_tree`)
+- System `git` with hooks disabled; shallow clone default; optional sparse paths / partial clone filter
+- Reuses local-tree ingest; URIs `git://{root}/{rel}`; every root pinned to **resolved commit SHA**
+- Refresh updates changed files and deletes removed paths only after success; failed refresh keeps prior root
+- Private remotes: use Git Credential Manager / SSH agent; optional `credentialReference` label (no secrets in DB)
+
 ## CLI (`cmd/ingestcli`)
 
 ```bash
@@ -59,6 +68,14 @@ go build -o ingestcli ./cmd/ingestcli
 ./ingestcli -db ./implcache.db -mode pdf-ingest -root device-manuals -path ./manual.pdf
 ./ingestcli -db ./implcache.db -mode pdf-remove -uri "pdf://device-manuals/manual.pdf"
 
+# Git repository
+./ingestcli -db ./implcache.db -mode repo-inspect -url https://github.com/org/sdk.git -ref v5.5
+./ingestcli -db ./implcache.db -mode repo-ingest -name sdk -root sdk-main -url https://github.com/org/sdk.git -ref main -acq managed_clone
+./ingestcli -db ./implcache.db -mode repo-refresh -name sdk
+./ingestcli -db ./implcache.db -mode repo-add -name local-app -path "D:/Projects/App" -acq local_checkout -working-tree
+./ingestcli -db ./implcache.db -mode repo-list
+./ingestcli -db ./implcache.db -mode repo-remove -name sdk -remove-index -remove-clone
+
 # Remove legacy file:// URIs
 ./ingestcli -db ./implcache.db -mode delete-prefix -prefix "file:///"
 ```
@@ -66,13 +83,18 @@ go build -o ingestcli ./cmd/ingestcli
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `-db` | `./implcache.db` | Database path |
-| `-mode` | `markdown` | `markdown` \| `project` \| `delete-prefix` \| `url` \| `pdf-inspect` \| `pdf-ingest` \| `pdf-remove` |
-| `-path` | | File or directory (markdown/project/pdf) |
+| `-mode` | `markdown` | includes `repo-inspect` \| `repo-add` \| `repo-ingest` \| `repo-refresh` \| `repo-list` \| `repo-remove` |
+| `-path` | | File or directory (markdown/project/pdf/local repo) |
 | `-root` | | `rootName` (default: basename of path) |
 | `-recursive` | `true` | Markdown directory recursion |
 | `-prefix` | | URI prefix for delete-prefix |
-| `-url` | | URL for `url` mode |
+| `-url` | | URL for `url` / repo remote |
 | `-uri` | | Document URI for `pdf-remove` |
+| `-name` | | Repo source name |
+| `-ref` | | Branch / tag / commit |
+| `-acq` | | `snapshot` \| `managed_clone` \| `local_checkout` |
+| `-sparse` | | Comma-separated sparse-checkout paths |
+| `-working-tree` | `false` | Index dirty working tree for local checkout |
 | `-profile` | `generic` | Web cleanup profile |
 | `-allow-http` | `false` | Permit `http://` in `url` mode |
 | `-page-start` / `-page-end` | | Optional PDF page range |

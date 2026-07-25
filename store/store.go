@@ -21,6 +21,7 @@ const SourceMarkdown = "markdown"
 const SourceSource = "source"
 const SourceWeb = "web"
 const SourcePDF = "pdf"
+const SourceGit = "git"
 
 // Authority ranks source usefulness for implementation context.
 const (

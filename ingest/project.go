@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -17,19 +18,44 @@ import (
 
 // ProjectResult summarizes an ingest_project run.
 type ProjectResult struct {
-	RootName string   `json:"rootName"`
-	Ingested int      `json:"ingested"`
-	Skipped  int      `json:"skipped"`
-	Errors   []string `json:"errors,omitempty"`
-	URIs     []string `json:"uris,omitempty"`
+	RootName       string         `json:"rootName"`
+	Ingested       int            `json:"ingested"`
+	Skipped        int            `json:"skipped"`
+	Errors         []string       `json:"errors,omitempty"`
+	URIs           []string       `json:"uris,omitempty"`
+	Files          []IngestedFile `json:"files,omitempty"`
+	BytesProcessed int64          `json:"bytesProcessed,omitempty"`
 }
+
+// IngestedFile is one file written or skipped during tree ingest.
+type IngestedFile struct {
+	URI          string `json:"uri"`
+	RelativePath string `json:"relativePath"`
+	ContentHash  string `json:"contentHash"`
+	Language     string `json:"language,omitempty"`
+	SourceType   string `json:"sourceType"`
+	FileSize     int64  `json:"fileSize"`
+	Written      bool   `json:"written"`
+}
+
+// PathFilter decides whether a relative path should be ingested.
+type PathFilter func(rel string) bool
 
 // ProjectOptions configures source-tree ingest limits.
 type ProjectOptions struct {
-	Path             string
-	RootName         string
-	MaxFiles         int
-	MaxDocumentBytes int64
+	Path              string
+	RootName          string
+	MaxFiles          int
+	MaxDocumentBytes  int64
+	MaxTotalBytes     int64
+	IncludePatterns   []string
+	ExcludePatterns   []string
+	PathFilter        PathFilter // if set, overrides include/exclude helpers
+	URIScheme         string     // "project" (default) or "git"
+	SourceType        string     // override source type; empty = infer markdown/source
+	Authority         string
+	OnlyRelativePaths []string // if non-empty, only these relative paths (refresh)
+	SkipDirNames      map[string]struct{}
 }
 
 // IngestProject walks a source tree and ingests text-like files.
@@ -69,6 +95,18 @@ func IngestProjectOpts(ctx context.Context, st *store.Store, opt ProjectOptions)
 
 	res := &ProjectResult{RootName: rootName}
 	filesSeen := 0
+	only := map[string]struct{}{}
+	for _, p := range opt.OnlyRelativePaths {
+		only[filepath.ToSlash(p)] = struct{}{}
+	}
+
+	allow := opt.PathFilter
+	if allow == nil && (len(opt.IncludePatterns) > 0 || len(opt.ExcludePatterns) > 0) {
+		inc, exc := opt.IncludePatterns, opt.ExcludePatterns
+		allow = func(rel string) bool {
+			return pathAllowed(rel, inc, exc)
+		}
+	}
 
 	err = filepath.WalkDir(absRoot, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -76,15 +114,42 @@ func IngestProjectOpts(ctx context.Context, st *store.Store, opt ProjectOptions)
 			return nil
 		}
 		if d.Type()&fs.ModeSymlink != 0 {
-			return nil
+			return nil // symlink policy: ignore
 		}
 		if d.IsDir() {
-			if p != absRoot && ShouldIgnoreDir(d.Name()) {
-				return fs.SkipDir
+			if p != absRoot {
+				if opt.SkipDirNames != nil {
+					if _, ok := opt.SkipDirNames[d.Name()]; ok {
+						return fs.SkipDir
+					}
+				}
+				if ShouldIgnoreDir(d.Name()) {
+					// Still skip .git always; vendor/node_modules skip unless PathFilter allows later files
+					if d.Name() == ".git" {
+						return fs.SkipDir
+					}
+					if allow == nil {
+						return fs.SkipDir
+					}
+				}
 			}
 			return nil
 		}
-		if ShouldIgnoreFile(d.Name()) || !IsTextExt(d.Name()) {
+		rel, err := relativePathWithin(absRoot, p)
+		if err != nil {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		if len(only) > 0 {
+			if _, ok := only[rel]; !ok {
+				return nil
+			}
+		}
+		if allow != nil {
+			if !allow(rel) {
+				return nil
+			}
+		} else if ShouldIgnoreFile(d.Name()) || !IsTextExt(d.Name()) {
 			return nil
 		}
 		if ShouldSkipHelpPath(p) {
@@ -94,25 +159,31 @@ func IngestProjectOpts(ctx context.Context, st *store.Store, opt ProjectOptions)
 		if filesSeen > maxFiles {
 			return fmt.Errorf("ingest file limit exceeded (%d)", maxFiles)
 		}
-		if err := ingestProjectFile(ctx, st, absRoot, rootName, p, maxBytes, res); err != nil {
+		if err := ingestProjectFile(ctx, st, absRoot, rootName, p, rel, maxBytes, opt, res); err != nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", p, err))
+		}
+		if opt.MaxTotalBytes > 0 && res.BytesProcessed > opt.MaxTotalBytes {
+			return fmt.Errorf("ingest total bytes limit exceeded (%d)", opt.MaxTotalBytes)
 		}
 		return nil
 	})
 	return res, err
 }
 
-func ingestProjectFile(ctx context.Context, st *store.Store, absRoot, rootName, path string, maxBytes int64, res *ProjectResult) error {
+func ingestProjectFile(ctx context.Context, st *store.Store, absRoot, rootName, path, rel string, maxBytes int64, opt ProjectOptions, res *ProjectResult) error {
 	data, info, err := readTextFileLimited(path, maxBytes)
 	if err != nil {
 		return err
 	}
+	res.BytesProcessed += int64(len(data))
 
-	rel, err := relativePathWithin(absRoot, path)
-	if err != nil {
-		return err
+	var uri string
+	switch strings.ToLower(opt.URIScheme) {
+	case "git":
+		uri = GitURI(rootName, rel)
+	default:
+		uri = ProjectURI(rootName, rel)
 	}
-	uri := ProjectURI(rootName, rel)
 	hash := sha256Hex(data)
 
 	existing, err := st.GetHashByURI(ctx, uri)
@@ -121,10 +192,16 @@ func ingestProjectFile(ctx context.Context, st *store.Store, absRoot, rootName, 
 	}
 	if existing == hash {
 		res.Skipped++
+		res.Files = append(res.Files, IngestedFile{
+			URI: uri, RelativePath: rel, ContentHash: hash, Written: false, FileSize: int64(len(data)),
+		})
 		return nil
 	}
 
 	sourceType := store.SourceSource
+	if opt.SourceType != "" {
+		sourceType = opt.SourceType
+	}
 	var chunks []store.Chunk
 	content := string(data)
 
@@ -139,17 +216,26 @@ func ingestProjectFile(ctx context.Context, st *store.Store, absRoot, rootName, 
 			res.Skipped++
 			return nil
 		}
-		sourceType = store.SourceMarkdown
+		if opt.SourceType == "" {
+			sourceType = store.SourceMarkdown
+		}
 		content = doc.Markdown
 		if doc.Title != "" {
 			title = doc.Title
 		}
 		chunks = ChunkMarkdown(content)
 	case IsMarkdownExt(path):
-		sourceType = store.SourceMarkdown
+		if opt.SourceType == "" {
+			sourceType = store.SourceMarkdown
+		}
 		chunks = ChunkMarkdown(content)
 	default:
 		chunks = ChunkSource(content)
+	}
+
+	authority := opt.Authority
+	if authority == "" {
+		authority = InferAuthority(rootName, rel)
 	}
 
 	syms := ExtractSymbols(path, content)
@@ -159,7 +245,7 @@ func ingestProjectFile(ctx context.Context, st *store.Store, absRoot, rootName, 
 		SourceType:     sourceType,
 		Path:           rel,
 		RootName:       rootName,
-		Authority:      InferAuthority(rootName, rel),
+		Authority:      authority,
 		Language:       languageFromPath(path),
 		ProductVersion: InferProductVersion(rootName, rel, content),
 		Mtime:          info.ModTime().Unix(),
@@ -170,6 +256,12 @@ func ingestProjectFile(ctx context.Context, st *store.Store, absRoot, rootName, 
 	if err != nil {
 		return err
 	}
+	f := IngestedFile{
+		URI: uri, RelativePath: rel, ContentHash: hash,
+		Language: languageFromPath(path), SourceType: sourceType,
+		FileSize: int64(len(data)), Written: written,
+	}
+	res.Files = append(res.Files, f)
 	if written {
 		res.Ingested++
 		res.URIs = append(res.URIs, uri)
@@ -177,4 +269,56 @@ func ingestProjectFile(ctx context.Context, st *store.Store, absRoot, rootName, 
 		res.Skipped++
 	}
 	return nil
+}
+
+func pathAllowed(rel string, include, exclude []string) bool {
+	rel = filepath.ToSlash(rel)
+	if len(include) > 0 {
+		ok := false
+		for _, p := range include {
+			if matchGlob(p, rel) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return false
+		}
+	}
+	for _, p := range exclude {
+		if matchGlob(p, rel) {
+			return false
+		}
+	}
+	return true
+}
+
+func matchGlob(pattern, name string) bool {
+	pattern = filepath.ToSlash(pattern)
+	name = filepath.ToSlash(name)
+	if pattern == "**" || pattern == "**/*" {
+		return true
+	}
+	if strings.HasPrefix(pattern, "**/") {
+		suf := pattern[3:]
+		if matchGlob(suf, name) {
+			return true
+		}
+		for i := 0; i < len(name); i++ {
+			if name[i] == '/' && matchGlob(suf, name[i+1:]) {
+				return true
+			}
+		}
+		return false
+	}
+	if strings.HasSuffix(pattern, "/**") {
+		pre := strings.TrimSuffix(pattern, "/**")
+		return name == pre || strings.HasPrefix(name, pre+"/")
+	}
+	ok, err := path.Match(pattern, name)
+	if err == nil && ok {
+		return true
+	}
+	ok, err = path.Match(pattern, path.Base(name))
+	return err == nil && ok
 }

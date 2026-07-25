@@ -4,7 +4,7 @@ All tools are registered by `tools.RegisterWithOptions`. Default **`-mode agent`
 
 When root scope is ambiguous, several tools return a JSON payload with `needsChoice`, `message`, and `availableRoots` (often as an error-shaped MCP result). Ask the user, then retry with an explicit root.
 
-Schema: `PRAGMA user_version = 10`. Symbol extraction at ingest supports: Go, C/C++/C#, Python, JavaScript/TypeScript, Java. Unsupported languages yield no symbols. Web fetch/crawl and PDF ingest tools are **admin-only** (never registered in agent mode).
+Schema: `PRAGMA user_version = 11`. Symbol extraction at ingest supports: Go, C/C++/C#, Python, JavaScript/TypeScript, Java. Unsupported languages yield no symbols. Web fetch/crawl, PDF, and Git repo tools are **admin-only** (never registered in agent mode).
 
 ---
 
@@ -187,6 +187,21 @@ Defaults (crawl): maxPages 5000, maxDepth 16, concurrency 2, delay 100ms, 5 MB/r
 | `remove_pdf` | Delete by `pdf://…` URI |
 
 `ocrMode` must be `off` (OCR deferred). Image-only PDFs are reported as requiring OCR and are not ingested.
+
+### Git repository ingestion
+
+Separate from web crawl. Uses system `git` (no hooks); credentials via GCM/SSH/`credentialReference` only (never stored in SQLite).
+
+| Tool | Purpose |
+|------|---------|
+| `inspect_repo` | Remote/local metadata; no ingest |
+| `add_repo_source` | Persist repo config |
+| `ingest_repo` | Snapshot / managed clone / local checkout → `git://` root |
+| `refresh_repo_source` | Fetch + changed-file reindex; failed refresh keeps prior commit |
+| `list_repo_sources` | List configs + status |
+| `remove_repo_source` | Remove config / index / managed clone |
+
+GitHub HTML URLs (`/tree/`, `/blob/`) and `.git` remotes are rejected by web crawl tools with guidance to use repo tools instead.
 
 ### `delete_document`
 
