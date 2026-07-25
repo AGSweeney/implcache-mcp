@@ -307,8 +307,9 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 	}
 	resp.RecommendedFollowUp = append(resp.RecommendedFollowUp, "get_document on a citation URI only if deeper context is required")
 
-	resp.ContextFingerprint = fingerprintResponse(ctx, st, req, resp)
 	trimToBudget(resp, budget.MaxTokensEstimate)
+	// Fingerprint the final trimmed payload the client receives.
+	resp.ContextFingerprint = fingerprintResponse(ctx, st, req, resp)
 	chars, tokens, _ := serializeTokens(resp)
 	resp.Chars = chars
 	resp.EstimatedTokens = tokens

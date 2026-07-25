@@ -4,7 +4,31 @@
 
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"implcache-mcp/tools"
+)
+
+func TestParseToolMode(t *testing.T) {
+	got, err := parseToolMode("")
+	if err != nil || got != tools.ModeAgent {
+		t.Fatalf("empty: got %q err=%v", got, err)
+	}
+	got, err = parseToolMode("agent")
+	if err != nil || got != tools.ModeAgent {
+		t.Fatalf("agent: got %q err=%v", got, err)
+	}
+	got, err = parseToolMode("ADMIN")
+	if err != nil || got != tools.ModeAdmin {
+		t.Fatalf("admin: got %q err=%v", got, err)
+	}
+	_, err = parseToolMode("ops")
+	if err == nil || !strings.Contains(err.Error(), "invalid -mode") {
+		t.Fatalf("expected invalid mode error, got %v", err)
+	}
+}
 
 func TestNormalizeHTTPAddrLoopback(t *testing.T) {
 	got, err := normalizeHTTPAddr(":8080", false)

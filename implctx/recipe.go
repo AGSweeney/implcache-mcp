@@ -37,6 +37,11 @@ type recipeFields struct {
 	RootName     string
 }
 
+type mdSection struct {
+	Title   string
+	Content string
+}
+
 func parseRecipe(e store.KnowledgeEntry) recipeFields {
 	rf := recipeFields{
 		ReviewStatus: e.ReviewStatus,
@@ -48,15 +53,13 @@ func parseRecipe(e store.KnowledgeEntry) recipeFields {
 		Summary:      firstSentence(e.Subject + ". " + stripMD(e.BodyMarkdown)),
 	}
 	body := e.BodyMarkdown
-	sections := splitMarkdownSections(body)
-	for title, content := range sections {
-		key := strings.ToLower(title)
-		items := listItems(content)
-		switch {
-		case containsAny(key, "sequence", "steps", "procedure", "workflow", "initialization", "init order", "call order"):
+	for _, sec := range splitMarkdownSections(body) {
+		items := listItems(sec.Content)
+		switch classifyRecipeSection(sec.Title) {
+		case "sequence":
 			rf.Sequence = append(rf.Sequence, items...)
-			rf.HasSequence = len(items) > 0
-		case containsAny(key, "cleanup", "teardown", "shutdown", "terminate", "lifecycle"):
+			rf.HasSequence = len(items) > 0 || rf.HasSequence
+		case "cleanup":
 			rf.Cleanup = append(rf.Cleanup, items...)
 			if len(items) > 0 {
 				rf.HasSequence = true
@@ -64,30 +67,30 @@ func parseRecipe(e store.KnowledgeEntry) recipeFields {
 					rf.Sequence = appendUnique(rf.Sequence, "Cleanup: "+it)
 				}
 			}
-		case containsAny(key, "include", "import", "header"):
+		case "includes":
 			rf.Includes = append(rf.Includes, items...)
-			for _, line := range strings.Split(content, "\n") {
+			for _, line := range strings.Split(sec.Content, "\n") {
 				line = strings.TrimSpace(line)
 				if strings.HasPrefix(line, "#include") || strings.HasPrefix(line, "import ") {
 					rf.Includes = appendUnique(rf.Includes, line)
 				}
 			}
-		case containsAny(key, "api", "symbol", "function", "required"):
-			rf.APIs = append(rf.APIs, extractAPITokens(content)...)
+		case "apis":
+			rf.APIs = append(rf.APIs, extractAPITokens(sec.Content)...)
 			rf.APIs = append(rf.APIs, items...)
-		case containsAny(key, "prereq", "requirement", "before you"):
+		case "prereqs":
 			rf.Prereqs = append(rf.Prereqs, items...)
-		case containsAny(key, "constraint", "must", "rule"):
+		case "constraints":
 			rf.Constraints = append(rf.Constraints, items...)
-		case containsAny(key, "pitfall", "gotcha", "warning", "common error", "avoid"):
+		case "pitfalls":
 			rf.Pitfalls = append(rf.Pitfalls, items...)
-		case containsAny(key, "example", "sample"):
-			ex := strings.TrimSpace(content)
+		case "examples":
+			ex := strings.TrimSpace(sec.Content)
 			if ex != "" {
 				rf.Examples = append(rf.Examples, store.ClipExcerpt(ex, 600))
 			}
-		case containsAny(key, "version"):
-			if v := strings.TrimSpace(firstLine(content)); v != "" {
+		case "version":
+			if v := strings.TrimSpace(firstLine(sec.Content)); v != "" {
 				rf.Version = v
 			}
 		}
@@ -109,13 +112,48 @@ func parseRecipe(e store.KnowledgeEntry) recipeFields {
 	return rf
 }
 
-func splitMarkdownSections(body string) map[string]string {
-	idxs := reHeading.FindAllStringSubmatchIndex(body, -1)
-	out := map[string]string{}
-	if len(idxs) == 0 {
-		out[""] = body
-		return out
+// classifyRecipeSection maps a markdown heading to a recipe field.
+// Specific phrases win over broad substrings (e.g. "required" alone is not APIs).
+func classifyRecipeSection(title string) string {
+	key := strings.ToLower(strings.TrimSpace(title))
+	if key == "" {
+		return "body"
 	}
+	switch {
+	case containsAny(key, "pitfall", "gotcha", "warning", "common error", "avoid"):
+		return "pitfalls"
+	case containsAny(key, "cleanup", "teardown", "shutdown", "terminate"):
+		return "cleanup"
+	case containsAny(key, "include", "import") || strings.Contains(key, "header"):
+		return "includes"
+	case containsAny(key, "required api", "required apis", "api reference") ||
+		(strings.Contains(key, "api") && !strings.Contains(key, "header")) ||
+		(containsAny(key, "functions", "symbols") && !containsAny(key, "sequence", "init")):
+		return "apis"
+	case containsAny(key, "prereq", "prerequisite") ||
+		(containsAny(key, "requirement", "requirements") && !strings.Contains(key, "cleanup")):
+		return "prereqs"
+	case containsAny(key, "sequence", "steps", "procedure", "workflow", "initialization", "init order", "call order"):
+		return "sequence"
+	case containsAny(key, "constraint") || strings.Contains(key, "must not") ||
+		(strings.Contains(key, "rule") && !strings.Contains(key, "header")):
+		return "constraints"
+	case containsAny(key, "example", "sample"):
+		return "examples"
+	case containsAny(key, "version"):
+		return "version"
+	default:
+		return "body"
+	}
+}
+
+// splitMarkdownSections returns heading sections in source order (deterministic).
+func splitMarkdownSections(body string) []mdSection {
+	idxs := reHeading.FindAllStringSubmatchIndex(body, -1)
+	if len(idxs) == 0 {
+		return []mdSection{{Title: "", Content: body}}
+	}
+	out := make([]mdSection, 0, len(idxs))
 	for i, m := range idxs {
 		title := strings.TrimSpace(body[m[2]:m[3]])
 		start := m[1]
@@ -123,7 +161,7 @@ func splitMarkdownSections(body string) map[string]string {
 		if i+1 < len(idxs) {
 			end = idxs[i+1][0]
 		}
-		out[title] = strings.TrimSpace(body[start:end])
+		out = append(out, mdSection{Title: title, Content: strings.TrimSpace(body[start:end])})
 	}
 	return out
 }

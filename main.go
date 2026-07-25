@@ -63,14 +63,9 @@ func main() {
 		log.Fatalf("output-root: %v", err)
 	}
 
-	toolMode := tools.ModeAgent
-	switch strings.ToLower(strings.TrimSpace(*mode)) {
-	case "", "agent":
-		toolMode = tools.ModeAgent
-	case "admin":
-		toolMode = tools.ModeAdmin
-	default:
-		log.Fatalf("invalid -mode %q (want agent or admin)", *mode)
+	toolMode, err := parseToolMode(*mode)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	defaultProject := strings.TrimSpace(*projectRoot)
@@ -170,6 +165,18 @@ func main() {
 	log.Printf("stdio (db=%s readonly=%v output-root=%s)", *dbPath, *readOnly, absOut)
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// parseToolMode accepts agent (default) or admin.
+func parseToolMode(mode string) (tools.ToolMode, error) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", "agent":
+		return tools.ModeAgent, nil
+	case "admin":
+		return tools.ModeAdmin, nil
+	default:
+		return "", fmt.Errorf("invalid -mode %q (want agent or admin)", mode)
 	}
 }
 

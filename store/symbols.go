@@ -135,12 +135,7 @@ func (s *Store) FindSymbols(ctx context.Context, name string, roots []string, li
 	if norm == "" {
 		return nil, fmt.Errorf("symbol name is required")
 	}
-	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 100 {
-		limit = 100
-	}
+	limit = ClampSearchLimit(limit, DefaultSearchLimit)
 	unqual := NormalizeSymbol(UnqualifiedSymbol(raw))
 	qualNorm := NormalizeSymbol(raw)
 
@@ -187,9 +182,16 @@ func (s *Store) FindSymbols(ctx context.Context, name string, roots []string, li
 					continue
 				}
 			}
-			if stg.matchType == MatchExactNormalized && sym.Name == raw {
-				sym.MatchType = MatchExactCanonical
-				sym.Confidence = 1.0
+			if stg.matchType == MatchExactNormalized {
+				if sym.Name == raw {
+					if NamespaceOfSymbol(raw) != "" || strings.ContainsAny(raw, ".#") {
+						sym.MatchType = MatchExactQualified
+						sym.Confidence = 0.98
+					} else {
+						sym.MatchType = MatchExactCanonical
+						sym.Confidence = 1.0
+					}
+				}
 			}
 			seen[sym.ID] = struct{}{}
 			out = append(out, sym)
@@ -379,12 +381,7 @@ func (s *Store) ListSymbolsByDocumentIDs(ctx context.Context, docIDs []int64, li
 	if len(docIDs) == 0 {
 		return nil, nil
 	}
-	if limit <= 0 {
-		limit = 40
-	}
-	if limit > 100 {
-		limit = 100
-	}
+	limit = ClampSearchLimit(limit, 40)
 	ph := make([]string, len(docIDs))
 	args := make([]any, 0, len(docIDs)+1)
 	for i, id := range docIDs {

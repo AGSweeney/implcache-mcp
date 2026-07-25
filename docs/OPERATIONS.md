@@ -9,7 +9,7 @@ go build -o implcache-mcp .
 go build -o ingestcli ./cmd/ingestcli
 ```
 
-Module: `implcache-mcp` (Go 1.25+). SQLite is pure Go (`modernc.org/sqlite`); **no CGO** required for build/test.
+Module: `implcache-mcp` (Go 1.25+), development version `0.2.0` (override with `-ldflags "-X main.version=…"`). SQLite is pure Go (`modernc.org/sqlite`); **no CGO** required for build/test.
 
 ### Race detector
 

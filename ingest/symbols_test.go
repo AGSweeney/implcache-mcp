@@ -101,6 +101,21 @@ func TestNoHardCodedDemoRegex(t *testing.T) {
 	}
 }
 
+func TestUnknownLanguageNoFalseSymbols(t *testing.T) {
+	md := "# Setup\n\nCall `RegisterHandler` then `Client.Connect()`.\n\n```\nint foo(void) { return 0; }\n```\n"
+	if syms := ExtractSymbols("README.md", md); len(syms) != 0 {
+		t.Fatalf("markdown should not extract C-family symbols: %+v", syms)
+	}
+	yaml := "name: demo\ncommand: RegisterHandler --init\n"
+	if syms := ExtractSymbols("config.yaml", yaml); len(syms) != 0 {
+		t.Fatalf("yaml should not extract symbols: %+v", syms)
+	}
+	// Known extensions without extractors also return empty (no C fallthrough).
+	if syms := ExtractSymbols("util.py", "def RegisterHandler(name):\n    return name\n"); len(syms) != 0 {
+		t.Fatalf("python should not use C-family extractor: %+v", syms)
+	}
+}
+
 func TestExtractTemplatesMacrosAliases(t *testing.T) {
 	body := `
 template<typename T, typename U>

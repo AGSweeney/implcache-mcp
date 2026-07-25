@@ -50,9 +50,11 @@ go build -o ingestcli ./cmd/ingestcli
 
 ## MCP ingest tools
 
-Same behavior as CLI, gated by `-allow-ingest` / `-readonly`.
+MCP ingest/delete/`vomit` tools are registered only in **`-mode admin`** (or with `-enable-admin-tools`). Agent mode does not expose them.
 
-Server-wide caps:
+When admin tools are registered, calls are still gated by `-allow-ingest` / `-readonly`.
+
+Prefer the offline CLI for large corpora. Server-wide caps:
 
 - `-max-ingest-files` (default 50000)
 - `-max-document-bytes` (default 8 MiB)

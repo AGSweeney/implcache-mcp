@@ -56,14 +56,16 @@ func freshnessFromSources(citations []Citation, versions []string, archivedHints
 			hasGenerated = true
 		}
 	}
+	// Authority is not freshness: official docs without version/date stay unknown.
 	if hasGenerated && !hasProject && !hasDocs {
 		return "unknown"
 	}
-	if hasProject && hasDocs {
+	if hasProject {
+		// current_project / curated recipe without conflicting versions.
 		return "current"
 	}
-	if hasProject || hasDocs {
-		return "current"
+	if hasDocs {
+		return "unknown"
 	}
 	return "unknown"
 }

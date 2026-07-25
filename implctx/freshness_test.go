@@ -26,3 +26,41 @@ func TestFreshnessVersionSpecificAndMixed(t *testing.T) {
 		t.Fatalf("got %q want stale", got)
 	}
 }
+
+func TestFreshnessAuthorityNotCurrent(t *testing.T) {
+	// Official docs without version metadata are authoritative but freshness-unknown.
+	docs := []Citation{{URI: "project://sdk/api.md", Authority: "official_documentation"}}
+	if got := freshnessFromSources(docs, nil, 0); got != "unknown" {
+		t.Fatalf("docs-only: got %q want unknown", got)
+	}
+	proj := []Citation{{URI: "project://app/main.cpp", Authority: "current_project"}}
+	if got := freshnessFromSources(proj, nil, 0); got != "current" {
+		t.Fatalf("project: got %q want current", got)
+	}
+	both := []Citation{
+		{URI: "project://app/main.cpp", Authority: "current_project"},
+		{URI: "project://sdk/api.md", Authority: "official_documentation"},
+	}
+	if got := freshnessFromSources(both, nil, 0); got != "current" {
+		t.Fatalf("project+docs: got %q want current", got)
+	}
+}
+
+func TestWebSearchFromCoverageFreshness(t *testing.T) {
+	cases := []struct {
+		coverage, freshness string
+		want                bool
+	}{
+		{"high", "current", false},
+		{"high", "unknown", true},
+		{"high", "stale", true},
+		{"high", "mixed", true},
+		{"low", "current", true},
+		{"medium", "version-specific", false},
+	}
+	for _, tc := range cases {
+		if got := webSearchFrom(tc.coverage, tc.freshness); got != tc.want {
+			t.Fatalf("%s/%s: got %v want %v", tc.coverage, tc.freshness, got, tc.want)
+		}
+	}
+}

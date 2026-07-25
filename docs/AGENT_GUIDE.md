@@ -75,7 +75,7 @@ After important recipes prove correct, a human should mark them `human_reviewed`
 
 ## Ingest during a session
 
-Agents may call `ingest_project` / `ingest_markdown` when the user asks to index a tree **and** the server allows ingest.
+Agents can call `ingest_project` / `ingest_markdown` only when the server is running in **admin** mode (or `-enable-admin-tools`) **and** ingest is allowed.
 
 Prefer the offline CLI for large corpora so the MCP session stays responsive.
 

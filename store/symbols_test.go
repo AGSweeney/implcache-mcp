@@ -6,6 +6,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 )
@@ -53,6 +54,7 @@ func TestFindSymbolsStagedMatches(t *testing.T) {
 			{Name: "demo::RegisterCommand", Kind: "function", Language: "cpp", Signature: "void demo::RegisterCommand()", StartLine: 1, EndLine: 3},
 			{Name: "AddMenuItem", Kind: "function", Language: "cpp", StartLine: 10, EndLine: 12},
 			{Name: "Client.Connect", Kind: "function", Language: "cpp", StartLine: 20, EndLine: 22},
+			{Name: "InitializeDeviceContext", Kind: "function", Language: "cpp", StartLine: 30, EndLine: 32},
 		},
 	})
 	if err != nil {
@@ -68,15 +70,20 @@ func TestFindSymbolsStagedMatches(t *testing.T) {
 		if len(syms) == 0 {
 			t.Fatalf("%s: no hits", query)
 		}
-		if syms[0].MatchType != wantMatch && !(wantMatch == MatchExactCanonical && syms[0].MatchType == MatchExactNormalized) {
-			// Accept exact or exact_normalized for bare names
-			if wantMatch == MatchExactCanonical && syms[0].MatchType == MatchExactNormalized {
-				return
-			}
-			if wantMatch == MatchExactUnqualified && (syms[0].MatchType == MatchExactNormalized || syms[0].MatchType == MatchExactUnqualified) {
-				return
-			}
-			t.Fatalf("%s: matchType=%s want %s (name=%s)", query, syms[0].MatchType, wantMatch, syms[0].Name)
+		got := syms[0].MatchType
+		ok := got == wantMatch
+		// Normalized trailing parentheses land on exact/exact_normalized.
+		if wantMatch == MatchExactNormalized && (got == MatchExactCanonical || got == MatchExactNormalized) {
+			ok = true
+		}
+		if wantMatch == MatchExactCanonical && (got == MatchExactCanonical || got == MatchExactNormalized) {
+			ok = true
+		}
+		if wantMatch == MatchExactUnqualified && (got == MatchExactUnqualified || got == MatchExactNormalized || got == MatchExactCanonical) {
+			ok = true
+		}
+		if !ok {
+			t.Fatalf("%s: matchType=%s want %s (name=%s)", query, got, wantMatch, syms[0].Name)
 		}
 		if syms[0].Confidence <= 0 {
 			t.Fatalf("missing confidence")
@@ -84,8 +91,157 @@ func TestFindSymbolsStagedMatches(t *testing.T) {
 	}
 
 	check("AddMenuItem", MatchExactCanonical)
+	check("AddMenuItem()", MatchExactNormalized)
 	check("RegisterCommand", MatchExactUnqualified)
-	check("demo::RegisterCommand", MatchExactCanonical)
+	check("registercommand", MatchExactUnqualified)
+	check("demo::RegisterCommand", MatchExactQualified)
 	check("AddMenu", MatchPrefix)
 	check("Connect", MatchExactUnqualified)
+	check("MenuItem", MatchSuffix)
+	// Token stage: needle appears inside a longer name (suffix may also match first).
+	symsTok, err := st.FindSymbols(ctx, "DeviceCont", []string{"example-plugin-sdk"}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(symsTok) == 0 {
+		t.Fatal("token/prefix DeviceCont: no hits")
+	}
+	foundTok := false
+	for _, s := range symsTok {
+		if s.MatchType == MatchToken || s.MatchType == MatchPrefix {
+			foundTok = true
+			break
+		}
+	}
+	if !foundTok {
+		t.Fatalf("expected prefix/token match, got %+v", symsTok)
+	}
+
+	// Small typo → bounded fuzzy.
+	syms, err := st.FindSymbols(ctx, "AddMenuItme", []string{"example-plugin-sdk"}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(syms) == 0 || syms[0].MatchType != MatchFuzzy {
+		t.Fatalf("fuzzy: got %+v", syms)
+	}
+
+	// No acceptable match.
+	syms, err = st.FindSymbols(ctx, "ZzzNotARealSymbol", []string{"example-plugin-sdk"}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(syms) != 0 {
+		t.Fatalf("expected no match, got %+v", syms)
+	}
+}
+
+func TestFindSymbolsDefinitionOverCall(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	_, err = st.UpsertDocument(ctx, UpsertInput{
+		URI: "project://example-plugin-sdk/src/both.cpp", Title: "both",
+		SourceType: SourceSource, Path: "src/both.cpp", RootName: "example-plugin-sdk",
+		Authority: AuthorityOfficialExample, Hash: "h2",
+		Chunks: []Chunk{{Body: "RegisterHandler", StartLine: 1, EndLine: 5}},
+		Symbols: []SymbolInput{
+			{Name: "RegisterHandler", Kind: "call", Language: "cpp", StartLine: 5, EndLine: 5},
+			{Name: "RegisterHandler", Kind: "function", Language: "cpp", Signature: "int RegisterHandler()", StartLine: 1, EndLine: 3},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	syms, err := st.FindSymbols(ctx, "RegisterHandler", []string{"example-plugin-sdk"}, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(syms) == 0 || syms[0].Kind != "function" {
+		t.Fatalf("definition should rank first: %+v", syms)
+	}
+}
+
+func TestPersistedSymbolDerivedFields(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	_, err = st.UpsertDocument(ctx, UpsertInput{
+		URI: "project://example-plugin-sdk/api.h", Title: "api",
+		SourceType: SourceSource, Path: "api.h", RootName: "example-plugin-sdk",
+		Authority: AuthorityOfficialDocs, Hash: "h3",
+		Chunks: []Chunk{{Body: "int demo::RegisterHandler(const char* name);", StartLine: 1, EndLine: 1}},
+		Symbols: []SymbolInput{
+			{
+				Name: "demo::RegisterHandler", Kind: "declaration", Language: "cpp",
+				Signature: "int demo::RegisterHandler(const char* name);", StartLine: 1, EndLine: 1,
+			},
+			{
+				Name: "Client::Connect", Kind: "declaration", Language: "cpp",
+				Signature: "Status Client::Connect(const Config& config);", StartLine: 3, EndLine: 3,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := sql.Open("sqlite", filepath.Join(dir, "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var qual, unqual, ns, sigNorm string
+	err = db.QueryRow(`
+		SELECT qualified_name, unqualified_name, namespace, signature_norm
+		FROM symbols WHERE name = 'demo::RegisterHandler'`).Scan(&qual, &unqual, &ns, &sigNorm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if qual != "demo::RegisterHandler" || unqual != "RegisterHandler" || ns != "demo" {
+		t.Fatalf("forms qual=%q unqual=%q ns=%q", qual, unqual, ns)
+	}
+	if sigNorm == "" {
+		t.Fatal("signature_norm empty")
+	}
+
+	for _, q := range []string{
+		"demo::RegisterHandler", "RegisterHandler", "RegisterHandler()", "registerhandler",
+		"Client::Connect", "Connect", "Connect()",
+	} {
+		syms, err := st.FindSymbols(ctx, q, []string{"example-plugin-sdk"}, 5)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(syms) == 0 {
+			t.Fatalf("lookup %q: no hits", q)
+		}
+	}
+}
+
+func TestClampSearchLimit(t *testing.T) {
+	cases := []struct {
+		req, cfg, want int
+	}{
+		{0, 20, 20},
+		{-1, 20, 20},
+		{5, 20, 5},
+		{50, 20, 20},
+		{200, 20, 20},
+		{200, 0, MaxSearchLimit},
+		{50, 80, 50},
+	}
+	for _, tc := range cases {
+		if got := ClampSearchLimit(tc.req, tc.cfg); got != tc.want {
+			t.Fatalf("req=%d cfg=%d got %d want %d", tc.req, tc.cfg, got, tc.want)
+		}
+	}
 }

@@ -9,7 +9,7 @@ import (
 	"fmt"
 )
 
-const currentSchemaVersion = 4
+const currentSchemaVersion = 5
 
 const schemaV1 = `
 CREATE TABLE documents (
@@ -167,6 +167,9 @@ UPDATE chunks SET root_name = COALESCE((
 CREATE INDEX IF NOT EXISTS idx_chunks_root_name ON chunks(root_name);
 `
 
+// schemaV5 re-derives symbol lookup forms for rows naively backfilled in v4.
+// Applied in Go via backfillSymbolForms (SQL alone cannot split :: / . namespaces).
+
 func migrate(db *sql.DB) error {
 	var version int
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
@@ -200,7 +203,69 @@ func applyMigration(db *sql.DB, version int) error {
 	case 4:
 		_, err := db.Exec(schemaV4)
 		return err
+	case 5:
+		return backfillSymbolForms(db)
 	default:
 		return fmt.Errorf("unknown schema version %d", version)
 	}
+}
+
+// backfillSymbolForms populates derived symbol columns using DeriveSymbolForms.
+// Idempotent: re-running yields the same values for a given name/signature.
+func backfillSymbolForms(db *sql.DB) error {
+	rows, err := db.Query(`SELECT id, name, COALESCE(signature, '') FROM symbols`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type row struct {
+		id   int64
+		name string
+		sig  string
+	}
+	var list []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.name, &r.sig); err != nil {
+			return err
+		}
+		list = append(list, r)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(list) == 0 {
+		return nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stmt, err := tx.Prepare(`
+		UPDATE symbols SET
+			qualified_name = ?,
+			unqualified_name = ?,
+			namespace = ?,
+			signature_norm = ?,
+			name_norm = ?
+		WHERE id = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, r := range list {
+		forms := DeriveSymbolForms(r.name, r.sig)
+		if _, err := stmt.Exec(
+			forms.QualifiedName, forms.UnqualifiedName, forms.Namespace,
+			forms.SignatureNorm, forms.NameNorm, r.id,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

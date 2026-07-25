@@ -56,14 +56,14 @@ Default **`-mode agent`** registers retrieval tools only. Use **`-mode admin`** 
 {
   "mcpServers": {
     "implcache": {
-      "command": "D:/GitHub/implcache-mcp/implcache-mcp.exe",
-      "args": ["-db", "D:/GitHub/implcache-mcp/implcache.db", "-mode", "agent"]
+      "command": "D:/Tools/implcache/implcache-mcp.exe",
+      "args": ["-db", "D:/Tools/implcache/implcache.db", "-mode", "agent"]
     }
   }
 }
 ```
 
-Use absolute paths. Reload MCP after rebuilding.
+Use absolute paths. Default mode is `agent` (retrieval only). Reload MCP after rebuilding.
 
 ---
 

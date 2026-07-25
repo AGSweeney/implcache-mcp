@@ -96,6 +96,32 @@ const (
 	DefaultCandidateMult = 4
 )
 
+// ClampLimit applies: requested → default if missing/non-positive → clamp to max.
+func ClampLimit(limit, def, max int) int {
+	if limit <= 0 {
+		limit = def
+	}
+	if max > 0 && limit > max {
+		limit = max
+	}
+	return limit
+}
+
+// ClampSearchLimit clamps a search/symbol limit to the configured and hard maximums.
+// requested ≤ 0 uses configuredMax (or DefaultSearchLimit). Result never exceeds
+// min(configuredMax, MaxSearchLimit) when configuredMax > 0.
+func ClampSearchLimit(requested, configuredMax int) int {
+	def := configuredMax
+	if def <= 0 {
+		def = DefaultSearchLimit
+	}
+	limit := ClampLimit(requested, def, MaxSearchLimit)
+	if configuredMax > 0 && limit > configuredMax {
+		limit = configuredMax
+	}
+	return limit
+}
+
 // UpsertInput is a document plus chunks to store.
 type UpsertInput struct {
 	URI            string
@@ -453,13 +479,7 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 	if utf8.RuneCountInString(query) > MaxQueryRunes {
 		return nil, fmt.Errorf("query exceeds %d characters", MaxQueryRunes)
 	}
-	limit := opt.Limit
-	if limit <= 0 {
-		limit = DefaultSearchLimit
-	}
-	if limit > MaxSearchLimit {
-		limit = MaxSearchLimit
-	}
+	limit := ClampSearchLimit(opt.Limit, DefaultSearchLimit)
 	maxPerDoc := opt.MaxPerDoc
 	if maxPerDoc == 0 {
 		maxPerDoc = DefaultMaxPerDoc
