@@ -2,7 +2,7 @@
 -- Use of this source code is governed by an MIT-style
 -- license that can be found in the LICENSE file.
 
--- Canonical schema (PRAGMA user_version = 10). New databases are created
+-- Canonical schema (PRAGMA user_version = 11). New databases are created
 -- directly from this file (embedded via store/schema.go). There is no
 -- migration ladder during pre-release development: incompatible databases
 -- must be deleted and re-ingested.

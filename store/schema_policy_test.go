@@ -20,6 +20,15 @@ func TestCurrentSchemaVersionEleven(t *testing.T) {
 	if currentSchemaVersion != 11 {
 		t.Fatalf("currentSchemaVersion=%d want 11", currentSchemaVersion)
 	}
+	// Canonical DDL must declare every required object name (identity check source of truth).
+	for _, name := range requiredSchemaObjects {
+		if !strings.Contains(canonicalSchema, name) {
+			t.Fatalf("canonical schema.sql missing required object %q", name)
+		}
+	}
+	if !strings.Contains(canonicalSchema, "PRAGMA user_version = 11") {
+		t.Fatal("schema.sql header must document PRAGMA user_version = 11")
+	}
 }
 
 func TestFreshDatabaseCreatedAtCurrentVersion(t *testing.T) {

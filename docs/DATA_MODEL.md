@@ -234,7 +234,7 @@ Runtime structure `store.ContextBudget` limits how much text `implctx` returns. 
 
 One canonical schema, no migration ladder:
 
-- **Version matches** (`user_version == 11`): run a lightweight `sqlite_master` check for required objects (documents/chunks/FTS/symbols/semantic + web/pdf/repo tables), then open. Missing objects are refused with rebuild instructions — the file is not repaired.
+- **Version matches** (`user_version == 11`): run a lightweight `sqlite_master` check for required objects (`documents`, `chunks`, `chunks_fts`, `symbols`, semantic tables, `web_sources`/`web_pages`, `pdf_sources`/`pdf_pages`, `repo_sources`/`repo_files`), then open. Missing objects are refused with rebuild instructions — the file is not repaired.
 - **Empty/new database**: create the full v11 schema directly from `store/schema.sql`, then set `user_version = 11`.
 - **Any other version** (or an unversioned non-empty file): refuse to open without modifying the file. The error reports the database path, the found version, and the expected version, and instructs the developer to delete the database (and its `-wal`/`-shm` sidecars) and re-ingest.
 

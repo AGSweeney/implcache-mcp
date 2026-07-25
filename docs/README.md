@@ -11,5 +11,5 @@ ImplCache MCP is a **local implementation-context server** for coding agents. It
 | [MODES.md](MODES.md) | Agent/admin tool surface, HTTP safety, versioning |
 | [MANIFEST.md](MANIFEST.md) | `.implcache.yaml` workspace configuration |
 | [DATA_MODEL.md](DATA_MODEL.md) | URIs, schema, authority, recipes, symbols |
-| [INGEST.md](INGEST.md) | Markdown/HTML/project ingest and CLI |
+| [INGEST.md](INGEST.md) | Markdown/HTML/project, web, PDF, and Git ingest + CLI |
 | [OPERATIONS.md](OPERATIONS.md) | Build, flags, security, evaluation, [limitations/risks](OPERATIONS.md#limitations-and-risks) |

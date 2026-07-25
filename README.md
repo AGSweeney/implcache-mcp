@@ -38,7 +38,7 @@ go build -ldflags "-X main.version=$(git describe --tags --always 2>/dev/null ||
 ./implcache-mcp -version   # "dev" unless injected via -ldflags
 ```
 
-Default **`-mode agent`** registers retrieval tools only. Admin tools are **not** available in agent mode. Use **`-mode admin`** (or `-enable-admin-tools`) for ingest/delete/`vomit`, web mirroring, and PDF tools. `-readonly` disables mutations even in admin mode.
+Default **`-mode agent`** registers retrieval tools only. Admin tools are **not** available in agent mode. Use **`-mode admin`** (or `-enable-admin-tools`) for ingest/delete/`vomit`, web mirroring, PDF Stage 1, and Git repository tools. `-readonly` disables mutations even in admin mode.
 
 ```bash
 # Coding-agent default (stdio, retrieval only)
