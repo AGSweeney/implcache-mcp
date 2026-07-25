@@ -16,6 +16,7 @@ import (
 type Tracker struct {
 	mu      sync.Mutex
 	ops     map[string]*Operation
+	runtime map[string]*opRuntime
 	maxKeep int
 }
 
@@ -64,6 +65,7 @@ func (t *Tracker) Update(opID string, ev ProgressEvent) {
 	}
 	op.Progress = ev
 	op.State = "running"
+	t.publishLocked(opID, ev)
 }
 
 // Finish marks an operation terminal.
@@ -85,6 +87,8 @@ func (t *Tracker) Finish(opID, state string, report map[string]any, errors []str
 	if op.Progress.Message == "" {
 		op.Progress.Message = state
 	}
+	t.publishLocked(opID, op.Progress)
+	t.finishRuntimeLocked(opID)
 }
 
 // Get returns a copy of one operation.

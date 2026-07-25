@@ -182,7 +182,7 @@ func TestManagedRefreshAddDelete(t *testing.T) {
 	run(work, "remote", "add", "pub", remote)
 	run(work, "push", "pub", "main")
 
-	rep, err := gitrepo.RefreshRepoSource(ctx, st, "trk", cache, nil)
+	rep, err := gitrepo.RefreshRepoSource(ctx, st, "trk", cache, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestManagedRefreshAddDelete(t *testing.T) {
 	}
 
 	// unchanged refresh
-	rep2, err := gitrepo.RefreshRepoSource(ctx, st, "trk", cache, nil)
+	rep2, err := gitrepo.RefreshRepoSource(ctx, st, "trk", cache, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestFailedRefreshKeepsPrior(t *testing.T) {
 	rs.RemoteURL = "file:///nonexistent/path/nope.git"
 	_, _ = st.UpsertRepoSource(ctx, *rs)
 
-	_, err = gitrepo.RefreshRepoSource(ctx, st, "keep", cache, nil)
+	_, err = gitrepo.RefreshRepoSource(ctx, st, "keep", cache, nil, nil)
 	if err == nil {
 		t.Fatal("expected refresh failure")
 	}

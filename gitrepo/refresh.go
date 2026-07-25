@@ -15,7 +15,8 @@ import (
 )
 
 // RefreshRepoSource fetches and incrementally reindexes a managed (or local) source.
-func RefreshRepoSource(ctx context.Context, st *store.Store, name string, cacheRoot string, runner *Runner) (*IngestReport, error) {
+// progress is optional and may be nil.
+func RefreshRepoSource(ctx context.Context, st *store.Store, name string, cacheRoot string, runner *Runner, progress ProgressFunc) (*IngestReport, error) {
 	start := time.Now()
 	rs, err := st.GetRepoSourceByName(ctx, name)
 	if err != nil {
@@ -23,9 +24,16 @@ func RefreshRepoSource(ctx context.Context, st *store.Store, name string, cacheR
 	}
 	_ = st.SetRepoSourceStatus(ctx, rs.ID, "refreshing", false)
 	prev := rs.ResolvedCommitSHA
+	report := func(phase string, done, total int, bytes int64, current, message string) {
+		if progress != nil {
+			progress(phase, done, total, bytes, current, message)
+		}
+	}
+	report("refresh", 0, 0, 0, name, "starting refresh")
 
 	switch rs.AcquisitionMode {
 	case "snapshot":
+		report("refresh", 0, 0, 0, prev, "snapshot unchanged")
 		return &IngestReport{
 			SourceName: rs.Name, RootName: rs.RootName, RemoteURL: rs.RemoteURL,
 			AcquisitionMode: rs.AcquisitionMode, RequestedRef: rs.RequestedRef,
@@ -34,19 +42,19 @@ func RefreshRepoSource(ctx context.Context, st *store.Store, name string, cacheR
 			Warnings:   []string{"snapshot sources tied to a ref report unchanged on refresh unless re-ingested"},
 		}, nil
 	case "local_checkout":
-		return refreshLocal(ctx, st, rs, start, runner)
+		return refreshLocal(ctx, st, rs, start, runner, progress)
 	default:
-		return refreshManaged(ctx, st, rs, cacheRoot, prev, start, runner)
+		return refreshManaged(ctx, st, rs, cacheRoot, prev, start, runner, progress)
 	}
 }
 
-func refreshLocal(ctx context.Context, st *store.Store, rs *store.RepoSource, start time.Time, runner *Runner) (*IngestReport, error) {
+func refreshLocal(ctx context.Context, st *store.Store, rs *store.RepoSource, start time.Time, runner *Runner, progress ProgressFunc) (*IngestReport, error) {
 	rep, err := IngestRepo(ctx, st, IngestOptions{
 		Name: rs.Name, LocalPath: rs.LocalPath, RootName: rs.RootName,
 		AcquisitionMode: "local_checkout", Ref: rs.RequestedRef, Authority: rs.Authority,
 		Product: rs.Product, Version: rs.Version, IncludePatterns: rs.IncludePatterns,
 		ExcludePatterns: rs.ExcludePatterns, WorkingTreeMode: rs.WorkingTreeMode,
-		PersistSource: true, Runner: runner,
+		PersistSource: true, Runner: runner, Progress: progress,
 	})
 	if err != nil {
 		_ = st.SetRepoSourceStatus(ctx, rs.ID, "failed:"+err.Error(), false)
@@ -56,13 +64,19 @@ func refreshLocal(ctx context.Context, st *store.Store, rs *store.RepoSource, st
 	return rep, nil
 }
 
-func refreshManaged(ctx context.Context, st *store.Store, rs *store.RepoSource, cacheRoot, prev string, start time.Time, runner *Runner) (*IngestReport, error) {
+func refreshManaged(ctx context.Context, st *store.Store, rs *store.RepoSource, cacheRoot, prev string, start time.Time, runner *Runner, progress ProgressFunc) (*IngestReport, error) {
+	report := func(phase string, done, total int, bytes int64, current, message string) {
+		if progress != nil {
+			progress(phase, done, total, bytes, current, message)
+		}
+	}
 	if runner == nil {
 		runner = &Runner{}
 	}
 	if cacheRoot == "" {
 		cacheRoot = filepath.Join(".", ".implcache", "repos")
 	}
+	report("fetch", 0, 0, 0, rs.RemoteURL, "fetching remote")
 	co, err := PrepareCheckout(ctx, SnapshotOptions{
 		RemoteURL: rs.RemoteURL, Ref: rs.RequestedRef, CacheRoot: cacheRoot,
 		SourceName: rs.Name, AcquisitionMode: "managed_clone",
@@ -76,6 +90,7 @@ func refreshManaged(ctx context.Context, st *store.Store, rs *store.RepoSource, 
 	}
 	if prev != "" && prev == co.ResolvedCommitSHA {
 		_ = st.SetRepoSourceStatus(ctx, rs.ID, "ok", true)
+		report("refresh", 0, 0, 0, prev, "unchanged")
 		return &IngestReport{
 			SourceName: rs.Name, RootName: rs.RootName, RemoteURL: rs.RemoteURL,
 			AcquisitionMode: rs.AcquisitionMode, RequestedRef: rs.RequestedRef,
@@ -83,6 +98,7 @@ func refreshManaged(ctx context.Context, st *store.Store, rs *store.RepoSource, 
 			Status: "unchanged", DurationMS: time.Since(start).Milliseconds(),
 		}, nil
 	}
+	report("checkout", 0, 0, 0, co.ResolvedCommitSHA, "diffing and indexing")
 
 	inc, exc := rs.IncludePatterns, rs.ExcludePatterns
 	if len(inc) == 0 {
@@ -110,6 +126,9 @@ func refreshManaged(ctx context.Context, st *store.Store, rs *store.RepoSource, 
 		Path: co.Path, RootName: rs.RootName, PathFilter: filter,
 		URIScheme: "git", SourceType: store.SourceGit, Authority: rs.Authority,
 		SkipDirNames: map[string]struct{}{".git": {}},
+		Progress: func(done, total int, bytes int64, currentPath, message string) {
+			report("index", done, total, bytes, currentPath, message)
+		},
 	}
 	if len(only) > 0 {
 		projOpt.OnlyRelativePaths = only
@@ -152,6 +171,7 @@ func refreshManaged(ctx context.Context, st *store.Store, rs *store.RepoSource, 
 	if err := st.UpdateRepoSourceCommit(ctx, rs.ID, co.ResolvedCommitSHA, co.Path, "ok"); err != nil {
 		return nil, err
 	}
+	report("finalize", pres.Ingested, 0, pres.BytesProcessed, co.ResolvedCommitSHA, "refresh complete")
 
 	return &IngestReport{
 		SourceName: rs.Name, RootName: rs.RootName, RemoteURL: rs.RemoteURL,

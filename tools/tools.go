@@ -488,7 +488,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			if !opt.AllowIngest {
 				return nil, gitrepo.IngestReport{}, deny("ingest")
 			}
-			res, err := gitrepo.RefreshRepoSource(ctx, st, args.Name, gitrepo.CacheRootForDB(""), nil)
+			res, err := gitrepo.RefreshRepoSource(ctx, st, args.Name, gitrepo.CacheRootForDB(""), nil, nil)
 			if err != nil {
 				return nil, gitrepo.IngestReport{}, err
 			}

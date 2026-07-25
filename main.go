@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"implcache-mcp/embedui"
+	"implcache-mcp/httpapi"
 	"implcache-mcp/manifest"
 	"implcache-mcp/store"
 	"implcache-mcp/tools"
@@ -32,7 +34,7 @@ var version = "dev"
 
 func main() {
 	dbPath := flag.String("db", "./implcache.db", "path to SQLite ImplCache database")
-	httpAddr := flag.String("http", "", "if set, serve streamable HTTP (default bind rewrites bare :port to 127.0.0.1:port)")
+	httpAddr := flag.String("http", "", "if set, serve HTTP (MCP at /mcp; Librarian API at /api/v1)")
 	mode := flag.String("mode", "agent", "tool surface: agent (retrieval only) or admin (includes ingest/delete/vomit)")
 	enableAdmin := flag.Bool("enable-admin-tools", false, "register administrative tools even when -mode=agent")
 	readOnly := flag.Bool("readonly", false, "disable ingest, delete, and filesystem vomit output; open DB read-only when possible")
@@ -41,6 +43,11 @@ func main() {
 	allowOutput := flag.Bool("allow-output-write", true, "allow vomit to write files under -output-root when admin tools are enabled")
 	enableHTTPMutations := flag.Bool("enable-http-mutations", false, "when serving -http, allow ingest/delete/output writes (default: mutations off over HTTP)")
 	allowRemoteHTTP := flag.Bool("allow-remote-http", false, "allow binding HTTP to a non-loopback address")
+	enableLibrarian := flag.Bool("enable-librarian", false, "serve Librarian UI and /api/v1 admin REST (requires -http)")
+	librarianBase := flag.String("librarian-base-path", "/", "URL base path for embedded Librarian UI")
+	librarianToken := flag.String("librarian-token", "", "if set, require Authorization: Bearer for /api/v1 (administrator)")
+	librarianViewerToken := flag.String("librarian-viewer-token", "", "optional Bearer token with viewer (read-only) role for /api/v1")
+	uploadDir := flag.String("upload-dir", "", "directory for Librarian uploads (default: <db-dir>/uploads)")
 	workspace := flag.String("workspace", "", "optional workspace directory; loads .implcache.yaml for default project roots")
 	projectRoot := flag.String("project-root", "", "default knowledge root treated as current_project (overrides manifest rootName)")
 	outputRoot := flag.String("output-root", "./vomit-output", "directory that confines vomit output paths")
@@ -88,8 +95,11 @@ func main() {
 	allowIngestEff, allowDeleteEff, allowOutputEff := resolveMutationFlags(
 		*allowIngest, *allowDelete, *allowOutput, *readOnly, *httpAddr != "", *enableHTTPMutations,
 	)
-	if *httpAddr != "" && !*enableHTTPMutations && (toolMode == tools.ModeAdmin || *enableAdmin) {
+	if *httpAddr != "" && !*enableHTTPMutations && (toolMode == tools.ModeAdmin || *enableAdmin || *enableLibrarian) {
 		log.Printf("HTTP: mutations disabled (pass -enable-http-mutations to allow ingest/delete/writes)")
+	}
+	if *enableLibrarian && *httpAddr == "" {
+		log.Fatal("-enable-librarian requires -http")
 	}
 
 	st, err := store.OpenWithOptions(*dbPath, store.OpenOptions{ReadOnly: *readOnly})
@@ -126,18 +136,56 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+
+		mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 			return server
 		}, nil)
+
+		uploads := strings.TrimSpace(*uploadDir)
+		if uploads == "" {
+			uploads = filepath.Join(filepath.Dir(*dbPath), "uploads")
+		}
+		_ = os.MkdirAll(uploads, 0o755)
+
+		apiOpt := httpapi.Options{
+			Store:             st,
+			DBPath:            *dbPath,
+			ServerVersion:     version,
+			ReadOnly:          *readOnly,
+			AllowIngest:       allowIngestEff,
+			AllowDelete:       allowDeleteEff,
+			EnableSemantic:    *enableSemantic,
+			MaxDocumentBytes:  *maxDocBytes,
+			MaxIngestFiles:    *maxIngestFiles,
+			LibrarianEnabled:  *enableLibrarian,
+			LibrarianBasePath: *librarianBase,
+			APIToken:          strings.TrimSpace(*librarianToken),
+			ViewerAPIToken:    strings.TrimSpace(*librarianViewerToken),
+			UploadDir:         uploads,
+		}
+		if *enableLibrarian {
+			if sub, err := embedui.FS(); err != nil {
+				log.Printf("librarian embed: %v (UI disabled)", err)
+			} else {
+				apiOpt.StaticFS = sub
+			}
+		}
+		librarianHandler := httpapi.NewHandler(apiOpt)
+
+		root := http.NewServeMux()
+		root.Handle("/mcp", mcpHandler)
+		root.Handle("/mcp/", mcpHandler)
+		root.Handle("/", librarianHandler)
+
 		srv := &http.Server{
 			Addr:              addr,
-			Handler:           handler,
+			Handler:           root,
 			ReadHeaderTimeout: 10 * time.Second,
 			IdleTimeout:       120 * time.Second,
 			MaxHeaderBytes:    1 << 20,
 		}
-		log.Printf("HTTP at %s (db=%s readonly=%v mutations=%v output-root=%s)",
-			addr, *dbPath, *readOnly, *enableHTTPMutations && !*readOnly, absOut)
+		log.Printf("HTTP at %s mcp=/mcp api=/api/v1 librarian=%v readonly=%v mutations=%v",
+			addr, *enableLibrarian, *readOnly, *enableHTTPMutations && !*readOnly)
 
 		errCh := make(chan error, 1)
 		go func() { errCh <- srv.ListenAndServe() }()

@@ -13,4 +13,6 @@ ImplCache MCP is a **local implementation-context server** for coding agents. It
 | [DATA_MODEL.md](DATA_MODEL.md) | URIs, schema, authority, recipes, symbols |
 | [INGEST.md](INGEST.md) | Markdown/HTML/project, web, PDF, and Git ingest + CLI |
 | [OPERATIONS.md](OPERATIONS.md) | Build, flags, security, validation, evaluation, [limitations/risks](OPERATIONS.md#limitations-and-risks) |
+| [API_V1.md](API_V1.md) | Librarian REST admin API (`/api/v1`) |
+| [LIBRARIAN_PRD.md](LIBRARIAN_PRD.md) | Librarian web application product requirements |
 | [../testdata/validation/README.md](../testdata/validation/README.md) | Real-source validation harness (`cmd/sourcevalidate`) |

@@ -16,6 +16,9 @@ import (
 	"implcache-mcp/store"
 )
 
+// ProgressFunc reports git acquire/index progress for job trackers (optional).
+type ProgressFunc func(phase string, done, total int, bytes int64, current, message string)
+
 // IngestOptions configures repository ingestion.
 type IngestOptions struct {
 	Name               string
@@ -42,6 +45,7 @@ type IngestOptions struct {
 	MaxTotalBytes      int64
 	PersistSource      bool // upsert repo_sources
 	Runner             *Runner
+	Progress           ProgressFunc
 }
 
 // IngestReport is returned from ingest/refresh.
@@ -119,6 +123,13 @@ func IngestRepo(ctx context.Context, st *store.Store, opt IngestOptions) (*Inges
 		_ = st.SetRepoSourceStatus(ctx, sourceID, "running", false)
 	}
 
+	reportProgress := func(phase string, done, total int, bytes int64, current, message string) {
+		if opt.Progress != nil {
+			opt.Progress(phase, done, total, bytes, current, message)
+		}
+	}
+	reportProgress("clone", 0, 0, 0, firstNonEmpty(opt.RemoteURL, opt.LocalPath), "acquiring checkout")
+
 	co, err := PrepareCheckout(ctx, SnapshotOptions{
 		RemoteURL: opt.RemoteURL, LocalPath: opt.LocalPath, Ref: opt.Ref,
 		CacheRoot: opt.CacheRoot, SourceName: opt.Name, AcquisitionMode: opt.AcquisitionMode,
@@ -131,6 +142,7 @@ func IngestRepo(ctx context.Context, st *store.Store, opt IngestOptions) (*Inges
 		}
 		return nil, err
 	}
+	reportProgress("checkout", 0, 0, 0, co.ResolvedCommitSHA, "checkout ready")
 	cleanupTemp := opt.AcquisitionMode == "snapshot" || (opt.AcquisitionMode == "local_checkout" && opt.WorkingTreeMode != "working_tree" && co.Path != opt.LocalPath)
 	if cleanupTemp && !co.Managed {
 		defer func() {
@@ -156,6 +168,9 @@ func IngestRepo(ctx context.Context, st *store.Store, opt IngestOptions) (*Inges
 		MaxFiles: opt.MaxFiles, MaxDocumentBytes: opt.MaxDocumentBytes, MaxTotalBytes: opt.MaxTotalBytes,
 		PathFilter: filter, URIScheme: "git", SourceType: store.SourceGit, Authority: opt.Authority,
 		SkipDirNames: map[string]struct{}{".git": {}},
+		Progress: func(done, total int, bytes int64, currentPath, message string) {
+			reportProgress("index", done, total, bytes, currentPath, message)
+		},
 	})
 	if err != nil {
 		if sourceID != 0 {
@@ -163,6 +178,7 @@ func IngestRepo(ctx context.Context, st *store.Store, opt IngestOptions) (*Inges
 		}
 		return nil, err
 	}
+	reportProgress("finalize", pres.Ingested, 0, pres.BytesProcessed, co.ResolvedCommitSHA, "indexing complete")
 
 	gen := int64(1)
 	if sourceID != 0 {

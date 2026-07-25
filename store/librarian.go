@@ -16,6 +16,14 @@ type RootCounts struct {
 	Symbols   int64 `json:"symbols"`
 }
 
+// LibraryCounts is global inventory cardinality.
+type LibraryCounts struct {
+	Documents int64 `json:"documents"`
+	Chunks    int64 `json:"chunks"`
+	Symbols   int64 `json:"symbols"`
+	Recipes   int64 `json:"recipes"`
+}
+
 // CountByRoot returns inventory counts for a knowledge root.
 func (s *Store) CountByRoot(ctx context.Context, rootName string) (RootCounts, error) {
 	var c RootCounts
@@ -29,6 +37,83 @@ func (s *Store) CountByRoot(ctx context.Context, rootName string) (RootCounts, e
 			(SELECT COUNT(*) FROM symbols WHERE root_name = ?)`,
 		rootName, rootName, rootName).Scan(&c.Documents, &c.Chunks, &c.Symbols)
 	return c, err
+}
+
+// CountLibrary returns global document/chunk/symbol/recipe counts.
+func (s *Store) CountLibrary(ctx context.Context) (LibraryCounts, error) {
+	var c LibraryCounts
+	err := s.db.QueryRowContext(ctx, `
+		SELECT
+			(SELECT COUNT(*) FROM documents),
+			(SELECT COUNT(*) FROM chunks),
+			(SELECT COUNT(*) FROM symbols),
+			(SELECT COUNT(*) FROM knowledge_entries)`).
+		Scan(&c.Documents, &c.Chunks, &c.Symbols, &c.Recipes)
+	return c, err
+}
+
+// CountDocumentsWithoutChunks returns documents that have no chunk rows.
+func (s *Store) CountDocumentsWithoutChunks(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM documents d
+		WHERE NOT EXISTS (SELECT 1 FROM chunks c WHERE c.document_id = d.id)`).Scan(&n)
+	return n, err
+}
+
+// ListDocumentsPage returns a page of documents with optional filters.
+func (s *Store) ListDocumentsPage(ctx context.Context, rootName, sourceType string, limit, offset int) ([]Document, int, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	where := []string{"1=1"}
+	args := []any{}
+	if rootName != "" {
+		where = append(where, "root_name = ?")
+		args = append(args, rootName)
+	}
+	if sourceType != "" {
+		where = append(where, "source_type = ?")
+		args = append(args, sourceType)
+	}
+	clause := " WHERE " + joinAND(where)
+	var total int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM documents`+clause, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	q := documentSelect + clause + ` ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var docs []Document
+	for rows.Next() {
+		d, err := scanDocumentRow(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		docs = append(docs, *d)
+	}
+	return docs, total, rows.Err()
+}
+
+func joinAND(parts []string) string {
+	out := ""
+	for i, p := range parts {
+		if i > 0 {
+			out += " AND "
+		}
+		out += p
+	}
+	return out
 }
 
 // ListWebPageErrors returns recent non-empty last_error rows for a web source.

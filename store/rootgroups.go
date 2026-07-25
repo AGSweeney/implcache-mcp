@@ -16,6 +16,61 @@ type RootGroupMember struct {
 	Priority int    `json:"priority"`
 }
 
+// RootGroup is a named priority group of roots.
+type RootGroup struct {
+	Name        string            `json:"name"`
+	Description string            `json:"description,omitempty"`
+	Members     []RootGroupMember `json:"members,omitempty"`
+}
+
+// ListRootGroups returns all root groups with members.
+func (s *Store) ListRootGroups(ctx context.Context) ([]RootGroup, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT name, COALESCE(description, '') FROM root_groups ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RootGroup
+	for rows.Next() {
+		var g RootGroup
+		if err := rows.Scan(&g.Name, &g.Description); err != nil {
+			return nil, err
+		}
+		members, err := s.ListRootGroupMembers(ctx, g.Name)
+		if err != nil {
+			return nil, err
+		}
+		g.Members = members
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+// DeleteRootGroup removes a group and its members.
+func (s *Store) DeleteRootGroup(ctx context.Context, name string) (bool, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false, fmt.Errorf("group name is required")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM root_group_members WHERE group_name=?`, name); err != nil {
+		return false, err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM root_groups WHERE name=?`, name)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 // UpsertRootGroup replaces membership for a named root group.
 func (s *Store) UpsertRootGroup(ctx context.Context, name, description string, members []RootGroupMember) error {
 	name = strings.TrimSpace(name)

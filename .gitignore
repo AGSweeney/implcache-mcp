@@ -13,6 +13,9 @@
 implcache.db*
 testdata/validation/reports/validation.db*
 
+# Managed Git clone cache (beside the DB; recreated by ingest/refresh)
+.implcache/
+
 # Generated playbooks (default -output-root)
 /vomit-output/
 /*.md.bak

@@ -41,6 +41,10 @@ type IngestedFile struct {
 // PathFilter decides whether a relative path should be ingested.
 type PathFilter func(rel string) bool
 
+// ProjectProgressFunc reports per-file ingest progress (optional).
+// done is files considered so far; total is 0 when unknown.
+type ProjectProgressFunc func(done, total int, bytes int64, currentPath, message string)
+
 // ProjectOptions configures source-tree ingest limits.
 type ProjectOptions struct {
 	Path              string
@@ -56,6 +60,7 @@ type ProjectOptions struct {
 	Authority         string
 	OnlyRelativePaths []string // if non-empty, only these relative paths (refresh)
 	SkipDirNames      map[string]struct{}
+	Progress          ProjectProgressFunc
 }
 
 // IngestProject walks a source tree and ingests text-like files.
@@ -161,6 +166,9 @@ func IngestProjectOpts(ctx context.Context, st *store.Store, opt ProjectOptions)
 		}
 		if err := ingestProjectFile(ctx, st, absRoot, rootName, p, rel, maxBytes, opt, res); err != nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", p, err))
+		}
+		if opt.Progress != nil {
+			opt.Progress(filesSeen, 0, res.BytesProcessed, rel, "index")
 		}
 		if opt.MaxTotalBytes > 0 && res.BytesProcessed > opt.MaxTotalBytes {
 			return fmt.Errorf("ingest total bytes limit exceeded (%d)", opt.MaxTotalBytes)

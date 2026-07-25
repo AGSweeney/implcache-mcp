@@ -88,6 +88,27 @@ Safety defaults:
 - Bare `:8080`, `0.0.0.0`, or `::` → rewritten to `127.0.0.1`
 - Pass an explicit non-loopback host only if you intend LAN exposure
 - HTTP server uses header/idle timeouts and graceful SIGINT/SIGTERM shutdown
+- MCP Streamable HTTP is at `/mcp`; Librarian REST is at `/api/v1`
+
+### Librarian UI
+
+```bash
+./implcache-mcp -db ./implcache.db -http :8080 \
+  -enable-librarian -enable-http-mutations -mode admin
+```
+
+Open `http://127.0.0.1:8080/` (or `-librarian-base-path`). No Node.js is required in production; the UI is embedded from `embedui/dist`.
+
+Shared / reverse-proxied deployment:
+
+```bash
+./implcache-mcp -db ./implcache.db -http 127.0.0.1:8080 \
+  -enable-librarian -enable-http-mutations -mode admin \
+  -librarian-token "$ADMIN_TOKEN" \
+  -librarian-viewer-token "$VIEWER_TOKEN"
+```
+
+Terminate HTTPS at the reverse proxy; keep the Go process on loopback. Set `-librarian-base-path` when serving under a subpath. Mutations over HTTP still require `-enable-http-mutations`.
 
 ## Server flags
 
@@ -95,6 +116,13 @@ Safety defaults:
 |------|---------|---------|
 | `-db` | `./implcache.db` | SQLite path |
 | `-http` | _(stdio)_ | Streamable HTTP address |
+| `-enable-librarian` | `false` | Serve embedded Librarian UI + `/api/v1` |
+| `-librarian-base-path` | `/` | URL base path for the embedded UI |
+| `-librarian-token` | _(none)_ | Bearer token for administrator API access |
+| `-librarian-viewer-token` | _(none)_ | Bearer token for viewer (read-only) API access |
+| `-upload-dir` | `<db-dir>/uploads` | Librarian PDF upload directory |
+| `-enable-http-mutations` | `false` | Allow ingest/delete over HTTP |
+| `-allow-remote-http` | `false` | Allow non-loopback HTTP bind |
 | `-readonly` | `false` | Search-only; opens DB read-only when possible |
 | `-allow-ingest` | `true` | Enable ingest tools |
 | `-allow-delete` | `true` | Enable delete tools |
@@ -114,7 +142,9 @@ Safety defaults:
 | Readonly | Disables ingest/delete/file output |
 | No full-body logging | Tool results are not dumped to server logs by default |
 | Generated recipes | Labeled; ranked below human-reviewed |
-| HTTP auth | **None** — loopback + flags by default; put a reverse proxy/auth in front for remote binds |
+| Librarian auth | Optional Bearer (`-librarian-token` / `-librarian-viewer-token`); loopback-open when unset |
+| Librarian CSP | Static + API responses set CSP / frame denial headers |
+| Remote HTTP | Use reverse proxy + HTTPS + token; do not expose bare HTTP on LAN without auth |
 
 Do not commit `*.db` or ingested vendor corpora (see `.gitignore`).
 
@@ -132,7 +162,8 @@ Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still ch
 | Freshness | Independent of authority. Official docs without version/date → `unknown`. `webSearchRecommended` uses coverage + freshness. |
 | Fingerprints | `contextFingerprint` is over the post-trim response (+ citation content hashes). |
 | Token estimates | `estimatedTokens` is roughly `utf8_runes/4` on the serialized JSON. Use for budgeting only — approximate, not exact. |
-| HTTP | No built-in authentication. Loopback rewrite and `-allow-remote-http` are the safety defaults; remote exposure needs an external auth layer. |
+| HTTP | Loopback rewrite and `-allow-remote-http` are the safety defaults. Librarian Bearer auth is optional (`-librarian-token`); remote exposure should use a reverse proxy + HTTPS + token. |
+| Librarian jobs | In-process only (survive browser reload, not process restart). |
 | Recipes | Quality depends on human review of `vomit` / `saveRecipe` output. Ranking already demotes generated entries vs human-reviewed and project code. |
 | Concurrency | SQLite **WAL** helps readers; multiple writers still need care (single writer process, or serialize admin ingest). See concurrent smoke tests; prefer one admin writer. |
 | Go version | Module requires **Go 1.25+** — note for downstream consumers. |
@@ -157,7 +188,7 @@ go run ./cmd/sourcevalidate -out testdata/validation/reports -max-pages 25 -max-
 
 Scenarios: ESP-IDF docs prefix (Sphinx), NetBurner Developer Guide (Doxygen), `testdata/pdf/text_manual.pdf`, and a sparse local checkout of this repository. JSON reports land under `testdata/validation/reports/`. See also [testdata/validation/README.md](../testdata/validation/README.md).
 
-Admin inventory for the Librarian GUI: run with `-mode admin` and use `list_sources` / `source_health` / `preview_document` / `search_playground` (see [TOOLS.md](TOOLS.md#librarian-gui-readiness)).
+Admin inventory: prefer the embedded Librarian UI (`-enable-librarian`) or MCP tools `list_sources` / `source_health` / `preview_document` / `search_playground` (see [TOOLS.md](TOOLS.md#librarian-gui-readiness) and [API_V1.md](API_V1.md)).
 
 ## Evaluation
 

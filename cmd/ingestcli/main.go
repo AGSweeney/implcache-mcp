@@ -194,7 +194,7 @@ func main() {
 		if *nameFlag == "" {
 			log.Fatal("-name is required")
 		}
-		res, err := gitrepo.RefreshRepoSource(ctx, st, *nameFlag, cache, nil)
+		res, err := gitrepo.RefreshRepoSource(ctx, st, *nameFlag, cache, nil, nil)
 		if err != nil {
 			log.Fatal(err)
 		}

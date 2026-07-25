@@ -52,7 +52,14 @@ Default **`-mode agent`** registers retrieval tools only. Admin tools are **not*
 
 # Optional HTTP (loopback; mutations off unless -enable-http-mutations)
 ./implcache-mcp -db ./implcache.db -http :8080
+
+# Librarian UI + REST /api/v1 (embedded; no Node.js at runtime)
+./implcache-mcp -db ./implcache.db -http :8080 \
+  -enable-librarian -enable-http-mutations -mode admin
+# open http://127.0.0.1:8080/
 ```
+
+See [docs/API_V1.md](docs/API_V1.md), [docs/LIBRARIAN_PRD.md](docs/LIBRARIAN_PRD.md), and [docs/OPERATIONS.md](docs/OPERATIONS.md). React sources live under `frontend/` (optional rebuild into `embedui/dist`).
 
 ### Cursor MCP config
 
