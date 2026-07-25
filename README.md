@@ -144,12 +144,18 @@ go test ./store -bench=Benchmark -benchtime=200ms
 
 ---
 
+## Freshness and fingerprints
+
+- **Freshness** is not inferred from authority alone (official docs without version metadata stay `unknown`).
+- **`contextFingerprint`** identifies the final trimmed package the client receives (source hash changes update it).
+- Migrations are atomic per version step (failed upgrades leave the prior `user_version`).
+
 ## Limitations (pre-1.0)
 
 - Schema and ranking will evolve; pin or vendor if you need stability.
 - Symbol extraction is heuristic (Go/C-family/Python/JS/Java); neural embeddings deferred — optional sparse semantic only.
 - `estimatedTokens` is approximate (`runes/4`).
-- HTTP has no auth — keep it on loopback or put a proxy in front.
+- HTTP has no auth — keep it on loopback or put a proxy in front. Mutations over HTTP stay off unless `-enable-http-mutations`.
 - Recipe quality needs human review; generated entries rank below curated/project sources.
 - SQLite WAL: fine for readers; serialize writers. Requires **Go 1.25+**.
 

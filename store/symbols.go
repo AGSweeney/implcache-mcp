@@ -135,7 +135,8 @@ func (s *Store) FindSymbols(ctx context.Context, name string, roots []string, li
 	if norm == "" {
 		return nil, fmt.Errorf("symbol name is required")
 	}
-	limit = ClampSearchLimit(limit, DefaultSearchLimit)
+	// Callers (tools) apply configured MaxResults; here only default + hard max.
+	limit = ClampLimit(limit, DefaultSearchLimit, MaxSearchLimit)
 	unqual := NormalizeSymbol(UnqualifiedSymbol(raw))
 	qualNorm := NormalizeSymbol(raw)
 
@@ -219,19 +220,57 @@ func (s *Store) FindSymbols(ctx context.Context, name string, roots []string, li
 	return out, nil
 }
 
+const maxFuzzyCandidates = 50
+
 func (s *Store) fuzzySymbols(ctx context.Context, unqual string, roots []string, limit int, seen map[int64]struct{}) ([]Symbol, error) {
 	prefix := unqual
 	if len(prefix) > 3 {
 		prefix = prefix[:3]
 	}
-	where := `s.name_norm LIKE ? ESCAPE '\'`
-	arg := escapeLike(prefix) + `%`
-	cands, err := s.querySymbols(ctx, where, arg, roots, 50, MatchToken, 0.4)
+	like := escapeLike(prefix) + `%`
+	// Prefer unqualified_name so namespace::Foo is reachable from an unqualified typo.
+	q := `
+		SELECT s.id, s.document_id, s.root_name, s.name, COALESCE(s.qualified_name, ''),
+		       COALESCE(s.unqualified_name, ''), s.name_norm, s.kind, s.language,
+		       COALESCE(s.namespace, ''), s.signature, COALESCE(s.signature_norm, ''),
+		       s.start_line, s.end_line,
+		       d.uri, d.title, COALESCE(d.authority, 'unknown')
+		FROM symbols s
+		JOIN documents d ON d.id = s.document_id
+		WHERE (LOWER(s.unqualified_name) LIKE ? ESCAPE '\' OR s.name_norm LIKE ? ESCAPE '\')`
+	args := []any{like, like}
+	if len(roots) > 0 {
+		ph := make([]string, len(roots))
+		for i, r := range roots {
+			ph[i] = "?"
+			args = append(args, r)
+		}
+		q += ` AND s.root_name IN (` + strings.Join(ph, ",") + `)`
+	}
+	q += ` ORDER BY CASE s.kind
+		WHEN 'function' THEN 0 WHEN 'method' THEN 1 WHEN 'declaration' THEN 2
+		WHEN 'type' THEN 3 WHEN 'macro' THEN 3 WHEN 'constant' THEN 4
+		WHEN 'call' THEN 8 ELSE 5 END, s.start_line
+		LIMIT ?`
+	args = append(args, maxFuzzyCandidates)
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
+
 	var out []Symbol
-	for _, sym := range cands {
+	for rows.Next() {
+		var sym Symbol
+		if err := rows.Scan(
+			&sym.ID, &sym.DocumentID, &sym.RootName, &sym.Name, &sym.QualifiedName,
+			&sym.UnqualifiedName, &sym.NameNorm, &sym.Kind, &sym.Language,
+			&sym.Namespace, &sym.Signature, &sym.SignatureNorm,
+			&sym.StartLine, &sym.EndLine, &sym.URI, &sym.Title, &sym.Authority,
+		); err != nil {
+			return nil, err
+		}
 		if _, ok := seen[sym.ID]; ok {
 			continue
 		}
@@ -249,7 +288,7 @@ func (s *Store) fuzzySymbols(ctx context.Context, unqual string, roots []string,
 			break
 		}
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
 func levenshtein(a, b string) int {

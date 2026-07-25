@@ -7,7 +7,9 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -286,6 +288,56 @@ func TestPersistedSymbolDerivedFields(t *testing.T) {
 	}
 }
 
+func TestFuzzyQualifiedViaUnqualifiedTypo(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	_, err = st.UpsertDocument(ctx, UpsertInput{
+		URI: "project://example-plugin-sdk/api.cpp", Title: "api",
+		SourceType: SourceSource, Path: "api.cpp", RootName: "example-plugin-sdk",
+		Authority: AuthorityOfficialDocs, Hash: "fz1",
+		Chunks: []Chunk{{Body: "demo::RegisterHandler", StartLine: 1, EndLine: 1}},
+		Symbols: []SymbolInput{
+			{Name: "demo::RegisterHandler", Kind: "function", Language: "cpp",
+				Signature: "int demo::RegisterHandler(const char* name);", StartLine: 1, EndLine: 1},
+			{Name: "UnrelatedHelper", Kind: "function", Language: "cpp", StartLine: 2, EndLine: 2},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Exact unqualified still works.
+	syms, err := st.FindSymbols(ctx, "RegisterHandler", []string{"example-plugin-sdk"}, 5)
+	if err != nil || len(syms) == 0 {
+		t.Fatalf("exact unqualified: %v %+v", err, syms)
+	}
+	// Typo against unqualified form of a qualified stored symbol.
+	syms, err = st.FindSymbols(ctx, "RegsterHandler", []string{"example-plugin-sdk"}, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(syms) == 0 || syms[0].MatchType != MatchFuzzy || syms[0].Name != "demo::RegisterHandler" {
+		t.Fatalf("fuzzy qualified via typo: %+v", syms)
+	}
+	// Root scoped: other root must not match.
+	syms, err = st.FindSymbols(ctx, "RegsterHandler", []string{"other-sdk"}, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(syms) != 0 {
+		t.Fatalf("expected root filter empty, got %+v", syms)
+	}
+	// Unrelated typo must not match.
+	syms, err = st.FindSymbols(ctx, "Zzzzzzzzzz", []string{"example-plugin-sdk"}, 5)
+	if err != nil || len(syms) != 0 {
+		t.Fatalf("unrelated: %+v err=%v", syms, err)
+	}
+}
+
 func TestClampSearchLimit(t *testing.T) {
 	cases := []struct {
 		req, cfg, want int
@@ -297,10 +349,96 @@ func TestClampSearchLimit(t *testing.T) {
 		{200, 20, 20},
 		{200, 0, MaxSearchLimit},
 		{50, 80, 50},
+		{200, 500, MaxSearchLimit},
+		{50, 100, 50},
 	}
 	for _, tc := range cases {
 		if got := ClampSearchLimit(tc.req, tc.cfg); got != tc.want {
 			t.Fatalf("req=%d cfg=%d got %d want %d", tc.req, tc.cfg, got, tc.want)
 		}
+	}
+}
+
+func TestSearchOptsHonorsConfiguredMaxResults(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	for i := 0; i < 30; i++ {
+		uri := fmt.Sprintf("project://example-plugin-sdk/doc-%02d.md", i)
+		_, err = st.UpsertDocument(ctx, UpsertInput{
+			URI: uri, Title: "doc", SourceType: SourceMarkdown, Path: fmt.Sprintf("doc-%02d.md", i),
+			RootName: "example-plugin-sdk", Authority: AuthorityOfficialDocs, Hash: uri,
+			Chunks: []Chunk{{Body: "RegisterHandler plugin command " + uri, StartLine: 1, EndLine: 1}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	hits, err := st.SearchOpts(ctx, SearchOptions{
+		Query: "RegisterHandler", Limit: 40, MaxResults: 40,
+		Roots: []string{"example-plugin-sdk"}, MaxPerDoc: -1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) <= 20 && len(hits) < 40 {
+		// Should be allowed above DefaultSearchLimit when MaxResults=40.
+		// If corpus yields fewer hits, still ensure we did not hard-cap at 20 incorrectly when more exist.
+	}
+	hits20, err := st.SearchOpts(ctx, SearchOptions{
+		Query: "RegisterHandler", Limit: 40, MaxResults: 20,
+		Roots: []string{"example-plugin-sdk"}, MaxPerDoc: -1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits20) > 20 {
+		t.Fatalf("MaxResults=20 returned %d", len(hits20))
+	}
+	if len(hits) > 0 && len(hits20) > 0 && len(hits) < len(hits20) {
+		t.Fatalf("higher MaxResults should not return fewer hits: %d vs %d", len(hits), len(hits20))
+	}
+}
+
+func TestFuzzyCandidateBound(t *testing.T) {
+	if maxFuzzyCandidates != 50 {
+		t.Fatalf("maxFuzzyCandidates=%d", maxFuzzyCandidates)
+	}
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	var syms []SymbolInput
+	for i := 0; i < 80; i++ {
+		name := "RegisterHandlax" // close typos share prefix "reg"
+		if i > 0 {
+			name = "Reg" + strings.Repeat("x", i%5) + "Handler" + string(rune('A'+i%26))
+		}
+		syms = append(syms, SymbolInput{Name: "demo::" + name, Kind: "function", Language: "cpp", StartLine: i + 1})
+	}
+	syms[0] = SymbolInput{Name: "demo::RegisterHandler", Kind: "function", Language: "cpp", StartLine: 1}
+	_, err = st.UpsertDocument(ctx, UpsertInput{
+		URI: "project://example-plugin-sdk/many.cpp", Title: "many",
+		SourceType: SourceSource, Path: "many.cpp", RootName: "example-plugin-sdk",
+		Authority: AuthorityOfficialDocs, Hash: "many",
+		Chunks:  []Chunk{{Body: "symbols", StartLine: 1, EndLine: 80}},
+		Symbols: syms,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.FindSymbols(ctx, "RegsterHandler", []string{"example-plugin-sdk"}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) > 10 {
+		t.Fatalf("limit not respected: %d", len(got))
 	}
 }

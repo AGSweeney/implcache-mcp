@@ -114,6 +114,9 @@ func TestUnknownLanguageNoFalseSymbols(t *testing.T) {
 	if syms := ExtractSymbols("run.sh", "RegisterHandler()\nClient.Connect()\n"); len(syms) != 0 {
 		t.Fatalf("shell should not extract symbols: %+v", syms)
 	}
+	if syms := ExtractSymbols("cfg.json", `{"cmd":"RegisterHandler()","x":"Client.Connect()"}`); len(syms) != 0 {
+		t.Fatalf("json should not extract symbols: %+v", syms)
+	}
 }
 
 func TestExtractPythonJSJava(t *testing.T) {

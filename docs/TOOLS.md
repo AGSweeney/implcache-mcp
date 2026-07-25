@@ -1,8 +1,10 @@
 # MCP tools reference
 
-All tools are registered by `tools.RegisterWithOptions`. Mutating tools can be disabled with `-readonly` or individual `-allow-*` flags.
+All tools are registered by `tools.RegisterWithOptions`. Default **`-mode agent`** registers retrieval tools only; **`-mode admin`** adds ingest/delete/`vomit`. Mutating calls can still be disabled with `-readonly` or individual `-allow-*` flags.
 
 When root scope is ambiguous, several tools return a JSON payload with `needsChoice`, `message`, and `availableRoots` (often as an error-shaped MCP result). Ask the user, then retry with an explicit root.
+
+Schema: `PRAGMA user_version = 6`. Symbol extraction at ingest supports: Go, C/C++/C#, Python, JavaScript/TypeScript, Java. Unsupported languages yield no symbols.
 
 ---
 
@@ -15,12 +17,13 @@ When root scope is ambiguous, several tools return a JSON payload with `needsCho
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
 | `task` | string | yes | Coding task in plain language |
-| `language` | string | no | e.g. `c`, `cpp`, `go` |
-| `technology` | string | no | e.g. `example-device-sdk`, `example-network-sdk` |
+| `language` | string | no | e.g. `c`, `cpp`, `go`, `python`, `typescript` |
+| `technology` | string | no | e.g. Example Plugin SDK |
 | `projectRoot` | string | no | Preferred current-project root name |
 | `preferredRoots` | string[] | no | Ordered roots to search |
 | `rootGroup` | string | no | Named root group (DB) |
 | `maxContextTokens` | int | no | Soft budget (default ~2500) |
+| `semantic` | bool | no | Supplement FTS with sparse term vectors (`-enable-semantic`) |
 
 **Returns** (`implctx.Response`), including:
 
@@ -29,14 +32,19 @@ When root scope is ambiguous, several tools return a JSON payload with `needsCho
 - `constraints`, `pitfalls`, `projectConventions`
 - `citations[]` (`uri`, `title`, `section`, `lines`, `authority`, `rootName`)
 - `coverage` (`high` \| `medium` \| `low`)
-- `freshness`, `webSearchRecommended`, `missingInformation`, `recommendedFollowUp`
+- `freshness` (independent of authority: `current` \| `version-specific` \| `mixed` \| `stale` \| `unknown`)
+- `webSearchRecommended` (from coverage + freshness)
+- `contextFingerprint` (hash of the **final trimmed** payload the client receives)
+- `missingInformation`, `recommendedFollowUp`
 - `rootsUsed`, `estimatedTokens`, `chars`, `tokenEstimateNote`
 
 ---
 
 ### `find_symbol`
 
-Exact/near-exact lookup of APIs, functions, and types from the `symbols` table.
+Staged lookup of APIs, functions, and types from the `symbols` table:
+
+`exact` → `exact_normalized` → `exact_qualified` → `exact_unqualified` → `prefix` → `suffix` → `token` → bounded `fuzzy` (unqualified_name candidates).
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
@@ -47,7 +55,7 @@ Exact/near-exact lookup of APIs, functions, and types from the `symbols` table.
 
 **Returns:** `{ symbols: Symbol[], count }`
 
-`Symbol` fields include `name`, `kind`, `language`, `signature`, `uri`, `rootName`, `authority`, line range.
+`Symbol` fields include `name`, `matchType`, `confidence`, `kind`, `language`, `signature`, `uri`, `rootName`, `authority`, line range. Definitions outrank declarations and calls.
 
 ---
 
@@ -60,6 +68,7 @@ Full-text search over chunk FTS5. Prefer `get_implementation_context` for coding
 | `query` | string | yes | FTS query |
 | `limit` | int | no | Capped by server `-max-results` (hard max 100) |
 | `rootName` | string | no | Explicit root; else inferred |
+| `semantic` | bool | no | Also score related chunks via sparse term vectors |
 
 **Returns:** `{ hits, count, roots, matchedHints }` or `{ needsChoice, message, availableRoots, … }`
 

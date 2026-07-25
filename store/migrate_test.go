@@ -7,6 +7,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -170,6 +171,85 @@ func TestMigrationV3SymbolBackfill(t *testing.T) {
 	syms, err := st2.FindSymbols(context.Background(), "RegisterHandler", []string{"example-plugin-sdk"}, 5)
 	if err != nil || len(syms) == 0 {
 		t.Fatalf("lookup after migration: %v %+v", err, syms)
+	}
+}
+
+func TestMigrationRollbackKeepsUserVersion(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "fail.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(schemaV1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(schemaV2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 2`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	testMigrationHook = func(version int, tx *sql.Tx) error {
+		if version == 3 {
+			return fmt.Errorf("injected failure at v3")
+		}
+		return nil
+	}
+	t.Cleanup(func() { testMigrationHook = nil })
+
+	_, err = Open(dbPath)
+	if err == nil {
+		t.Fatal("expected migration failure")
+	}
+
+	db, err = sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var v int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
+		t.Fatal(err)
+	}
+	if v != 2 {
+		t.Fatalf("user_version=%d want 2 after failed v3", v)
+	}
+	// v3 tables must not exist after rollback.
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name='symbols'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("symbols table should not exist after rolled-back v3, count=%d", n)
+	}
+}
+
+func TestMigrationIdempotentOnCurrentSchema(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "cur.db")
+	st, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v1, err := st.SchemaVersion(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	st2, err := Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st2.Close()
+	v2, err := st2.SchemaVersion(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v1 != currentSchemaVersion || v2 != currentSchemaVersion {
+		t.Fatalf("versions %d %d want %d", v1, v2, currentSchemaVersion)
 	}
 }
 

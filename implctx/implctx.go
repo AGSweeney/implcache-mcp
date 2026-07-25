@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -197,11 +198,12 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 
 	// 3) Budgeted FTS for examples / constraints / pitfalls / grounded workflow text.
 	hits, err := st.SearchOpts(ctx, store.SearchOptions{
-		Query:     task,
-		Limit:     budget.MaxResults * 3,
-		Roots:     roots,
-		MaxPerDoc: budget.MaxPerDocument,
-		Semantic:  req.Semantic,
+		Query:      task,
+		Limit:      budget.MaxResults * 3,
+		MaxResults: store.MaxSearchLimit,
+		Roots:      roots,
+		MaxPerDoc:  budget.MaxPerDocument,
+		Semantic:   req.Semantic,
 	})
 	if err != nil {
 		return nil, err
@@ -320,42 +322,55 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 	return resp, nil
 }
 
+// fingerprintResponse hashes the final client-visible payload (post-trim).
+// Meta fields that are derived from the fingerprint/estimate loop are excluded;
+// citation content hashes are included so source edits change the fingerprint.
 func fingerprintResponse(ctx context.Context, st *store.Store, req Request, resp *Response) string {
+	cp := *resp
+	cp.ContextFingerprint = ""
+	cp.EstimatedTokens = 0
+	cp.Chars = 0
+	cp.TokenEstimateNote = ""
+	// Stabilize ordering for fingerprint inputs.
+	roots := append([]string{}, cp.RootsUsed...)
+	sort.Strings(roots)
+	cp.RootsUsed = roots
+	apis := append([]string{}, cp.RequiredAPIs...)
+	sort.Strings(apis)
+	cp.RequiredAPIs = apis
+
+	payload, err := json.Marshal(&cp)
+	if err != nil {
+		payload = []byte(cp.Summary)
+	}
 	var b strings.Builder
+	b.Write(payload)
+	b.WriteByte('|')
 	b.WriteString(strings.TrimSpace(strings.ToLower(req.Task)))
 	b.WriteByte('|')
-	b.WriteString(strings.ToLower(req.Language))
-	b.WriteByte('|')
-	b.WriteString(strings.ToLower(req.Technology))
-	b.WriteByte('|')
-	roots := append([]string{}, resp.RootsUsed...)
-	sort.Strings(roots)
-	b.WriteString(strings.Join(roots, ","))
-	b.WriteByte('|')
-	apis := append([]string{}, resp.RequiredAPIs...)
-	sort.Strings(apis)
-	b.WriteString(strings.Join(apis, ","))
-	b.WriteByte('|')
+	type citeKey struct{ uri, lines, hash string }
+	var cites []citeKey
 	for _, c := range resp.Citations {
-		b.WriteString(c.URI)
-		b.WriteByte('#')
-		b.WriteString(c.Lines)
-		if h, err := st.GetHashByURI(ctx, c.URI); err == nil && h != "" {
-			b.WriteByte('@')
-			b.WriteString(h)
+		h := ""
+		if st != nil {
+			if got, err := st.GetHashByURI(ctx, c.URI); err == nil {
+				h = got
+			}
 		}
-		b.WriteByte(';')
+		cites = append(cites, citeKey{c.URI, c.Lines, h})
 	}
-	for _, s := range resp.RelevantSymbols {
-		b.WriteString(s.NameNorm)
+	sort.Slice(cites, func(i, j int) bool {
+		if cites[i].uri == cites[j].uri {
+			return cites[i].lines < cites[j].lines
+		}
+		return cites[i].uri < cites[j].uri
+	})
+	for _, c := range cites {
+		b.WriteString(c.uri)
+		b.WriteByte('#')
+		b.WriteString(c.lines)
 		b.WriteByte('@')
-		b.WriteString(s.URI)
-		b.WriteByte(';')
-	}
-	for _, e := range resp.Examples {
-		b.WriteString(e.URI)
-		b.WriteByte('|')
-		b.WriteString(e.Excerpt)
+		b.WriteString(c.hash)
 		b.WriteByte(';')
 	}
 	sum := sha256.Sum256([]byte(b.String()))

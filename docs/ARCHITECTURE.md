@@ -19,6 +19,8 @@ Primary goal: reduce the tokens, retrieval time, web searches, file reads, compi
 7. **No CGO** — SQLite via `modernc.org/sqlite` for portable builds.
 8. **FTS-first search** — authority/root ranking by default; optional sparse term-vector semantic (`-enable-semantic`); neural embeddings still deferred.
 
+**Schema** is `PRAGMA user_version = 6` (atomic per-step migrations in `store/migrate.go`). **Symbol languages:** Go, C/C++/C#, Python, JS/TS, Java. **Freshness** is independent of authority. **`contextFingerprint`** hashes the final trimmed response (not pre-trim candidates).
+
 Known limitations: [OPERATIONS.md](OPERATIONS.md#limitations-and-risks).
 
 ## Agent workflow

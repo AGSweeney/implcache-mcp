@@ -470,6 +470,9 @@ type SearchOptions struct {
 	Limit     int
 	Roots     []string // optional root_name filter
 	MaxPerDoc int      // diversify: max chunks per document (default 3; 0 = default; <0 = unlimited)
+	// MaxResults is the caller-configured soft maximum (e.g. server -max-results).
+	// 0 means only DefaultSearchLimit (when Limit unset) and MaxSearchLimit apply.
+	MaxResults int
 	// Semantic enables optional sparse term-vector similarity to supplement FTS.
 	// Requires chunk_term_vectors (schema v6). Off by default.
 	Semantic bool
@@ -490,7 +493,7 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 	if utf8.RuneCountInString(query) > MaxQueryRunes {
 		return nil, fmt.Errorf("query exceeds %d characters", MaxQueryRunes)
 	}
-	limit := ClampSearchLimit(opt.Limit, DefaultSearchLimit)
+	limit := ClampSearchLimit(opt.Limit, opt.MaxResults)
 	maxPerDoc := opt.MaxPerDoc
 	if maxPerDoc == 0 {
 		maxPerDoc = DefaultMaxPerDoc

@@ -180,6 +180,10 @@ CREATE TABLE IF NOT EXISTS chunk_term_vectors (
 CREATE INDEX IF NOT EXISTS idx_chunk_term_vectors_terms ON chunk_term_vectors(terms);
 `
 
+// testMigrationHook, when set, runs inside migrateOne after DDL/backfill and
+// before PRAGMA user_version is set. Tests use it to force rollback.
+var testMigrationHook func(version int, tx *sql.Tx) error
+
 func migrate(db *sql.DB) error {
 	var version int
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
@@ -188,47 +192,68 @@ func migrate(db *sql.DB) error {
 
 	for version < currentSchemaVersion {
 		next := version + 1
-		if err := applyMigration(db, next); err != nil {
+		if err := migrateOne(db, next); err != nil {
 			return fmt.Errorf("migrate to v%d: %w", next, err)
-		}
-		if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, next)); err != nil {
-			return fmt.Errorf("set user_version=%d: %w", next, err)
 		}
 		version = next
 	}
 	return nil
 }
 
-func applyMigration(db *sql.DB, version int) error {
-	switch version {
-	case 1:
-		_, err := db.Exec(schemaV1)
+// migrateOne applies a single schema step and user_version bump in one transaction.
+// On failure the transaction rolls back and the previous user_version remains.
+// SQLite applies PRAGMA user_version transactionally on the connection/tx.
+func migrateOne(db *sql.DB, version int) error {
+	tx, err := db.Begin()
+	if err != nil {
 		return err
-	case 2:
-		_, err := db.Exec(schemaV2)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := applyMigrationTx(tx, version); err != nil {
 		return err
-	case 3:
-		_, err := db.Exec(schemaV3)
-		return err
-	case 4:
-		_, err := db.Exec(schemaV4)
-		return err
-	case 5:
-		return backfillSymbolForms(db)
-	case 6:
-		if _, err := db.Exec(schemaV6); err != nil {
+	}
+	if testMigrationHook != nil {
+		if err := testMigrationHook(version, tx); err != nil {
 			return err
 		}
-		return backfillChunkTermVectors(db)
+	}
+	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, version)); err != nil {
+		return fmt.Errorf("set user_version=%d: %w", version, err)
+	}
+	return tx.Commit()
+}
+
+func applyMigrationTx(tx *sql.Tx, version int) error {
+	switch version {
+	case 1:
+		_, err := tx.Exec(schemaV1)
+		return err
+	case 2:
+		_, err := tx.Exec(schemaV2)
+		return err
+	case 3:
+		_, err := tx.Exec(schemaV3)
+		return err
+	case 4:
+		_, err := tx.Exec(schemaV4)
+		return err
+	case 5:
+		return backfillSymbolFormsTx(tx)
+	case 6:
+		if _, err := tx.Exec(schemaV6); err != nil {
+			return err
+		}
+		return backfillChunkTermVectorsTx(tx)
 	default:
 		return fmt.Errorf("unknown schema version %d", version)
 	}
 }
 
-// backfillSymbolForms populates derived symbol columns using DeriveSymbolForms.
+// backfillSymbolFormsTx populates derived symbol columns using DeriveSymbolForms.
 // Idempotent: re-running yields the same values for a given name/signature.
-func backfillSymbolForms(db *sql.DB) error {
-	rows, err := db.Query(`SELECT id, name, COALESCE(signature, '') FROM symbols`)
+func backfillSymbolFormsTx(tx *sql.Tx) error {
+	rows, err := tx.Query(`SELECT id, name, COALESCE(signature, '') FROM symbols`)
 	if err != nil {
 		return err
 	}
@@ -254,12 +279,6 @@ func backfillSymbolForms(db *sql.DB) error {
 		return nil
 	}
 
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	stmt, err := tx.Prepare(`
 		UPDATE symbols SET
 			qualified_name = ?,
@@ -282,5 +301,5 @@ func backfillSymbolForms(db *sql.DB) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }

@@ -151,9 +151,9 @@ func (s *Store) upsertChunkTermVector(ctx context.Context, tx *sql.Tx, chunkID i
 	return err
 }
 
-// backfillChunkTermVectors populates term vectors for existing chunks (migration v6).
-func backfillChunkTermVectors(db *sql.DB) error {
-	rows, err := db.Query(`SELECT id, heading, body FROM chunks`)
+// backfillChunkTermVectorsTx populates term vectors for existing chunks (migration v6).
+func backfillChunkTermVectorsTx(tx *sql.Tx) error {
+	rows, err := tx.Query(`SELECT id, heading, body FROM chunks`)
 	if err != nil {
 		return err
 	}
@@ -176,11 +176,6 @@ func backfillChunkTermVectors(db *sql.DB) error {
 	if len(list) == 0 {
 		return nil
 	}
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
 	stmt, err := tx.Prepare(`
 		INSERT INTO chunk_term_vectors(chunk_id, terms, updated_at)
 		VALUES (?, ?, ?)
@@ -199,7 +194,7 @@ func backfillChunkTermVectors(db *sql.DB) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // semanticCandidates returns related chunks by sparse term cosine similarity.

@@ -130,8 +130,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 		} else if len(opt.DefaultPreferredRoots) > 0 {
 			roots = opt.DefaultPreferredRoots
 		}
-		limit := store.ClampSearchLimit(args.Limit, opt.MaxResults)
-		syms, err := st.FindSymbols(ctx, args.Name, roots, limit)
+		syms, err := st.FindSymbols(ctx, args.Name, roots, store.ClampSearchLimit(args.Limit, opt.MaxResults))
 		if err != nil {
 			return nil, findSymbolResult{}, err
 		}
@@ -189,7 +188,6 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			"Infers knowledge root from the query when possible; if ambiguous, returns needsChoice " +
 			"with availableRoots — ask the user and re-run with rootName.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, searchResult, error) {
-		limit := store.ClampSearchLimit(args.Limit, opt.MaxResults)
 		var explicit []string
 		if r := strings.TrimSpace(args.RootName); r != "" {
 			explicit = []string{r}
@@ -212,10 +210,11 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			}, out, nil
 		}
 		hits, err := st.SearchOpts(ctx, store.SearchOptions{
-			Query:    args.Query,
-			Limit:    limit,
-			Roots:    inf.Roots,
-			Semantic: opt.EnableSemantic || args.Semantic,
+			Query:      args.Query,
+			Limit:      args.Limit,
+			MaxResults: opt.MaxResults,
+			Roots:      inf.Roots,
+			Semantic:   opt.EnableSemantic || args.Semantic,
 		})
 		if err != nil {
 			return nil, searchResult{}, err

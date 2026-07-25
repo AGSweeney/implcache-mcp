@@ -94,4 +94,35 @@ func TestFreshDBHasExpectedSchemaObjects(t *testing.T) {
 	if triggers < 3 {
 		t.Fatalf("expected FTS triggers, got %d", triggers)
 	}
+
+	// Foreign keys declared on child tables (PRAGMA foreign_keys may be off; list still reports schema).
+	expectFK := map[string]string{
+		"chunks":                  "documents",
+		"symbols":                 "documents",
+		"knowledge_entry_sources": "knowledge_entries",
+		"root_group_members":      "root_groups",
+		"chunk_term_vectors":      "chunks",
+	}
+	for child, parent := range expectFK {
+		rows, err := db.Query(`PRAGMA foreign_key_list(` + child + `)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for rows.Next() {
+			var id, seq int
+			var table, from, to, onUpdate, onDelete, match string
+			if err := rows.Scan(&id, &seq, &table, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+				rows.Close()
+				t.Fatal(err)
+			}
+			if table == parent {
+				found = true
+			}
+		}
+		rows.Close()
+		if !found {
+			t.Fatalf("%s missing FK to %s", child, parent)
+		}
+	}
 }

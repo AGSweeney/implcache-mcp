@@ -15,6 +15,25 @@ import (
 	"implcache-mcp/tools"
 )
 
+func TestResolveMutationFlagsHTTPDefaultOff(t *testing.T) {
+	in, del, out := resolveMutationFlags(true, true, true, false, true, false)
+	if in || del || out {
+		t.Fatalf("HTTP without enable-http-mutations must deny writes: %v %v %v", in, del, out)
+	}
+	in, del, out = resolveMutationFlags(true, true, true, false, true, true)
+	if !in || !del || !out {
+		t.Fatalf("HTTP with enable-http-mutations should allow: %v %v %v", in, del, out)
+	}
+	in, del, out = resolveMutationFlags(true, true, true, true, false, false)
+	if in || del || out {
+		t.Fatalf("readonly must deny: %v %v %v", in, del, out)
+	}
+	in, del, out = resolveMutationFlags(true, true, true, false, false, false)
+	if !in || !del || !out {
+		t.Fatalf("stdio admin defaults should allow: %v %v %v", in, del, out)
+	}
+}
+
 func TestParseToolMode(t *testing.T) {
 	got, err := parseToolMode("")
 	if err != nil || got != tools.ModeAgent {

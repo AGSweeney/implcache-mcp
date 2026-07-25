@@ -126,6 +126,8 @@ Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still ch
 |------|--------|
 | Symbol extraction | Heuristic regex for Go, C/C++/C#, Python, JS/TS, Java. Optional tree-sitter still future work. Unknown languages do not fall through to noisy C regex. |
 | Search model | FTS5 + authority ranking by default. Optional **sparse term-vector** similarity (`-enable-semantic` / `semantic: true`) supplements FTS — not neural embeddings. Pure keyword search can still miss related concepts. |
+| Freshness | Independent of authority. Official docs without version/date → `unknown`. `webSearchRecommended` uses coverage + freshness. |
+| Fingerprints | `contextFingerprint` is over the post-trim response (+ citation content hashes). |
 | Token estimates | `estimatedTokens` is roughly `utf8_runes/4` on the serialized JSON. Use for budgeting only — approximate, not exact. |
 | HTTP | No built-in authentication. Loopback rewrite and `-allow-remote-http` are the safety defaults; remote exposure needs an external auth layer. |
 | Recipes | Quality depends on human review of `vomit` / `saveRecipe` output. Ranking already demotes generated entries vs human-reviewed and project code. |

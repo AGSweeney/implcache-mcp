@@ -1,6 +1,8 @@
 # Data model
 
-Schema version: **4** (`PRAGMA user_version`). Migrations live in `store/migrate.go` and apply forward-only on open. The checked-in `store/schema.sql` mirrors the current schema for documentation; migrations remain the source of truth.
+Schema version: **6** (`PRAGMA user_version`). Migrations live in `store/migrate.go` and apply forward-only on open; each step runs in a transaction with its `user_version` bump (rollback on failure). The checked-in `store/schema.sql` mirrors a fresh fully migrated database; migrations remain the source of truth for upgrades.
+
+Ingest extracts symbols from Go, C/C++/C#, Python, JavaScript/TypeScript, and Java only. Runtime **freshness** (`current` / `version-specific` / `mixed` / `stale` / `unknown`) is computed separately from document **authority**. Implementation-context responses include a **`contextFingerprint`** of the final trimmed payload (see [TOOLS.md](TOOLS.md)).
 
 ## Portable URIs
 

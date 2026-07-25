@@ -85,17 +85,11 @@ func main() {
 		}
 	}
 
-	// HTTP defaults to non-mutating unless explicitly enabled.
-	allowIngestEff := *allowIngest && !*readOnly
-	allowDeleteEff := *allowDelete && !*readOnly
-	allowOutputEff := *allowOutput && !*readOnly
-	if *httpAddr != "" && !*enableHTTPMutations {
-		allowIngestEff = false
-		allowDeleteEff = false
-		allowOutputEff = false
-		if toolMode == tools.ModeAdmin || *enableAdmin {
-			log.Printf("HTTP: mutations disabled (pass -enable-http-mutations to allow ingest/delete/writes)")
-		}
+	allowIngestEff, allowDeleteEff, allowOutputEff := resolveMutationFlags(
+		*allowIngest, *allowDelete, *allowOutput, *readOnly, *httpAddr != "", *enableHTTPMutations,
+	)
+	if *httpAddr != "" && !*enableHTTPMutations && (toolMode == tools.ModeAdmin || *enableAdmin) {
+		log.Printf("HTTP: mutations disabled (pass -enable-http-mutations to allow ingest/delete/writes)")
 	}
 
 	st, err := store.OpenWithOptions(*dbPath, store.OpenOptions{ReadOnly: *readOnly})
@@ -168,6 +162,18 @@ func main() {
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// resolveMutationFlags applies readonly and HTTP mutation defaults.
+// HTTP without -enable-http-mutations clears all mutation permissions.
+func resolveMutationFlags(allowIngest, allowDelete, allowOutput, readOnly, httpMode, enableHTTPMutations bool) (ingest, delete, output bool) {
+	ingest = allowIngest && !readOnly
+	delete = allowDelete && !readOnly
+	output = allowOutput && !readOnly
+	if httpMode && !enableHTTPMutations {
+		return false, false, false
+	}
+	return ingest, delete, output
 }
 
 // parseToolMode accepts agent (default) or admin.
