@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"implcache-mcp/ingest"
 	"implcache-mcp/store"
 )
 
@@ -34,6 +35,7 @@ type Citation struct {
 	Lines     string `json:"lines,omitempty"`
 	Authority string `json:"authority,omitempty"`
 	RootName  string `json:"rootName,omitempty"`
+	Version   string `json:"version,omitempty"`
 }
 
 // ExampleRef is a short cited example.
@@ -55,18 +57,21 @@ type Response struct {
 	RequiredAPIs         []string       `json:"requiredApis,omitempty"`
 	RelevantSymbols      []store.Symbol `json:"relevantSymbols,omitempty"`
 	Includes             []string       `json:"includes,omitempty"`
+	Prerequisites        []string       `json:"prerequisites,omitempty"`
 	Sequence             []string       `json:"sequence,omitempty"`
 	Examples             []ExampleRef   `json:"examples,omitempty"`
 	Constraints          []string       `json:"constraints,omitempty"`
 	Pitfalls             []string       `json:"pitfalls,omitempty"`
 	ProjectConventions   []string       `json:"projectConventions,omitempty"`
 	Citations            []Citation     `json:"citations,omitempty"`
-	Coverage             string         `json:"coverage,omitempty"` // high|medium|low
+	Coverage             string         `json:"coverage,omitempty"`
 	Freshness            string         `json:"freshness,omitempty"`
 	WebSearchRecommended bool           `json:"webSearchRecommended,omitempty"`
 	MissingInformation   []string       `json:"missingInformation,omitempty"`
 	RecommendedFollowUp  []string       `json:"recommendedFollowUp,omitempty"`
 	RootsUsed            []string       `json:"rootsUsed,omitempty"`
+	RecipeReviewStatus   string         `json:"recipeReviewStatus,omitempty"`
+	Version              string         `json:"version,omitempty"`
 	ContextFingerprint   string         `json:"contextFingerprint,omitempty"`
 	EstimatedTokens      int            `json:"estimatedTokens,omitempty"`
 	Chars                int            `json:"chars,omitempty"`
@@ -106,22 +111,69 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 		Language:          req.Language,
 		RootsUsed:         roots,
 		Freshness:         "unknown",
-		TokenEstimateNote: "estimated as utf8_runes/4",
+		TokenEstimateNote: "estimated from serialized JSON payload (utf8_runes/4)",
 	}
 
-	// 1) Recipes first (curated > generated).
-	recipes, _ := st.SearchKnowledgeEntries(ctx, task, req.Technology, req.Language, roots, 3)
+	sequenceGrounded := false
+	var versions []string
+	archivedHints := 0
+
+	// 1) Recipes — human-reviewed first; populate structured fields.
+	recipes, _ := st.SearchKnowledgeEntries(ctx, task, req.Technology, req.Language, roots, 5)
 	for _, r := range recipes {
-		if r.ReviewStatus == store.ReviewHumanReviewed || len(resp.Sequence) == 0 {
-			resp.Summary = firstSentence(r.Subject + ". " + stripMD(r.BodyMarkdown))
+		rf := parseRecipe(r)
+		prefer := r.ReviewStatus == store.ReviewHumanReviewed || resp.RecipeReviewStatus == ""
+		if !prefer {
+			continue
+		}
+		if resp.RecipeReviewStatus == "" || r.ReviewStatus == store.ReviewHumanReviewed {
+			resp.RecipeReviewStatus = r.ReviewStatus
+			if rf.Summary != "" {
+				resp.Summary = rf.Summary
+			}
+			if rf.Version != "" {
+				resp.Version = rf.Version
+				versions = append(versions, rf.Version)
+			}
+			for _, api := range rf.APIs {
+				resp.RequiredAPIs = appendUnique(resp.RequiredAPIs, api)
+			}
+			for _, inc := range rf.Includes {
+				resp.Includes = appendUnique(resp.Includes, inc)
+			}
+			for _, p := range rf.Prereqs {
+				resp.Prerequisites = appendUnique(resp.Prerequisites, p)
+			}
+			for _, c := range rf.Constraints {
+				resp.Constraints = appendUnique(resp.Constraints, c)
+			}
+			for _, p := range rf.Pitfalls {
+				resp.Pitfalls = appendUnique(resp.Pitfalls, p)
+			}
+			if rf.HasSequence && len(rf.Sequence) > 0 {
+				resp.Sequence = append([]string{}, rf.Sequence...)
+				sequenceGrounded = true
+			}
+			for _, ex := range rf.Examples {
+				if len(resp.Examples) >= budget.MaxExamples {
+					break
+				}
+				resp.Examples = append(resp.Examples, ExampleRef{
+					URI: r.URI, Title: r.Subject, Excerpt: ex, Authority: r.Authority,
+				})
+			}
 			resp.Citations = append(resp.Citations, Citation{
-				URI: r.URI, Title: r.Subject, Authority: r.Authority, RootName: r.RootName,
+				URI: r.URI, Title: r.Subject, Authority: r.Authority, RootName: r.RootName, Version: r.Version,
 			})
+			if r.ReviewStatus == store.ReviewHumanReviewed {
+				break
+			}
 		}
 	}
 
-	// 2) Symbol hits from task tokens that look like identifiers.
-	for _, tok := range symbolTokens(task) {
+	// 2) Symbol hits from explicit identifier-like task tokens.
+	taskToks := symbolTokens(task)
+	for _, tok := range taskToks {
 		syms, err := st.FindSymbols(ctx, tok, roots, 5)
 		if err != nil {
 			continue
@@ -140,7 +192,7 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 		}
 	}
 
-	// 3) Budgeted FTS for examples / constraints / pitfalls.
+	// 3) Budgeted FTS for examples / constraints / pitfalls / grounded workflow text.
 	hits, err := st.SearchOpts(ctx, store.SearchOptions{
 		Query:     task,
 		Limit:     budget.MaxResults * 3,
@@ -151,24 +203,47 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 		return nil, err
 	}
 
-	totalChars := 0
-	addChars := func(s string) bool {
-		totalChars += len([]rune(s))
-		return store.EstimateTokens(strings.Repeat("x", totalChars)) <= budget.MaxTokensEstimate &&
-			totalChars <= budget.MaxTotalChars
+	// 3b) Natural-language tasks: harvest symbols from retrieved docs when few ID cues.
+	if len(taskToks) < 2 || len(resp.RelevantSymbols) == 0 {
+		for _, sym := range harvestSymbolsFromHits(ctx, st, roots, hits, task, 8) {
+			already := false
+			for _, existing := range resp.RelevantSymbols {
+				if existing.ID == sym.ID {
+					already = true
+					break
+				}
+			}
+			if already {
+				continue
+			}
+			resp.RelevantSymbols = append(resp.RelevantSymbols, sym)
+			resp.RequiredAPIs = appendUnique(resp.RequiredAPIs, sym.Name)
+			resp.Citations = append(resp.Citations, Citation{
+				URI: sym.URI, Title: sym.Title, Section: sym.Kind,
+				Lines:     fmt.Sprintf("%d-%d", sym.StartLine, sym.EndLine),
+				Authority: sym.Authority, RootName: sym.RootName,
+			})
+		}
 	}
 
 	for _, h := range hits {
 		ex := store.ClipExcerpt(cleanupSnippet(h.Snippet), budget.MaxExcerptChars)
-		if !addChars(ex) {
-			break
+		ver := h.ProductVersion
+		if ver == "" {
+			ver = ingest.InferProductVersion(h.RootName, h.Path, h.Heading+"\n"+h.Snippet)
 		}
 		cit := Citation{
 			URI: h.URI, Title: h.Title, Section: h.Heading,
 			Lines:     lineRange(h.StartLine, h.EndLine),
-			Authority: h.Authority, RootName: h.RootName,
+			Authority: h.Authority, RootName: h.RootName, Version: ver,
 		}
 		resp.Citations = append(resp.Citations, cit)
+		if ver != "" {
+			versions = append(versions, ver)
+		}
+		if h.ArchivedHint() {
+			archivedHints++
+		}
 
 		lower := strings.ToLower(h.Heading + " " + h.Snippet)
 		switch {
@@ -186,10 +261,18 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 			resp.ProjectConventions = appendUnique(resp.ProjectConventions, store.ClipExcerpt(cleanupSnippet(h.Snippet), 160))
 		}
 
+		// Grounded sequence from ordered workflow sections in retrieved docs.
+		if !sequenceGrounded && containsAny(lower, "sequence", "steps", "initialization", "init order", "call order") {
+			if items := listItems(cleanupSnippet(h.Snippet)); len(items) >= 2 {
+				resp.Sequence = items
+				sequenceGrounded = true
+			}
+		}
+
 		for _, inc := range extractIncludes(h.Snippet) {
 			resp.Includes = appendUnique(resp.Includes, inc)
 		}
-		for _, api := range extractDemoAPIs(h.Snippet) {
+		for _, api := range extractAPILike(h.Snippet) {
 			resp.RequiredAPIs = appendUnique(resp.RequiredAPIs, api)
 		}
 	}
@@ -197,42 +280,38 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 	if resp.Summary == "" {
 		resp.Summary = fmt.Sprintf("Implementation context for %q from roots %s.", task, strings.Join(roots, ", "))
 	}
-	if len(resp.Sequence) == 0 && len(resp.RequiredAPIs) > 0 {
-		for _, api := range resp.RequiredAPIs {
-			if len(resp.Sequence) >= 6 {
-				break
-			}
-			resp.Sequence = append(resp.Sequence, "Use `"+api+"`")
+	if !sequenceGrounded {
+		resp.Sequence = nil
+		if len(resp.RequiredAPIs) > 0 {
+			resp.MissingInformation = append(resp.MissingInformation,
+				"Required APIs found, but no source-grounded call sequence was located.")
 		}
 	}
 
+	resp.Citations = dedupeCitations(resp.Citations)
+	if resp.Summary != "" && (len(resp.RequiredAPIs) > 0 || len(resp.Examples) > 0) {
+		resp.Summary = firstSentence(resp.Summary)
+	}
+
 	resp.Coverage = coverageOf(resp)
-	resp.WebSearchRecommended = resp.Coverage == "low"
+	resp.Freshness = freshnessFromSources(resp.Citations, versions, archivedHints)
+	resp.WebSearchRecommended = webSearchFrom(resp.Coverage, resp.Freshness)
 	if resp.Coverage == "low" {
-		resp.MissingInformation = append(resp.MissingInformation, "Few grounded local hits; verify against current vendor docs if versions matter.")
+		resp.MissingInformation = appendUnique(resp.MissingInformation, "Few grounded local hits; verify against current vendor docs if versions matter.")
 	}
 	if len(resp.Examples) == 0 {
-		resp.RecommendedFollowUp = append(resp.RecommendedFollowUp, "find_examples or search_knowledge for a worked sample")
+		resp.RecommendedFollowUp = append(resp.RecommendedFollowUp, "search_knowledge for a worked sample")
 	}
 	if len(resp.RelevantSymbols) == 0 && len(resp.RequiredAPIs) > 0 {
 		resp.RecommendedFollowUp = append(resp.RecommendedFollowUp, "find_symbol on a required API for signature/lineage")
 	}
 	resp.RecommendedFollowUp = append(resp.RecommendedFollowUp, "get_document on a citation URI only if deeper context is required")
 
-	// Deduplicate citations
-	resp.Citations = dedupeCitations(resp.Citations)
-	// Prefer implementation evidence ordering: APIs → examples → sequence → pitfalls → summary last.
-	if resp.Summary != "" && (len(resp.RequiredAPIs) > 0 || len(resp.Examples) > 0) {
-		// Keep summary short when code-level evidence exists.
-		resp.Summary = firstSentence(resp.Summary)
-	}
-	body := resp.Summary + strings.Join(resp.RequiredAPIs, " ") + strings.Join(resp.Sequence, " ")
-	for _, e := range resp.Examples {
-		body += e.Excerpt
-	}
-	resp.Chars = len([]rune(body))
-	resp.EstimatedTokens = store.EstimateTokens(body)
 	resp.ContextFingerprint = fingerprintResponse(ctx, st, req, resp)
+	trimToBudget(resp, budget.MaxTokensEstimate)
+	chars, tokens, _ := serializeTokens(resp)
+	resp.Chars = chars
+	resp.EstimatedTokens = tokens
 	return resp, nil
 }
 
@@ -325,42 +404,21 @@ func symbolTokens(task string) []string {
 }
 
 func looksIdent(s string) bool {
-	if len(s) < 3 {
-		return false
-	}
-	return strings.ContainsAny(s, "_:.#<>[]") || (hasUpper(s) && hasLower(s))
-}
-
-func hasUpper(s string) bool {
-	for _, r := range s {
-		if r >= 'A' && r <= 'Z' {
-			return true
-		}
-	}
-	return false
-}
-func hasLower(s string) bool {
-	for _, r := range s {
-		if r >= 'a' && r <= 'z' {
-			return true
-		}
-	}
-	return false
+	return ingest.LooksLikeAPIToken(s)
 }
 
 func extractIncludes(s string) []string {
 	var out []string
 	for _, line := range strings.Split(s, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "#include") {
+		if strings.HasPrefix(line, "#include") || strings.HasPrefix(line, "import ") {
 			out = append(out, line)
 		}
 	}
 	return out
 }
 
-func extractDemoAPIs(s string) []string {
-	// Generic identifier harvest for CamelCase / qualified API-looking tokens in prose.
+func extractAPILike(s string) []string {
 	var out []string
 	for _, f := range strings.Fields(s) {
 		f = strings.Trim(f, "`,.;()<>\"'")
@@ -429,6 +487,9 @@ func coverageOf(r *Response) string {
 		score++
 	}
 	if len(r.Constraints)+len(r.Pitfalls) > 0 {
+		score++
+	}
+	if len(r.Sequence) > 0 {
 		score++
 	}
 	switch {

@@ -1,6 +1,6 @@
 # Data model
 
-Schema version: **3** (`PRAGMA user_version`). Migrations live in `store/migrate.go` and apply forward-only on open.
+Schema version: **4** (`PRAGMA user_version`). Migrations live in `store/migrate.go` and apply forward-only on open. The checked-in `store/schema.sql` mirrors the current schema for documentation; migrations remain the source of truth.
 
 ## Portable URIs
 
@@ -40,7 +40,7 @@ One row per ingested file (or logical document).
 | `mtime`, `hash` | Change detection / skip unchanged |
 | `authority` | Ranking class (see below) |
 | `technology`, `language` | Optional tags |
-| `product_version` | Optional version string |
+| `product_version` | Optional version string (also inferred at ingest from path/body, e.g. `docs/v3.2/…`, `Version: 1.0`) |
 | `deprecated`, `archived` | Flags (0/1) |
 | `created_at`, `updated_at` | Unix times |
 

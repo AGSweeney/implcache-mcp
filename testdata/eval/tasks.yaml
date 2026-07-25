@@ -1,65 +1,100 @@
 tasks:
   - id: register-plugin-command
-    task: Add a custom command to an example desktop plugin.
+    task: Add a custom command using RegisterCommand and AddMenuItem.
     technology: Example Plugin SDK
     language: cpp
-    preferred_roots:
-      - example-plugin-app
-      - example-plugin-sdk
-    expected_symbols:
-      - RegisterCommand
-      - AddMenuItem
-    expected_sources:
-      - project://example-plugin-app/src/commands.cpp
-    forbidden_symbols:
-      - AddCommandAutomatically
+    preferred_roots: [example-plugin-app, example-plugin-sdk]
+    expected_symbols: [RegisterCommand, AddMenuItem]
+    expected_sources: [project://example-plugin-app/src/commands.cpp]
+    forbidden_symbols: [InventedAutomaticCommand]
     max_context_tokens: 2200
 
   - id: reconnect-network-client
-    task: Add reconnect and backoff handling to a network client.
+    task: Add reconnect and RetryPolicy backoff using Connect and Disconnect.
     technology: Example Networking SDK
     language: cpp
-    preferred_roots:
-      - example-network-service
-      - example-network-sdk
-    expected_symbols:
-      - Connect
-      - Disconnect
-      - RetryPolicy
+    preferred_roots: [example-network-service, example-network-sdk]
+    expected_symbols: [Connect, Disconnect, RetryPolicy]
+    forbidden_symbols: [FakeAutoReconnect]
     max_context_tokens: 2000
 
   - id: add-database-migration
-    task: Add an atomic SQLite schema migration.
+    task: Add an atomic SQLite schema migration with PRAGMA user_version and BeginTx.
     technology: SQLite
     language: go
-    preferred_roots:
-      - example-database-tool
-      - sqlite-reference
-    expected_symbols:
-      - PRAGMA user_version
-      - BeginTx
+    preferred_roots: [example-database-tool, sqlite-reference]
+    expected_symbols: [user_version, BeginTx]
     max_context_tokens: 1800
 
   - id: add-device-driver
-    task: Add an SPI GPIO-expander driver to an embedded application.
+    task: Add an SPI GPIO-expander driver using SpiTransfer and ConfigurePin.
     technology: Example Embedded SDK
     language: cpp
-    preferred_roots:
-      - demo-embedded-project
-      - example-device-sdk
-    expected_symbols:
-      - SpiTransfer
-      - ConfigurePin
+    preferred_roots: [demo-embedded-project, example-device-sdk]
+    expected_symbols: [SpiTransfer, ConfigurePin]
     max_context_tokens: 2400
 
   - id: add-mcp-tool
-    task: Add a new MCP tool to a Go server.
+    task: Add a new MCP tool using AddTool and CallToolResult.
     technology: Model Context Protocol
     language: go
-    preferred_roots:
-      - example-mcp-server
-      - mcp-sdk-docs
-    expected_symbols:
-      - AddTool
-      - CallToolResult
+    preferred_roots: [example-mcp-server, mcp-sdk-docs]
+    expected_symbols: [AddTool, CallToolResult]
+    max_context_tokens: 2000
+
+  - id: init-device-session
+    task: Initialize a device session with OpenSession and CloseSession.
+    technology: Example Device SDK
+    language: cpp
+    preferred_roots: [example-device-sdk, example-control-app]
+    expected_symbols: [OpenSession, CloseSession]
+    max_context_tokens: 2000
+
+  - id: configure-logging
+    task: Configure structured logging with SetLogLevel and AttachSink.
+    technology: Example Logging SDK
+    language: go
+    preferred_roots: [example-logging-sdk, example-control-app]
+    expected_symbols: [SetLogLevel, AttachSink]
+    max_context_tokens: 1800
+
+  - id: validate-config
+    task: Validate application config using LoadConfig and ValidateSchema.
+    technology: Example Config SDK
+    language: go
+    preferred_roots: [example-config-sdk]
+    expected_symbols: [LoadConfig, ValidateSchema]
+    forbidden_symbols: [SkipValidationAlways]
+    max_context_tokens: 1800
+
+  - id: start-worker-pool
+    task: Start a worker pool with SubmitJob and ShutdownPool.
+    technology: Example Concurrency SDK
+    language: cpp
+    preferred_roots: [example-control-app, example-concurrency-sdk]
+    expected_symbols: [SubmitJob, ShutdownPool]
+    max_context_tokens: 2000
+
+  - id: bind-http-route
+    task: Bind an HTTP route with HandlePath and WriteJSON.
+    technology: Example HTTP SDK
+    language: go
+    preferred_roots: [example-http-service, example-http-sdk]
+    expected_symbols: [HandlePath, WriteJSON]
+    max_context_tokens: 2000
+
+  - id: persist-cache-entry
+    task: Persist a cache entry with PutEntry and GetEntry.
+    technology: Example Cache SDK
+    language: cpp
+    preferred_roots: [example-cache-sdk, example-control-app]
+    expected_symbols: [PutEntry, GetEntry]
+    max_context_tokens: 1800
+
+  - id: parse-protocol-frame
+    task: Parse a protocol frame using DecodeFrame and EncodeFrame.
+    technology: Example Protocol SDK
+    language: cpp
+    preferred_roots: [example-protocol-sdk]
+    expected_symbols: [DecodeFrame, EncodeFrame]
     max_context_tokens: 2000

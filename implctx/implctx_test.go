@@ -64,7 +64,14 @@ func TestGetImplementationContextBudgeted(t *testing.T) {
 	if res.EstimatedTokens <= 0 || res.EstimatedTokens > 2500 {
 		t.Fatalf("token estimate odd: %d", res.EstimatedTokens)
 	}
-	if res.WebSearchRecommended && res.Coverage == "high" {
-		t.Fatal("high coverage should not recommend web search")
+	// Unknown freshness may still recommend verification even with good coverage.
+	if res.Freshness == "" {
+		t.Fatal("expected freshness")
+	}
+	// Fabricated "Use `API`" sequences are no longer allowed.
+	for _, step := range res.Sequence {
+		if strings.HasPrefix(step, "Use `") {
+			t.Fatalf("ungrounded sequence step: %q", step)
+		}
 	}
 }

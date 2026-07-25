@@ -154,17 +154,18 @@ func ingestProjectFile(ctx context.Context, st *store.Store, absRoot, rootName, 
 
 	syms := ExtractSymbols(path, content)
 	written, err := st.UpsertDocument(ctx, store.UpsertInput{
-		URI:        uri,
-		Title:      title,
-		SourceType: sourceType,
-		Path:       rel,
-		RootName:   rootName,
-		Authority:  InferAuthority(rootName, rel),
-		Language:   languageFromPath(path),
-		Mtime:      info.ModTime().Unix(),
-		Hash:       hash,
-		Chunks:     chunks,
-		Symbols:    syms,
+		URI:            uri,
+		Title:          title,
+		SourceType:     sourceType,
+		Path:           rel,
+		RootName:       rootName,
+		Authority:      InferAuthority(rootName, rel),
+		Language:       languageFromPath(path),
+		ProductVersion: InferProductVersion(rootName, rel, content),
+		Mtime:          info.ModTime().Unix(),
+		Hash:           hash,
+		Chunks:         chunks,
+		Symbols:        syms,
 	})
 	if err != nil {
 		return err

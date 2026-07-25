@@ -11,7 +11,35 @@ go build -o ingestcli ./cmd/ingestcli
 
 Module: `implcache-mcp` (Go 1.25+). SQLite is pure Go (`modernc.org/sqlite`); **no CGO** required for build/test.
 
-`go test -race` needs CGO and is optional; skip it on no-CGO hosts.
+### Race detector
+
+`go test -race` requires a **gcc-compatible** C toolchain (`CGO_ENABLED=1` + `gcc`/`clang`). MSVC `cl.exe` alone is not enough. The project still ships:
+
+- `store.TestConcurrentReads` — concurrent reader smoke test without `-race`
+- normal `go test ./...` as the default CI gate
+
+`scripts/check.ps1` auto-discovers common Windows installs (PATH, Qt MinGW, MSYS2). Manual run:
+
+```powershell
+# PowerShell (example: Qt MinGW)
+$env:CGO_ENABLED = "1"
+$env:CC = "C:\Qt\Tools\mingw1310_64\bin\gcc.exe"
+$env:Path = "C:\Qt\Tools\mingw1310_64\bin;$env:Path"
+go test -race ./...
+```
+
+```bash
+# bash
+CGO_ENABLED=1 go test -race ./...
+```
+
+### Large-corpus checks
+
+```bash
+go test ./store -run TestLargeCorpusRootScopedPlan -count=1
+go test ./store -bench=Benchmark -benchtime=200ms
+go run ./cmd/evaltasks -seed-demo
+```
 
 ## Run (stdio — Cursor)
 

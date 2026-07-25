@@ -80,20 +80,9 @@ func main() {
 		defer st.Close()
 	}
 
-	cases := defaultTasks()
-	if p := strings.TrimSpace(*tasksPath); p != "" {
-		data, err := os.ReadFile(p)
-		if err != nil {
-			fatal(err)
-		}
-		var tf taskFile
-		if err := yaml.Unmarshal(data, &tf); err != nil {
-			fatal(err)
-		}
-		if len(tf.Tasks) == 0 {
-			fatal(fmt.Errorf("no tasks in %s", p))
-		}
-		cases = tf.Tasks
+	cases, err := loadTasks(*tasksPath)
+	if err != nil {
+		fatal(err)
 	}
 
 	type row struct {
@@ -189,46 +178,30 @@ func main() {
 	_ = enc.Encode(summary)
 }
 
-func defaultTasks() []taskCase {
-	return []taskCase{
-		{
-			ID: "register-plugin-command", Task: "Add a custom command using RegisterCommand and AddMenuItem",
-			Technology: "Example Plugin SDK", Language: "cpp",
-			PreferredRoots:   []string{"example-plugin-app", "example-plugin-sdk"},
-			ExpectedSymbols:  []string{"RegisterCommand", "AddMenuItem"},
-			ExpectedSources:  []string{"project://example-plugin-app/src/commands.cpp"},
-			ForbiddenSymbols: []string{"AddCommandAutomatically"},
-			MaxContextTokens: 2200,
-		},
-		{
-			ID: "reconnect-network-client", Task: "Add reconnect and RetryPolicy backoff to a network client Connect Disconnect",
-			Technology: "Example Networking SDK", Language: "cpp",
-			PreferredRoots:   []string{"example-network-service", "example-network-sdk"},
-			ExpectedSymbols:  []string{"Connect", "Disconnect", "RetryPolicy"},
-			MaxContextTokens: 2000,
-		},
-		{
-			ID: "add-database-migration", Task: "Add an atomic SQLite schema migration with PRAGMA user_version BeginTx",
-			Technology: "SQLite", Language: "go",
-			PreferredRoots:   []string{"example-database-tool", "sqlite-reference"},
-			ExpectedSymbols:  []string{"user_version", "BeginTx"},
-			MaxContextTokens: 1800,
-		},
-		{
-			ID: "add-device-driver", Task: "Add an SPI GPIO-expander driver using SpiTransfer and ConfigurePin",
-			Technology: "Example Embedded SDK", Language: "cpp",
-			PreferredRoots:   []string{"demo-embedded-project", "example-device-sdk"},
-			ExpectedSymbols:  []string{"SpiTransfer", "ConfigurePin"},
-			MaxContextTokens: 2400,
-		},
-		{
-			ID: "add-mcp-tool", Task: "Add a new MCP tool using AddTool and CallToolResult",
-			Technology: "Model Context Protocol", Language: "go",
-			PreferredRoots:   []string{"example-mcp-server", "mcp-sdk-docs"},
-			ExpectedSymbols:  []string{"AddTool", "CallToolResult"},
-			MaxContextTokens: 2000,
-		},
+func loadTasks(path string) ([]taskCase, error) {
+	candidates := []string{}
+	if strings.TrimSpace(path) != "" {
+		candidates = append(candidates, path)
 	}
+	candidates = append(candidates,
+		filepath.Join("testdata", "eval", "tasks.yaml"),
+		filepath.Join("..", "..", "testdata", "eval", "tasks.yaml"),
+	)
+	for _, p := range candidates {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var tf taskFile
+		if err := yaml.Unmarshal(data, &tf); err != nil {
+			return nil, err
+		}
+		if len(tf.Tasks) == 0 {
+			return nil, fmt.Errorf("no tasks in %s", p)
+		}
+		return tf.Tasks, nil
+	}
+	return nil, fmt.Errorf("task file not found (pass -tasks or use testdata/eval/tasks.yaml)")
 }
 
 func seedDemoCorpus(ctx context.Context, st *store.Store) error {
@@ -312,6 +285,24 @@ func seedDemoCorpus(ctx context.Context, st *store.Store) error {
 				{Name: "CallToolResult", Kind: "type", Language: "go"},
 			},
 		},
+		docSyms("example-device-sdk", "session.h", "OpenSession CloseSession device session",
+			[]store.SymbolInput{{Name: "OpenSession", Kind: "function"}, {Name: "CloseSession", Kind: "function"}}),
+		docSyms("example-control-app", "app.cpp", "control app OpenSession logging workers",
+			[]store.SymbolInput{{Name: "OpenSession", Kind: "function"}}),
+		docSyms("example-logging-sdk", "log.go", "SetLogLevel AttachSink structured logging",
+			[]store.SymbolInput{{Name: "SetLogLevel", Kind: "function"}, {Name: "AttachSink", Kind: "function"}}),
+		docSyms("example-config-sdk", "config.go", "LoadConfig ValidateSchema application config",
+			[]store.SymbolInput{{Name: "LoadConfig", Kind: "function"}, {Name: "ValidateSchema", Kind: "function"}}),
+		docSyms("example-concurrency-sdk", "pool.h", "SubmitJob ShutdownPool worker pool",
+			[]store.SymbolInput{{Name: "SubmitJob", Kind: "function"}, {Name: "ShutdownPool", Kind: "function"}}),
+		docSyms("example-http-sdk", "http.go", "HandlePath WriteJSON bind route",
+			[]store.SymbolInput{{Name: "HandlePath", Kind: "function"}, {Name: "WriteJSON", Kind: "function"}}),
+		docSyms("example-http-service", "routes.go", "service HandlePath WriteJSON",
+			[]store.SymbolInput{{Name: "HandlePath", Kind: "function"}}),
+		docSyms("example-cache-sdk", "cache.h", "PutEntry GetEntry persist cache",
+			[]store.SymbolInput{{Name: "PutEntry", Kind: "function"}, {Name: "GetEntry", Kind: "function"}}),
+		docSyms("example-protocol-sdk", "frame.h", "DecodeFrame EncodeFrame protocol frame",
+			[]store.SymbolInput{{Name: "DecodeFrame", Kind: "function"}, {Name: "EncodeFrame", Kind: "function"}}),
 	}
 	for _, d := range docs {
 		if _, err := st.UpsertDocument(ctx, d); err != nil {
@@ -323,6 +314,23 @@ func seedDemoCorpus(ctx context.Context, st *store.Store) error {
 
 func chunkBody(body string) []store.Chunk {
 	return []store.Chunk{{Heading: "Overview", Body: body, StartLine: 1, EndLine: 20}}
+}
+
+func docSyms(root, path, body string, syms []store.SymbolInput) store.UpsertInput {
+	for i := range syms {
+		if syms[i].Language == "" {
+			syms[i].Language = "cpp"
+		}
+		if syms[i].StartLine == 0 {
+			syms[i].StartLine = i + 1
+		}
+	}
+	return store.UpsertInput{
+		URI: "project://" + root + "/" + path, Title: path,
+		SourceType: store.SourceSource, Path: path, RootName: root,
+		Authority: store.AuthorityOfficialDocs, Hash: root + "-" + path,
+		Chunks: chunkBody(body), Symbols: syms,
+	}
 }
 
 func symbolIn(have, want []string, topN int) bool {

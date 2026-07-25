@@ -21,6 +21,7 @@ const (
 	MatchPrefix           = "prefix"
 	MatchSuffix           = "suffix"
 	MatchToken            = "token"
+	MatchFuzzy            = "fuzzy"
 )
 
 // Symbol is a stored code symbol.
@@ -197,7 +198,95 @@ func (s *Store) FindSymbols(ctx context.Context, name string, roots []string, li
 			}
 		}
 	}
+	if len(out) < limit && len(unqual) >= 4 {
+		fuzzy, err := s.fuzzySymbols(ctx, unqual, roots, limit*3, seen)
+		if err != nil {
+			return nil, err
+		}
+		for _, sym := range fuzzy {
+			if _, ok := seen[sym.ID]; ok {
+				continue
+			}
+			seen[sym.ID] = struct{}{}
+			out = append(out, sym)
+			if len(out) >= limit {
+				break
+			}
+		}
+	}
 	return out, nil
+}
+
+func (s *Store) fuzzySymbols(ctx context.Context, unqual string, roots []string, limit int, seen map[int64]struct{}) ([]Symbol, error) {
+	prefix := unqual
+	if len(prefix) > 3 {
+		prefix = prefix[:3]
+	}
+	where := `s.name_norm LIKE ? ESCAPE '\'`
+	arg := escapeLike(prefix) + `%`
+	cands, err := s.querySymbols(ctx, where, arg, roots, 50, MatchToken, 0.4)
+	if err != nil {
+		return nil, err
+	}
+	var out []Symbol
+	for _, sym := range cands {
+		if _, ok := seen[sym.ID]; ok {
+			continue
+		}
+		d := levenshtein(unqual, NormalizeSymbol(sym.UnqualifiedName))
+		if d == 0 || d > 2 {
+			continue
+		}
+		sym.MatchType = MatchFuzzy
+		sym.Confidence = 0.45 - 0.1*float64(d)
+		if sym.Confidence < 0.25 {
+			sym.Confidence = 0.25
+		}
+		out = append(out, sym)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func levenshtein(a, b string) int {
+	if a == b {
+		return 0
+	}
+	ra, rb := []rune(a), []rune(b)
+	if len(ra) == 0 {
+		return len(rb)
+	}
+	if len(rb) == 0 {
+		return len(ra)
+	}
+	prev := make([]int, len(rb)+1)
+	cur := make([]int, len(rb)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ra); i++ {
+		cur[0] = i
+		for j := 1; j <= len(rb); j++ {
+			cost := 1
+			if ra[i-1] == rb[j-1] {
+				cost = 0
+			}
+			del := prev[j] + 1
+			ins := cur[j-1] + 1
+			sub := prev[j-1] + cost
+			cur[j] = del
+			if ins < cur[j] {
+				cur[j] = ins
+			}
+			if sub < cur[j] {
+				cur[j] = sub
+			}
+		}
+		prev, cur = cur, prev
+	}
+	return prev[len(rb)]
 }
 
 func (s *Store) querySymbols(ctx context.Context, where, arg string, roots []string, limit int, matchType string, conf float64) ([]Symbol, error) {
@@ -236,7 +325,16 @@ func (s *Store) querySymbols(ctx context.Context, where, arg string, roots []str
 		}
 		q += ` AND s.root_name IN (` + strings.Join(ph, ",") + `)`
 	}
-	q += ` ORDER BY CASE d.authority
+	q += ` ORDER BY CASE s.kind
+		WHEN 'function' THEN 0
+		WHEN 'method' THEN 1
+		WHEN 'declaration' THEN 2
+		WHEN 'type' THEN 3
+		WHEN 'macro' THEN 3
+		WHEN 'constant' THEN 4
+		WHEN 'call' THEN 8
+		ELSE 5 END,
+		CASE d.authority
 		WHEN 'current_project' THEN 0
 		WHEN 'related_internal_project' THEN 1
 		WHEN 'curated_internal_recipe' THEN 2
@@ -274,4 +372,64 @@ func (s *Store) querySymbols(ctx context.Context, where, arg string, roots []str
 func BasenamePath(p string) string {
 	p = strings.ReplaceAll(p, `\`, `/`)
 	return filepath.Base(p)
+}
+
+// ListSymbolsByDocumentIDs returns symbols for the given documents, definitions first.
+func (s *Store) ListSymbolsByDocumentIDs(ctx context.Context, docIDs []int64, limit int) ([]Symbol, error) {
+	if len(docIDs) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 40
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	ph := make([]string, len(docIDs))
+	args := make([]any, 0, len(docIDs)+1)
+	for i, id := range docIDs {
+		ph[i] = "?"
+		args = append(args, id)
+	}
+	args = append(args, limit)
+	q := `
+		SELECT s.id, s.document_id, s.root_name, s.name, COALESCE(s.qualified_name, ''),
+		       COALESCE(s.unqualified_name, ''), s.name_norm, s.kind, s.language,
+		       COALESCE(s.namespace, ''), s.signature, COALESCE(s.signature_norm, ''),
+		       s.start_line, s.end_line,
+		       d.uri, d.title, COALESCE(d.authority, 'unknown')
+		FROM symbols s
+		JOIN documents d ON d.id = s.document_id
+		WHERE s.document_id IN (` + strings.Join(ph, ",") + `)
+		ORDER BY CASE s.kind
+			WHEN 'function' THEN 0 WHEN 'method' THEN 1 WHEN 'declaration' THEN 2
+			WHEN 'type' THEN 3 WHEN 'macro' THEN 3 WHEN 'constant' THEN 4
+			WHEN 'call' THEN 8 ELSE 5 END,
+			CASE d.authority
+			WHEN 'current_project' THEN 0 WHEN 'related_internal_project' THEN 1
+			WHEN 'curated_internal_recipe' THEN 2 WHEN 'official_example' THEN 3
+			WHEN 'official_documentation' THEN 4 ELSE 9 END,
+			s.start_line
+		LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Symbol
+	for rows.Next() {
+		var sym Symbol
+		if err := rows.Scan(
+			&sym.ID, &sym.DocumentID, &sym.RootName, &sym.Name, &sym.QualifiedName,
+			&sym.UnqualifiedName, &sym.NameNorm, &sym.Kind, &sym.Language,
+			&sym.Namespace, &sym.Signature, &sym.SignatureNorm,
+			&sym.StartLine, &sym.EndLine, &sym.URI, &sym.Title, &sym.Authority,
+		); err != nil {
+			return nil, err
+		}
+		sym.MatchType = MatchToken
+		sym.Confidence = 0.6
+		out = append(out, sym)
+	}
+	return out, rows.Err()
 }

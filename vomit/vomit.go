@@ -530,10 +530,10 @@ func renderPlaybook(subject string, docs []expandedDoc, hits []store.SearchHit) 
 			b.WriteString("```\n\n")
 		}
 		b.WriteString("### Typical project pieces\n\n")
-		b.WriteString("- Application entry: `RegisterHandler` (example-device-sdk) or plugin-sdk session commands\n")
-		b.WriteString("- Message file under `text/usascii/` referenced by menu APIs\n")
-		b.WriteString("- Registry file (`plugin.dat` / `app.registry`) with `EXEC_FILE`, `TEXT_DIR`, `STARTUP dll`\n")
-		b.WriteString("- Build against example-device-sdk or example-plugin-sdk libs for your host\n\n")
+		b.WriteString("- Application or plugin entrypoint from the cited samples\n")
+		b.WriteString("- Headers / imports listed above\n")
+		b.WriteString("- Host registration / startup config required by the SDK\n")
+		b.WriteString("- Link against the matching SDK libraries for your host\n\n")
 	}
 
 	// 3. Call sequence / workflow
@@ -733,44 +733,17 @@ func min(a, b int) int {
 }
 
 func extractAPIs(docs []expandedDoc, hits []store.SearchHit, subject string, limit int) []string {
-	re := regexp.MustCompile(`\b((?:RegisterHandler|RegisterCommand|AddMenuItem|SpiTransfer|RetryPolicy|Client\.Connect)[A-Za-z0-9_]*)\s*\(`)
-	sub := strings.ToLower(subject)
-	menuSubject := strings.Contains(sub, "menubar") || strings.Contains(sub, "pushbutton") ||
-		strings.Contains(sub, "registerhandler") || strings.Contains(sub, "addmenuitem") ||
-		strings.Contains(sub, "menu")
-	core := map[string]int{
-		"AddMenuItem":     50,
-		"RegisterCommand": 45,
-		"RegisterHandler": 40,
-		"SpiTransfer":     30,
-		"RetryPolicy":     20,
-		"Client.Connect":  25,
-	}
-	// Preferred menubar init order when those APIs appear.
-	preferred := []string{
-		"RegisterHandler",
-		"RegisterCommand",
-		"AddMenuItem",
-		"Client.Connect",
-		"SpiTransfer",
-		"RetryPolicy",
-	}
+	// General API-like tokens: PascalCase, qualified, and member calls — no hard-coded allow-list.
+	re := regexp.MustCompile(`\b((?:[A-Za-z_][\w]*::)?[A-Z][A-Za-z0-9]+(?:\.[A-Z][A-Za-z0-9]+)?)\s*\(`)
 	counts := map[string]int{}
 	add := func(s string, weight int) {
 		for _, m := range re.FindAllStringSubmatch(s, -1) {
 			name := m[1]
 			lower := strings.ToLower(name)
-			if apiNoise(lower, menuSubject) {
+			if apiNoise(lower, false) {
 				continue
 			}
-			w := weight
-			if strings.Contains(lower, "mfg") || strings.Contains(lower, "mold") || strings.Contains(lower, "fem") {
-				w = 1
-			}
-			counts[name] += w
-			if bonus, ok := core[name]; ok {
-				counts[name] += bonus
-			}
+			counts[name] += weight
 		}
 	}
 	for _, h := range hits {
@@ -782,7 +755,6 @@ func extractAPIs(docs []expandedDoc, hits []store.SearchHit, subject string, lim
 		if d.Kind == "sample" {
 			weight = 3
 		}
-		// Only scan a focused window so giant files don't flood the list.
 		window := windowAround(d.Body, tokens, 60)
 		if window == "" {
 			window = d.Body
@@ -809,26 +781,7 @@ func extractAPIs(docs []expandedDoc, hits []store.SearchHit, subject string, lim
 	})
 
 	out := make([]string, 0, limit)
-	seen := map[string]struct{}{}
-	if menuSubject {
-		for _, name := range preferred {
-			if _, ok := counts[name]; !ok {
-				continue
-			}
-			out = append(out, name)
-			seen[name] = struct{}{}
-			if len(out) >= limit {
-				return out
-			}
-		}
-	}
 	for _, item := range list {
-		if _, ok := seen[item.k]; ok {
-			continue
-		}
-		if menuSubject && !menuRelevantAPI(item.k) {
-			continue
-		}
 		out = append(out, item.k)
 		if len(out) >= limit {
 			break
@@ -998,34 +951,16 @@ func extractFocusedExcerpts(docs []expandedDoc, tokens []string, hits []store.Se
 
 func relevantSnippet(s string, tokens []string) bool {
 	lower := strings.ToLower(s)
-	if strings.Contains(lower, "addmenuitem") ||
-		strings.Contains(lower, "registercommand") ||
-		strings.Contains(lower, "registerhandler") {
-		return true
-	}
-	// Alone, RegisterHandler appears in almost every sample (incl. install/async).
-	menuish := false
-	for _, tok := range tokens {
-		t := strings.ToLower(tok)
-		if t == "menubar" || t == "pushbutton" || t == "menu" || t == "command" || t == "addmenuitem" {
-			menuish = true
-			break
-		}
-	}
-	if strings.Contains(lower, "registerhandler") && !menuish {
-		return true
-	}
-	if strings.Contains(lower, "registerhandler") &&
-		(strings.Contains(lower, "menu") || strings.Contains(lower, "cmd") || strings.Contains(lower, "button")) {
-		return true
-	}
 	hits := 0
 	for _, tok := range tokens {
+		if tok == "" {
+			continue
+		}
 		if strings.Contains(lower, strings.ToLower(tok)) {
 			hits++
 		}
 	}
-	return hits >= 2
+	return hits >= 1
 }
 
 func windowAround(body string, tokens []string, maxLines int) string {
@@ -1122,12 +1057,11 @@ func buildPitfalls(subject string, docs []expandedDoc, controlApp bool) string {
 		b.WriteString("- Don’t confuse **download to controller** with **upload from controller** (direction matters).\n")
 		return b.String()
 	}
-	b.WriteString("- Don’t confuse **AddMenuItem** (app menubar) with dialog-only menu helpers.\n")
-	b.WriteString("- Sync DLL apps use `RegisterHandler`; async spawn demos (`main` / `Client.Connect` bootstrap) are a different path.\n")
-	b.WriteString("- Message-file keys must exist in `text/usascii/*.txt` or labels/help won’t resolve.\n")
-	b.WriteString("- Truncated HTML→Markdown samples can mangle comparisons (`i<argc`); trust headers/API pages for signatures.\n")
-	if strings.Contains(sub, "plugin") || strings.Contains(sub, "example-plugin") {
-		b.WriteString("- example-plugin-sdk uses session command registration, not `AddMenuItem` alone.\n")
+	b.WriteString("- Prefer header/API pages for signatures when sample bodies are truncated.\n")
+	b.WriteString("- Do not mix async bootstrap samples with the normal application entry path.\n")
+	b.WriteString("- Keep init/cleanup order from cited workflow sections; do not invent call sequences.\n")
+	if strings.Contains(sub, "plugin") {
+		b.WriteString("- Plugin hosts often require session/command registration beyond a single UI helper.\n")
 	}
 	for _, d := range docs {
 		u := strings.ToLower(d.URI)
@@ -1160,14 +1094,13 @@ func buildChecklist(subject string, apis, steps []string, controlApp bool) strin
 		}
 		return b.String()
 	}
-	b.WriteString("- [ ] Confirm example-device-sdk vs example-plugin-sdk stack for **")
+	b.WriteString("- [ ] Confirm the correct SDK / root for **")
 	b.WriteString(subject)
 	b.WriteString("**\n")
 	b.WriteString("- [ ] Add required headers / link libs\n")
-	b.WriteString("- [ ] Implement `RegisterHandler` entrypoint and one `RegisterCommand` callback\n")
-	b.WriteString("- [ ] Create message-file entries for menu/button/help\n")
-	b.WriteString("- [ ] Register via `plugin.dat` and start the host app\n")
-	b.WriteString("- [ ] Smoke-test the command on a real session\n")
+	b.WriteString("- [ ] Implement the entrypoint and callbacks cited in the sources\n")
+	b.WriteString("- [ ] Apply host registration / startup config from the samples\n")
+	b.WriteString("- [ ] Smoke-test on a real session\n")
 	for i, api := range apis {
 		if i >= 6 {
 			break

@@ -65,24 +65,25 @@ type Chunk struct {
 
 // SearchHit is one FTS result with a generated snippet.
 type SearchHit struct {
-	ChunkID    int64   `json:"chunkId"`
-	DocumentID int64   `json:"documentId"`
-	URI        string  `json:"uri"`
-	Title      string  `json:"title"`
-	RootName   string  `json:"rootName,omitempty"`
-	Path       string  `json:"path,omitempty"`
-	Authority  string  `json:"authority,omitempty"`
-	Language   string  `json:"language,omitempty"`
-	Technology string  `json:"technology,omitempty"`
-	Archived   bool    `json:"archived,omitempty"`
-	Ordinal    int     `json:"ordinal"`
-	Heading    string  `json:"heading"`
-	Snippet    string  `json:"snippet"`
-	StartLine  int     `json:"startLine"`
-	EndLine    int     `json:"endLine"`
-	Rank       float64 `json:"rank"`
-	Score      float64 `json:"score,omitempty"`     // composite score after authority/symbol boosts
-	MatchKind  string  `json:"matchKind,omitempty"` // symbol|filename|path|heading|body
+	ChunkID        int64   `json:"chunkId"`
+	DocumentID     int64   `json:"documentId"`
+	URI            string  `json:"uri"`
+	Title          string  `json:"title"`
+	RootName       string  `json:"rootName,omitempty"`
+	Path           string  `json:"path,omitempty"`
+	Authority      string  `json:"authority,omitempty"`
+	Language       string  `json:"language,omitempty"`
+	Technology     string  `json:"technology,omitempty"`
+	ProductVersion string  `json:"productVersion,omitempty"`
+	Archived       bool    `json:"archived,omitempty"`
+	Ordinal        int     `json:"ordinal"`
+	Heading        string  `json:"heading"`
+	Snippet        string  `json:"snippet"`
+	StartLine      int     `json:"startLine"`
+	EndLine        int     `json:"endLine"`
+	Rank           float64 `json:"rank"`
+	Score          float64 `json:"score,omitempty"`     // composite score after authority/symbol boosts
+	MatchKind      string  `json:"matchKind,omitempty"` // symbol|filename|path|heading|body
 }
 
 // Limits for query / result size (overridable via SearchOptions).
@@ -489,6 +490,46 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 		}
 	}
 
+	candidates, err := s.searchFTS(ctx, ftsQuery, roots, candidateLimit, query)
+	if err != nil {
+		return nil, err
+	}
+	// Natural-language tasks often fail strict AND; retry with OR of content tokens.
+	if len(candidates) == 0 {
+		if orQ := toFTSQueryOR(query); orQ != "" && orQ != ftsQuery {
+			candidates, err = s.searchFTS(ctx, orQ, roots, candidateLimit, query)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Path/title/filename are first-class: include docs whose path matches even if body does not.
+	pathHits, err := s.pathTitleCandidates(ctx, query, roots, candidateLimit)
+	if err != nil {
+		return nil, err
+	}
+	seenChunk := map[int64]struct{}{}
+	for _, h := range candidates {
+		seenChunk[h.ChunkID] = struct{}{}
+	}
+	for _, h := range pathHits {
+		if _, ok := seenChunk[h.ChunkID]; ok {
+			continue
+		}
+		seenChunk[h.ChunkID] = struct{}{}
+		candidates = append(candidates, h)
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].Score == candidates[j].Score {
+			return candidates[i].Rank < candidates[j].Rank
+		}
+		return candidates[i].Score > candidates[j].Score
+	})
+	return diversifyHits(candidates, limit, maxPerDoc), nil
+}
+
+func (s *Store) searchFTS(ctx context.Context, ftsQuery string, roots []string, candidateLimit int, query string) ([]SearchHit, error) {
 	var (
 		rows *sql.Rows
 		err  error
@@ -505,6 +546,7 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 				COALESCE(d.authority, 'unknown'),
 				COALESCE(d.language, ''),
 				COALESCE(d.technology, ''),
+				COALESCE(d.product_version, ''),
 				COALESCE(d.archived, 0),
 				c.ordinal,
 				c.heading,
@@ -554,7 +596,7 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 		var archived int
 		if err := rows.Scan(
 			&h.ChunkID, &h.DocumentID, &h.URI, &h.Title, &h.RootName, &h.Path,
-			&h.Authority, &h.Language, &h.Technology, &archived,
+			&h.Authority, &h.Language, &h.Technology, &h.ProductVersion, &archived,
 			&h.Ordinal, &h.Heading, &h.Snippet, &h.StartLine, &h.EndLine, &h.Rank,
 		); err != nil {
 			return nil, err
@@ -566,29 +608,7 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	// Path/title/filename are first-class: include docs whose path matches even if body does not.
-	pathHits, err := s.pathTitleCandidates(ctx, query, roots, candidateLimit)
-	if err != nil {
-		return nil, err
-	}
-	seenChunk := map[int64]struct{}{}
-	for _, h := range candidates {
-		seenChunk[h.ChunkID] = struct{}{}
-	}
-	for _, h := range pathHits {
-		if _, ok := seenChunk[h.ChunkID]; ok {
-			continue
-		}
-		seenChunk[h.ChunkID] = struct{}{}
-		candidates = append(candidates, h)
-	}
-	sort.SliceStable(candidates, func(i, j int) bool {
-		if candidates[i].Score == candidates[j].Score {
-			return candidates[i].Rank < candidates[j].Rank // bm25: lower is better
-		}
-		return candidates[i].Score > candidates[j].Score
-	})
-	return diversifyHits(candidates, limit, maxPerDoc), nil
+	return candidates, nil
 }
 
 // pathTitleCandidates finds documents whose path, basename, or title matches the query.
@@ -601,7 +621,8 @@ func (s *Store) pathTitleCandidates(ctx context.Context, query string, roots []s
 	sqlText := `
 		SELECT c.id, c.document_id, d.uri, d.title, COALESCE(d.root_name, ''), COALESCE(d.path, ''),
 		       COALESCE(d.authority, 'unknown'), COALESCE(d.language, ''), COALESCE(d.technology, ''),
-		       COALESCE(d.archived, 0), c.ordinal, c.heading, substr(c.body, 1, 240), c.start_line, c.end_line
+		       COALESCE(d.product_version, ''), COALESCE(d.archived, 0),
+		       c.ordinal, c.heading, substr(c.body, 1, 240), c.start_line, c.end_line
 		FROM documents d
 		JOIN chunks c ON c.document_id = d.id AND c.ordinal = 0
 		WHERE (d.path LIKE ? ESCAPE '\' OR d.title LIKE ? ESCAPE '\' OR d.uri LIKE ? ESCAPE '\')`
@@ -628,7 +649,7 @@ func (s *Store) pathTitleCandidates(ctx context.Context, query string, roots []s
 		var archived int
 		if err := rows.Scan(
 			&h.ChunkID, &h.DocumentID, &h.URI, &h.Title, &h.RootName, &h.Path,
-			&h.Authority, &h.Language, &h.Technology, &archived,
+			&h.Authority, &h.Language, &h.Technology, &h.ProductVersion, &archived,
 			&h.Ordinal, &h.Heading, &h.Snippet, &h.StartLine, &h.EndLine,
 		); err != nil {
 			return nil, err
@@ -856,6 +877,11 @@ func toFTSQuery(q string) string {
 	if len(tokens) == 0 {
 		return ""
 	}
+	// Prefer content-bearing tokens; fall back to all tokens if everything was a stopword.
+	content := filterStopwords(tokens)
+	if len(content) > 0 {
+		tokens = content
+	}
 	parts := make([]string, 0, len(tokens))
 	for _, t := range tokens {
 		t = strings.ReplaceAll(t, `"`, ``)
@@ -901,6 +927,49 @@ func tokenizeQuery(q string) []string {
 		out = append(out, f)
 	}
 	return out
+}
+
+var ftsStopwords = map[string]struct{}{
+	"a": {}, "an": {}, "the": {}, "and": {}, "or": {}, "to": {}, "of": {}, "in": {}, "on": {},
+	"for": {}, "with": {}, "from": {}, "into": {}, "by": {}, "as": {}, "is": {}, "are": {},
+	"be": {}, "this": {}, "that": {}, "it": {}, "at": {}, "add": {}, "use": {}, "using": {},
+	"make": {}, "create": {}, "please": {}, "how": {}, "do": {}, "does": {}, "can": {},
+	"should": {}, "must": {}, "need": {}, "needed": {}, "new": {},
+}
+
+func filterStopwords(tokens []string) []string {
+	var out []string
+	for _, t := range tokens {
+		key := strings.ToLower(strings.Trim(t, ".,;:()[]{}\"'"))
+		if len(key) < 3 {
+			continue
+		}
+		if _, stop := ftsStopwords[key]; stop {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+func toFTSQueryOR(q string) string {
+	tokens := filterStopwords(tokenizeQuery(q))
+	if len(tokens) == 0 {
+		tokens = tokenizeQuery(q)
+	}
+	parts := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		t = strings.ReplaceAll(t, `"`, ``)
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		parts = append(parts, `"`+t+`"`)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " OR ")
 }
 
 // SchemaVersion returns PRAGMA user_version.

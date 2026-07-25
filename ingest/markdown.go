@@ -169,17 +169,18 @@ func ingestMarkdownFile(ctx context.Context, st *store.Store, absRoot, rootName,
 	}
 	chunks := ChunkMarkdown(doc.Markdown)
 	written, err := st.UpsertDocument(ctx, store.UpsertInput{
-		URI:        uri,
-		Title:      title,
-		SourceType: store.SourceMarkdown,
-		Path:       rel,
-		RootName:   rootName,
-		Authority:  InferAuthority(rootName, rel),
-		Language:   languageFromPath(path),
-		Mtime:      info.ModTime().Unix(),
-		Hash:       hash,
-		Chunks:     chunks,
-		Symbols:    ExtractSymbols(path, doc.Markdown),
+		URI:            uri,
+		Title:          title,
+		SourceType:     store.SourceMarkdown,
+		Path:           rel,
+		RootName:       rootName,
+		Authority:      InferAuthority(rootName, rel),
+		Language:       languageFromPath(path),
+		ProductVersion: InferProductVersion(rootName, rel, doc.Markdown),
+		Mtime:          info.ModTime().Unix(),
+		Hash:           hash,
+		Chunks:         chunks,
+		Symbols:        ExtractSymbols(path, doc.Markdown),
 	})
 	if err != nil {
 		return err
