@@ -150,6 +150,56 @@ func TestOpenRefusesUnversionedNonEmptyDatabase(t *testing.T) {
 	}
 }
 
+func TestOpenRefusesMalformedCurrentSchema(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "broken-v7.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Claim current schema version but omit required semantic objects.
+	if _, err := db.Exec(`
+		CREATE TABLE documents (id INTEGER PRIMARY KEY);
+		CREATE TABLE chunks (id INTEGER PRIMARY KEY);
+		PRAGMA user_version = 7;
+	`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	_, err = Open(dbPath)
+	if err == nil {
+		t.Fatal("expected refusal for malformed current-schema database")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		dbPath,
+		fmt.Sprintf("schema version %d", currentSchemaVersion),
+		"missing required object",
+		"delete the database file",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+
+	// Must not repair or migrate the damaged file.
+	db, err = sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var version, postings int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name = 'chunk_term_postings'`).Scan(&postings); err != nil {
+		t.Fatal(err)
+	}
+	if version != currentSchemaVersion || postings != 0 {
+		t.Fatalf("malformed database was modified: version=%d postings=%d", version, postings)
+	}
+}
+
 func TestDeleteAndRecreateDatabase(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "recreate.db")

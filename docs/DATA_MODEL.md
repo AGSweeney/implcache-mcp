@@ -175,7 +175,7 @@ Runtime structure `store.ContextBudget` limits how much text `implctx` returns. 
 
 One canonical schema, no migration ladder:
 
-- **Version matches** (`user_version == 7`): open normally.
+- **Version matches** (`user_version == 7`): run a lightweight `sqlite_master` check for required objects (`documents`, `chunks`, `chunks_fts`, `symbols`, `chunk_term_vectors`, `chunk_term_postings`, `idx_chunk_term_postings_root_term`), then open. Missing objects are refused with rebuild instructions — the file is not repaired.
 - **Empty/new database**: create the full v7 schema directly from `store/schema.sql`, then set `user_version = 7`.
 - **Any other version** (or an unversioned non-empty file): refuse to open without modifying the file. The error reports the database path, the found version, and the expected version, and instructs the developer to delete the database (and its `-wal`/`-shm` sidecars) and re-ingest.
 

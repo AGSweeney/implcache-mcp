@@ -21,8 +21,21 @@ const currentSchemaVersion = 7
 //go:embed schema.sql
 var canonicalSchema string
 
+// requiredSchemaObjects are the minimum sqlite_master names a claimed current
+// schema must expose. This catches damaged or partially created databases that
+// already have the right user_version without comparing the entire DDL.
+var requiredSchemaObjects = []string{
+	"documents",
+	"chunks",
+	"chunks_fts",
+	"symbols",
+	"chunk_term_vectors",
+	"chunk_term_postings",
+	"idx_chunk_term_postings_root_term",
+}
+
 // ensureSchema opens-or-creates the canonical schema:
-//   - user_version == currentSchemaVersion: open normally.
+//   - user_version == currentSchemaVersion: validate required objects, then open.
 //   - empty database (user_version 0, no objects): create the schema.
 //   - anything else: refuse without modification, with instructions to
 //     delete and rebuild.
@@ -32,7 +45,7 @@ func ensureSchema(db *sql.DB, path string) error {
 		return fmt.Errorf("read user_version: %w", err)
 	}
 	if version == currentSchemaVersion {
-		return nil
+		return validateCanonicalSchema(db, path)
 	}
 	if version != 0 {
 		return schemaMismatchError(path, version)
@@ -58,7 +71,26 @@ func ensureSchema(db *sql.DB, path string) error {
 	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, currentSchemaVersion)); err != nil {
 		return fmt.Errorf("set user_version=%d: %w", currentSchemaVersion, err)
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return validateCanonicalSchema(db, path)
+}
+
+func validateCanonicalSchema(db *sql.DB, path string) error {
+	for _, name := range requiredSchemaObjects {
+		var found string
+		err := db.QueryRow(
+			`SELECT name FROM sqlite_master WHERE name = ? LIMIT 1`, name,
+		).Scan(&found)
+		if err == sql.ErrNoRows || found == "" {
+			return schemaStructureError(path, name)
+		}
+		if err != nil {
+			return fmt.Errorf("inspect schema object %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func schemaMismatchError(path string, found int) error {
@@ -67,5 +99,14 @@ func schemaMismatchError(path string, found int) error {
 			"pre-release databases are not migrated — delete the database file "+
 			"(and its -wal/-shm sidecars) and re-ingest to rebuild it",
 		path, found, currentSchemaVersion,
+	)
+}
+
+func schemaStructureError(path, missing string) error {
+	return fmt.Errorf(
+		"database %s: schema version %d is marked current but missing required object %q; "+
+			"pre-release databases are not repaired — delete the database file "+
+			"(and its -wal/-shm sidecars) and re-ingest to rebuild it",
+		path, currentSchemaVersion, missing,
 	)
 }

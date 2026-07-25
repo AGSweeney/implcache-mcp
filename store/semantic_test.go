@@ -399,10 +399,46 @@ func TestSemanticPostingQueryPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := st.db.QueryContext(ctx, `
+	assertPostingPlanUsesIndex(t, st, `
 		EXPLAIN QUERY PLAN
 		SELECT p.chunk_id FROM chunk_term_postings p
-		WHERE p.root_name = ? AND p.term IN (?)`, "example-network-sdk", "reconnect")
+		WHERE p.root_name = ? AND p.term IN (?)`,
+		"example-network-sdk", "reconnect")
+}
+
+func TestSemanticProductionCandidateQueryPlan(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "prod-plan.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	_, err = st.UpsertDocument(ctx, UpsertInput{
+		URI: "project://example-network-sdk/retry.md", Title: "Retry",
+		SourceType: SourceMarkdown, Path: "retry.md", RootName: "example-network-sdk",
+		Authority: AuthorityOfficialDocs, Hash: "prod-plan",
+		Chunks: []Chunk{{Body: "network retry reconnect exponential backoff", StartLine: 1, EndLine: 1}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Mirror the production candidate subquery shape (GROUP BY / ORDER BY / LIMIT).
+	assertPostingPlanUsesIndex(t, st, `
+		EXPLAIN QUERY PLAN
+		SELECT p.chunk_id
+		FROM chunk_term_postings p
+		WHERE p.term IN (?, ?)
+		  AND p.root_name IN (?)
+		GROUP BY p.chunk_id
+		ORDER BY COUNT(*) DESC, p.chunk_id
+		LIMIT ?`,
+		"reconnect", "retry", "example-network-sdk", 1000)
+}
+
+func assertPostingPlanUsesIndex(t *testing.T, st *Store, sqlText string, args ...any) {
+	t.Helper()
+	rows, err := st.db.QueryContext(context.Background(), sqlText, args...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,18 +452,18 @@ func TestSemanticPostingQueryPlan(t *testing.T) {
 		}
 		details = append(details, detail)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	if len(details) == 0 {
 		t.Fatal("missing semantic query plan")
 	}
-	found := false
 	for _, detail := range details {
 		if strings.Contains(detail, "idx_chunk_term_postings_root_term") {
-			found = true
+			return
 		}
 	}
-	if !found {
-		t.Fatalf("posting lookup did not use root/term index: %v", details)
-	}
+	t.Fatalf("posting lookup did not use root/term index: %v", details)
 }
 
 func TestSemanticPostingCandidatesHandleManyTermsAndDecoys(t *testing.T) {
