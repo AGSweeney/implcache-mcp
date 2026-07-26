@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"implcache-mcp/librarydocs"
 	"implcache-mcp/store"
 )
 
@@ -64,15 +65,22 @@ func ListSources(ctx context.Context, st *store.Store) ([]SourceSummary, error) 
 	for _, rs := range repos {
 		ownedRoots[rs.RootName] = struct{}{}
 		counts, _ := st.CountByRoot(ctx, rs.RootName)
+		detail := map[string]any{
+			"acquisitionMode": rs.AcquisitionMode, "requestedRef": rs.RequestedRef,
+			"resolvedCommit": rs.ResolvedCommitSHA, "remoteUrl": rs.RemoteURL,
+		}
+		if meta, err := librarydocs.LoadMeta(ctx, st, "git", rs.RootName); err == nil && meta != nil {
+			detail["libraryDocs"] = meta.Summary
+			if len(meta.Warnings) > 0 {
+				detail["libraryDocsWarnings"] = meta.Warnings
+			}
+		}
 		out = append(out, SourceSummary{
 			SourceRef: SourceRef{Kind: KindRepo, ID: rs.Name, RootName: rs.RootName, Title: firstNonEmpty(rs.RemoteURL, rs.LocalPath)},
 			Enabled:   rs.Enabled, LastStatus: rs.LastStatus,
 			LastAttemptAt: rs.LastAttemptAt, LastSuccessAt: rs.LastSuccessAt,
 			DocumentCount: counts.Documents, ChunkCount: counts.Chunks, SymbolCount: counts.Symbols,
-			Detail: map[string]any{
-				"acquisitionMode": rs.AcquisitionMode, "requestedRef": rs.RequestedRef,
-				"resolvedCommit": rs.ResolvedCommitSHA, "remoteUrl": rs.RemoteURL,
-			},
+			Detail: detail,
 		})
 	}
 
@@ -85,10 +93,16 @@ func ListSources(ctx context.Context, st *store.Store) ([]SourceSummary, error) 
 			continue
 		}
 		counts, _ := st.CountByRoot(ctx, root)
+		detail := map[string]any{"synthesized": true}
+		if meta, err := librarydocs.LoadMeta(ctx, st, "project", root); err == nil && meta != nil {
+			detail["libraryDocs"] = meta.Summary
+		} else if meta, err := librarydocs.LoadMeta(ctx, st, "git", root); err == nil && meta != nil {
+			detail["libraryDocs"] = meta.Summary
+		}
 		out = append(out, SourceSummary{
 			SourceRef:     SourceRef{Kind: KindLocal, ID: root, RootName: root, Title: root},
 			DocumentCount: counts.Documents, ChunkCount: counts.Chunks, SymbolCount: counts.Symbols,
-			Detail: map[string]any{"synthesized": true},
+			Detail: detail,
 		})
 	}
 	return out, nil

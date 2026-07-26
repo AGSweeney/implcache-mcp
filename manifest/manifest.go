@@ -19,12 +19,13 @@ const DefaultFilename = ".implcache.yaml"
 
 // Manifest describes the current project knowledge root and related corpora.
 type Manifest struct {
-	RootName     string            `yaml:"rootName" json:"rootName"`
-	Technology   []string          `yaml:"technology" json:"technology,omitempty"`
-	Languages    []string          `yaml:"languages" json:"languages,omitempty"`
-	Authority    string            `yaml:"authority" json:"authority,omitempty"`
-	RelatedRoots []string          `yaml:"relatedRoots" json:"relatedRoots,omitempty"`
-	Versions     map[string]string `yaml:"versions" json:"versions,omitempty"`
+	RootName              string            `yaml:"rootName" json:"rootName"`
+	Technology            []string          `yaml:"technology" json:"technology,omitempty"`
+	Languages             []string          `yaml:"languages" json:"languages,omitempty"`
+	Authority             string            `yaml:"authority" json:"authority,omitempty"`
+	RelatedRoots          []string          `yaml:"relatedRoots" json:"relatedRoots,omitempty"`
+	Versions              map[string]string `yaml:"versions" json:"versions,omitempty"`
+	LibraryDocsHandling   string            `yaml:"libraryDocsHandling" json:"libraryDocsHandling,omitempty"` // auto|normal|exclude
 }
 
 // Load reads a manifest from path. Missing files return (nil, nil).

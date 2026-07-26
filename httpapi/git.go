@@ -34,6 +34,7 @@ type gitIngestRequest struct {
 	WorkingTreeMode     string   `json:"workingTreeMode,omitempty"`
 	CloneDepth          int      `json:"cloneDepth,omitempty"`
 	PartialCloneFilter  string   `json:"partialCloneFilter,omitempty"`
+	LibraryDocsHandling string   `json:"libraryDocsHandling,omitempty"` // auto|normal|exclude
 }
 
 // handleGitIngest acquires and indexes a Git repository as a tracked async job.
@@ -75,6 +76,7 @@ func (h *handler) handleGitIngest(w http.ResponseWriter, r *http.Request) {
 			SubmodulePolicy: req.SubmodulePolicy, SymlinkPolicy: req.SymlinkPolicy,
 			WorkingTreeMode: req.WorkingTreeMode, CloneDepth: req.CloneDepth,
 			PartialCloneFilter: req.PartialCloneFilter, PersistSource: true,
+			LibraryDocsHandling: req.LibraryDocsHandling,
 			MaxFiles: h.opt.MaxIngestFiles, MaxDocumentBytes: h.opt.MaxDocumentBytes,
 			CacheRoot: gitrepo.CacheRootForDB(h.opt.DBPath),
 			Progress: h.gitProgress(opID, src),
@@ -144,6 +146,9 @@ func (h *handler) finishGitJob(opID string, res *gitrepo.IngestReport, err error
 		report["filesSkipped"] = res.FilesSkipped
 		report["resolvedCommit"] = res.ResolvedCommit
 		report["status"] = res.Status
+		if res.LibraryDocs != nil {
+			report["libraryDocs"] = res.LibraryDocs
+		}
 		errs = append(errs, res.Warnings...)
 	}
 	h.opt.Tracker.Finish(opID, state, report, errs)

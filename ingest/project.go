@@ -13,18 +13,21 @@ import (
 	"path/filepath"
 	"strings"
 
+	"implcache-mcp/librarydocs"
+	"implcache-mcp/manifest"
 	"implcache-mcp/store"
 )
 
 // ProjectResult summarizes an ingest_project run.
 type ProjectResult struct {
-	RootName       string         `json:"rootName"`
-	Ingested       int            `json:"ingested"`
-	Skipped        int            `json:"skipped"`
-	Errors         []string       `json:"errors,omitempty"`
-	URIs           []string       `json:"uris,omitempty"`
-	Files          []IngestedFile `json:"files,omitempty"`
-	BytesProcessed int64          `json:"bytesProcessed,omitempty"`
+	RootName       string                    `json:"rootName"`
+	Ingested       int                       `json:"ingested"`
+	Skipped        int                       `json:"skipped"`
+	Errors         []string                  `json:"errors,omitempty"`
+	URIs           []string                  `json:"uris,omitempty"`
+	Files          []IngestedFile            `json:"files,omitempty"`
+	BytesProcessed int64                     `json:"bytesProcessed,omitempty"`
+	LibraryDocs    *librarydocs.PackageSummary `json:"libraryDocs,omitempty"`
 }
 
 // IngestedFile is one file written or skipped during tree ingest.
@@ -55,12 +58,14 @@ type ProjectOptions struct {
 	IncludePatterns   []string
 	ExcludePatterns   []string
 	PathFilter        PathFilter // if set, overrides include/exclude helpers
-	URIScheme         string     // "project" (default) or "git"
-	SourceType        string     // override source type; empty = infer markdown/source
-	Authority         string
-	OnlyRelativePaths []string // if non-empty, only these relative paths (refresh)
-	SkipDirNames      map[string]struct{}
-	Progress          ProjectProgressFunc
+	URIScheme           string // "project" (default) or "git"
+	SourceType          string // override source type; empty = infer markdown/source
+	Authority           string
+	OnlyRelativePaths   []string // if non-empty, only these relative paths (refresh)
+	SkipDirNames        map[string]struct{}
+	Progress            ProjectProgressFunc
+	LibraryDocsHandling string // auto|normal|exclude; empty resolves via manifest/auto
+	SkipLibraryDocs     bool   // when true, caller (e.g. gitrepo) handles LibraryDocs itself
 }
 
 // IngestProject walks a source tree and ingests text-like files.
@@ -105,9 +110,22 @@ func IngestProjectOpts(ctx context.Context, st *store.Store, opt ProjectOptions)
 		only[filepath.ToSlash(p)] = struct{}{}
 	}
 
+	handling := librarydocs.NormalizeHandling(opt.LibraryDocsHandling)
+	if strings.TrimSpace(opt.LibraryDocsHandling) == "" && !opt.SkipLibraryDocs {
+		if m, err := manifest.LoadFromDir(absRoot); err == nil && m != nil && strings.TrimSpace(m.LibraryDocsHandling) != "" {
+			handling = librarydocs.NormalizeHandling(m.LibraryDocsHandling)
+		} else {
+			handling = librarydocs.HandlingAuto
+		}
+	}
+	excPatterns := append([]string{}, opt.ExcludePatterns...)
+	if !opt.SkipLibraryDocs && handling == librarydocs.HandlingExclude {
+		excPatterns = append(excPatterns, "LibraryDocs", "LibraryDocs/**")
+	}
+
 	allow := opt.PathFilter
-	if allow == nil && (len(opt.IncludePatterns) > 0 || len(opt.ExcludePatterns) > 0) {
-		inc, exc := opt.IncludePatterns, opt.ExcludePatterns
+	if allow == nil && (len(opt.IncludePatterns) > 0 || len(excPatterns) > 0) {
+		inc, exc := opt.IncludePatterns, excPatterns
 		allow = func(rel string) bool {
 			return pathAllowed(rel, inc, exc)
 		}
@@ -175,7 +193,42 @@ func IngestProjectOpts(ctx context.Context, st *store.Store, opt ProjectOptions)
 		}
 		return nil
 	})
-	return res, err
+	if err != nil {
+		return res, err
+	}
+	if !opt.SkipLibraryDocs {
+		applyProjectLibraryDocs(ctx, st, absRoot, rootName, opt, res)
+	}
+	return res, nil
+}
+
+func applyProjectLibraryDocs(ctx context.Context, st *store.Store, absRoot, rootName string, opt ProjectOptions, res *ProjectResult) {
+	handling := librarydocs.NormalizeHandling(opt.LibraryDocsHandling)
+	if strings.TrimSpace(opt.LibraryDocsHandling) == "" {
+		if m, err := manifest.LoadFromDir(absRoot); err == nil && m != nil && strings.TrimSpace(m.LibraryDocsHandling) != "" {
+			handling = librarydocs.NormalizeHandling(m.LibraryDocsHandling)
+		} else {
+			handling = librarydocs.HandlingAuto
+		}
+	}
+	scheme := "project"
+	if strings.EqualFold(opt.URIScheme, "git") {
+		scheme = "git"
+	}
+	meta := librarydocs.AnalyzeCheckout(absRoot, rootName, handling, "")
+	if handling == librarydocs.HandlingExclude || meta.PackageState == librarydocs.StateNotPresent {
+		_ = librarydocs.DeleteMeta(ctx, st, scheme, rootName)
+	} else {
+		if _, err := librarydocs.PersistMeta(ctx, st, scheme, rootName, meta); err != nil {
+			res.Errors = append(res.Errors, "librarydocs meta: "+err.Error())
+		}
+		if handling == librarydocs.HandlingAuto {
+			_ = librarydocs.ApplyTrustUpdates(ctx, st, scheme, rootName, meta)
+		}
+	}
+	res.Errors = append(res.Errors, meta.Warnings...)
+	sum := meta.Summary
+	res.LibraryDocs = &sum
 }
 
 func ingestProjectFile(ctx context.Context, st *store.Store, absRoot, rootName, path, rel string, maxBytes int64, opt ProjectOptions, res *ProjectResult) error {

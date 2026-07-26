@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"implcache-mcp/ingest"
+	"implcache-mcp/librarydocs"
+	"implcache-mcp/manifest"
 	"implcache-mcp/store"
 )
 
@@ -40,36 +42,38 @@ type IngestOptions struct {
 	CloneDepth         int
 	PartialCloneFilter string
 	CacheRoot          string
-	MaxFiles           int
-	MaxDocumentBytes   int64
-	MaxTotalBytes      int64
-	PersistSource      bool // upsert repo_sources
-	Runner             *Runner
-	Progress           ProgressFunc
+	MaxFiles            int
+	MaxDocumentBytes    int64
+	MaxTotalBytes       int64
+	PersistSource       bool // upsert repo_sources
+	LibraryDocsHandling string // auto|normal|exclude; empty = auto (or workspace manifest)
+	Runner              *Runner
+	Progress            ProgressFunc
 }
 
 // IngestReport is returned from ingest/refresh.
 type IngestReport struct {
-	SourceName        string   `json:"sourceName"`
-	RootName          string   `json:"rootName"`
-	RemoteURL         string   `json:"remoteUrl,omitempty"`
-	AcquisitionMode   string   `json:"acquisitionMode"`
-	RequestedRef      string   `json:"requestedRef"`
-	PreviousCommit    string   `json:"previousCommit,omitempty"`
-	ResolvedCommit    string   `json:"resolvedCommit"`
-	CheckoutPath      string   `json:"checkoutPath"`
-	FilesDiscovered   int      `json:"filesDiscovered"`
-	DocumentsIngested int      `json:"documentsIngested"`
-	FilesSkipped      int      `json:"filesSkipped"`
-	FilesAdded        int      `json:"filesAdded,omitempty"`
-	FilesModified     int      `json:"filesModified,omitempty"`
-	FilesDeleted      int      `json:"filesDeleted,omitempty"`
-	SymbolsHint       string   `json:"symbolsNote,omitempty"`
-	BytesProcessed    int64    `json:"bytesProcessed"`
-	DurationMS        int64    `json:"durationMs"`
-	Warnings          []string `json:"warnings,omitempty"`
-	Status            string   `json:"status"`
-	WorkingTreeDirty  bool     `json:"workingTreeDirty,omitempty"`
+	SourceName        string                   `json:"sourceName"`
+	RootName          string                   `json:"rootName"`
+	RemoteURL         string                   `json:"remoteUrl,omitempty"`
+	AcquisitionMode   string                   `json:"acquisitionMode"`
+	RequestedRef      string                   `json:"requestedRef"`
+	PreviousCommit    string                   `json:"previousCommit,omitempty"`
+	ResolvedCommit    string                   `json:"resolvedCommit"`
+	CheckoutPath      string                   `json:"checkoutPath"`
+	FilesDiscovered   int                      `json:"filesDiscovered"`
+	DocumentsIngested int                      `json:"documentsIngested"`
+	FilesSkipped      int                      `json:"filesSkipped"`
+	FilesAdded        int                      `json:"filesAdded,omitempty"`
+	FilesModified     int                      `json:"filesModified,omitempty"`
+	FilesDeleted      int                      `json:"filesDeleted,omitempty"`
+	SymbolsHint       string                   `json:"symbolsNote,omitempty"`
+	BytesProcessed    int64                    `json:"bytesProcessed"`
+	DurationMS        int64                    `json:"durationMs"`
+	Warnings          []string                 `json:"warnings,omitempty"`
+	Status            string                   `json:"status"`
+	WorkingTreeDirty  bool                     `json:"workingTreeDirty,omitempty"`
+	LibraryDocs       *librarydocs.PackageSummary `json:"libraryDocs,omitempty"`
 }
 
 // IngestRepo acquires a repo state and indexes it via the local-tree ingester.
@@ -152,12 +156,16 @@ func IngestRepo(ctx context.Context, st *store.Store, opt IngestOptions) (*Inges
 		}()
 	}
 
+	handling := resolveLibraryDocsHandling(opt.LibraryDocsHandling, co.Path)
 	inc, exc := opt.IncludePatterns, opt.ExcludePatterns
 	if len(inc) == 0 {
 		inc = includeFromSparse(opt.SparsePaths)
 	}
 	if len(exc) == 0 {
 		exc = DefaultExcludePatterns
+	}
+	if handling == librarydocs.HandlingExclude {
+		exc = append(exc, "LibraryDocs", "LibraryDocs/**")
 	}
 	filter := func(rel string) bool {
 		return PathAllowed(rel, inc, exc)
@@ -167,7 +175,8 @@ func IngestRepo(ctx context.Context, st *store.Store, opt IngestOptions) (*Inges
 		Path: co.Path, RootName: opt.RootName,
 		MaxFiles: opt.MaxFiles, MaxDocumentBytes: opt.MaxDocumentBytes, MaxTotalBytes: opt.MaxTotalBytes,
 		PathFilter: filter, URIScheme: "git", SourceType: store.SourceGit, Authority: opt.Authority,
-		SkipDirNames: map[string]struct{}{".git": {}},
+		SkipDirNames:    map[string]struct{}{".git": {}},
+		SkipLibraryDocs: true, // handled below with git scheme + repo_files
 		Progress: func(done, total int, bytes int64, currentPath, message string) {
 			reportProgress("index", done, total, bytes, currentPath, message)
 		},
@@ -178,7 +187,21 @@ func IngestRepo(ctx context.Context, st *store.Store, opt IngestOptions) (*Inges
 		}
 		return nil, err
 	}
-	reportProgress("finalize", pres.Ingested, 0, pres.BytesProcessed, co.ResolvedCommitSHA, "indexing complete")
+	reportProgress("finalize", pres.Ingested, 0, pres.BytesProcessed, co.ResolvedCommitSHA, "librarydocs")
+
+	ldMeta := librarydocs.AnalyzeCheckout(co.Path, opt.RootName, handling, co.ResolvedCommitSHA)
+	var ldWarnings []string
+	if handling == librarydocs.HandlingExclude || ldMeta.PackageState == librarydocs.StateNotPresent {
+		_ = librarydocs.DeleteMeta(ctx, st, "git", opt.RootName)
+	} else if handling == librarydocs.HandlingAuto || handling == librarydocs.HandlingNormal {
+		if _, err := librarydocs.PersistMeta(ctx, st, "git", opt.RootName, ldMeta); err != nil {
+			ldWarnings = append(ldWarnings, "librarydocs meta persist: "+err.Error())
+		}
+		if handling == librarydocs.HandlingAuto {
+			_ = librarydocs.ApplyTrustUpdates(ctx, st, "git", opt.RootName, ldMeta)
+		}
+	}
+	ldWarnings = append(ldWarnings, ldMeta.Warnings...)
 
 	gen := int64(1)
 	if sourceID != 0 {
@@ -194,9 +217,13 @@ func IngestRepo(ctx context.Context, st *store.Store, opt IngestOptions) (*Inges
 		if d, _, err := st.GetDocumentByURI(ctx, f.URI); err == nil {
 			docID = d.ID
 		}
+		cc := ClassifyPath(f.RelativePath)
+		if ld := librarydocs.ClassifyPath(f.RelativePath); ld != "" {
+			cc = ld
+		}
 		_, _ = st.UpsertRepoFile(ctx, store.RepoFile{
 			RepoSourceID: sourceID, DocumentID: docID, RelativePath: f.RelativePath,
-			ContentHash: f.ContentHash, Language: f.Language, ContentClass: ClassifyPath(f.RelativePath),
+			ContentHash: f.ContentHash, Language: f.Language, ContentClass: cc,
 			FileSize: f.FileSize, ResolvedCommitSHA: co.ResolvedCommitSHA, LastSeenGeneration: gen,
 		})
 	}
@@ -232,6 +259,9 @@ func IngestRepo(ctx context.Context, st *store.Store, opt IngestOptions) (*Inges
 		dirty = true
 	}
 
+	warns := append([]string{}, pres.Errors...)
+	warns = append(warns, ldWarnings...)
+	sum := ldMeta.Summary
 	return &IngestReport{
 		SourceName: opt.Name, RootName: opt.RootName,
 		RemoteURL:       redactSecrets(firstNonEmpty(co.CloneURL, opt.RemoteURL)),
@@ -240,9 +270,20 @@ func IngestRepo(ctx context.Context, st *store.Store, opt IngestOptions) (*Inges
 		CheckoutPath: co.Path, FilesDiscovered: len(pres.Files),
 		DocumentsIngested: pres.Ingested, FilesSkipped: pres.Skipped,
 		BytesProcessed: pres.BytesProcessed, DurationMS: time.Since(start).Milliseconds(),
-		Warnings: append([]string{}, pres.Errors...), Status: "ingested",
+		Warnings: warns, Status: "ingested",
 		WorkingTreeDirty: dirty,
+		LibraryDocs:      &sum,
 	}, nil
+}
+
+func resolveLibraryDocsHandling(explicit, checkout string) string {
+	if h := librarydocs.NormalizeHandling(explicit); explicit != "" {
+		return h
+	}
+	if m, err := manifest.LoadFromDir(checkout); err == nil && m != nil && strings.TrimSpace(m.LibraryDocsHandling) != "" {
+		return librarydocs.NormalizeHandling(m.LibraryDocsHandling)
+	}
+	return librarydocs.HandlingAuto
 }
 
 func firstNonEmpty(a, b string) string {

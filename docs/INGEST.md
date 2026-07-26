@@ -48,6 +48,78 @@ Site-wide mirroring uses admin tools `add_web_source` / `ingest_site` / `refresh
 - Reuses local-tree ingest; URIs `git://{root}/{rel}`; every root pinned to **resolved commit SHA**
 - Refresh updates changed files and deletes removed paths only after success; failed refresh keeps prior root
 - Private remotes: use Git Credential Manager / SSH agent; optional `credentialReference` label (no secrets in DB)
+- When a checkout contains `LibraryDocs/`, see [LibraryDocs-aware ingest](#librarydocs-aware-ingest) below
+
+## LibraryDocs-aware ingest
+
+Repos that include a conventional `LibraryDocs/` package are detected during **git** and **project** ingest. LibraryDocs files stay under the **same root** (never a second root). Malformed packages produce warnings; they do **not** fail the overall ingest.
+
+### Detection states
+
+| State | Meaning |
+|-------|---------|
+| `not_present` | No `LibraryDocs/` directory |
+| `unstructured` | Folder present but missing `INDEX.md` and/or `project/COMPONENT_INVENTORY.md` |
+| `structured` | INDEX + inventory present |
+| `validated` | Structured and `VALIDATION.md` reports `result: pass` |
+| `invalid` | Structured but validation failed, or inventory unusable |
+
+### Handling mode (`auto` \| `normal` \| `exclude`)
+
+Resolved from (highest wins): ingest API/CLI option → workspace `.implcache.yaml` `libraryDocsHandling` → default `auto`.
+
+| Mode | Behavior |
+|------|----------|
+| `auto` | Detect + parse; ingest once; set `repo_files.content_class` (git); map trust onto `documents.authority` / `deprecated`; upsert synthetic meta doc; attach ingest summary |
+| `normal` | Index files as ordinary docs; light state summary only; no trust boosts / no rich per-doc enrichment |
+| `exclude` | Skip `LibraryDocs/**`; remove synthetic meta if present |
+
+Changing handling requires a **reindex** (refresh / re-ingest) to take effect.
+
+### Storage (no schema migrations)
+
+There is no freeform JSON column on `documents`. LibraryDocs metadata uses existing facilities only:
+
+| Facility | Use |
+|----------|-----|
+| Synthetic document `git://{root}/.implcache/librarydocs-meta.json` (or `project://…`) | Canonical `PackageMeta` JSON (`technology=librarydocs-meta`) |
+| `repo_files.content_class` | Path classes (`curated_library_doc`, `librarydocs_index`, …) |
+| `documents.authority` / `deprecated` | Trust from status/evidence/package state |
+| Ingest report + Librarian `SourceSummary.Detail.libraryDocs` | Import/UI summary |
+
+Stable JSON keys (`librarydocs_package_state`, `content_class`, `component_id`, `evidence_level`, …) are shaped so a future normalized table can replace the synthetic document without changing the ingest contract.
+
+### Frontmatter
+
+Markdown under `LibraryDocs/` may use YAML frontmatter (`title`, `component`, `level`, `status`, `evidence`, `source_paths`, `topics`, `platforms`, `retrieval.questions`, …). Unknown keys are preserved in meta. Malformed frontmatter → warning + path still classified. Traversal / absolute `source_paths` are rejected.
+
+### Trust mapping (auto)
+
+- Strong curated: `curated_internal_recipe` when `status=verified`, evidence `E1`/`E2`, and package `validated`
+- Other LibraryDocs: typically `official_documentation`
+- `deprecated` status → `deprecated=1`; invalid packages do not receive curated boosts
+- INDEX / inventory / VALIDATION are marked by `content_class` and should not be treated as primary answers
+- Evidence `E3`/`E4` must not be presented as verified in MCP citation output
+
+### Retrieval (light)
+
+Search / Search Lab / `get_implementation_context` can load `PackageMeta` by well-known URI and attach component id/name, status, evidence, `source_paths`, and artifact ids. Ranking additives are **configurable** via env (defaults on):
+
+- `IMPLCACHE_LIBRARYDOCS_RANKING` (bool)
+- `IMPLCACHE_LIBRARYDOCS_BOOST_VERIFIED`, `_BOOST_VALIDATED`
+- `IMPLCACHE_LIBRARYDOCS_PENALTY_DRAFT`, `_PENALTY_INFERRED`, `_PENALTY_DEPRECATED`, `_PENALTY_INVALID`, `_PENALTY_INDEX`
+
+Boosts are additive only; exact symbol matches stay higher priority. Search Lab filters: `libraryDocsOnly`, `excludeLibraryDocs`, `libraryDocsLevel`, `libraryDocsStatus`.
+
+### Explicitly deferred
+
+- Dedicated relationship / metadata tables
+- Source-hash freshness / `potentially_stale`
+- LibraryDocs-specific analytics counters
+- Full mixed-package builder polish beyond `source_paths` citation hints
+- Executing VALIDATION scripts (never)
+
+See also [LIBRARYDOCS.md](LIBRARYDOCS.md) for the deliverable summary and mqtt-client fixture example.
 
 ## CLI (`cmd/ingestcli`)
 

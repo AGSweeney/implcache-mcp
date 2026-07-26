@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"implcache-mcp/ingest"
+	"implcache-mcp/librarydocs"
 	"implcache-mcp/store"
 )
 
@@ -45,6 +46,14 @@ type Citation struct {
 	RootName   string   `json:"rootName,omitempty"`
 	Version    string   `json:"version,omitempty"`
 	SourceURIs []string `json:"sourceUris,omitempty"` // recipe lineage
+	// LibraryDocs enrichment (optional; omitted for non-LibraryDocs citations).
+	ComponentID    string   `json:"componentId,omitempty"`
+	Component      string   `json:"component,omitempty"`
+	ContentClass   string   `json:"contentClass,omitempty"`
+	DocStatus      string   `json:"docStatus,omitempty"`
+	EvidenceLevel  string   `json:"evidenceLevel,omitempty"`
+	RelatedSources []string `json:"relatedSources,omitempty"`
+	ArtifactIDs    []string `json:"artifactIds,omitempty"`
 }
 
 // ExampleRef is a short cited example.
@@ -219,6 +228,7 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	hits = librarydocs.EnrichHits(ctx, st, hits, librarydocs.DefaultRankingConfig())
 
 	// 3b) Natural-language tasks: harvest symbols from retrieved docs when few ID cues.
 	if len(taskToks) < 2 || len(resp.RelevantSymbols) == 0 {
@@ -254,6 +264,7 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 			Lines:     lineRange(h.StartLine, h.EndLine),
 			Authority: h.Authority, RootName: h.RootName, Version: ver,
 		}
+		attachLibraryDocsCitation(&cit, h)
 		resp.Citations = append(resp.Citations, cit)
 		if ver != "" {
 			versions = append(versions, ver)
@@ -489,6 +500,29 @@ func appendUnique(xs []string, v string) []string {
 		}
 	}
 	return append(xs, v)
+}
+
+func attachLibraryDocsCitation(cit *Citation, h store.SearchHit) {
+	if cit == nil || h.LibraryDocs == nil {
+		return
+	}
+	ld, ok := h.LibraryDocs.(*librarydocs.HitMeta)
+	if !ok || ld == nil {
+		return
+	}
+	cit.ComponentID = ld.ComponentID
+	cit.Component = ld.Component
+	cit.ContentClass = ld.ContentClass
+	cit.DocStatus = ld.Status
+	cit.EvidenceLevel = ld.Evidence
+	cit.ArtifactIDs = append([]string{}, ld.ArtifactIDs...)
+	cit.RelatedSources = append([]string{}, ld.SourcePaths...)
+	if cit.DocStatus == "inferred" || cit.EvidenceLevel == "E3" || cit.EvidenceLevel == "E4" {
+		// Do not present E3/E4 or inferred as verified in MCP output.
+		if cit.DocStatus == "verified" {
+			cit.DocStatus = "inferred"
+		}
+	}
 }
 
 func dedupeCitations(in []Citation) []Citation {

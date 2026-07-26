@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"implcache-mcp/librarydocs"
 	"implcache-mcp/store"
 )
 
@@ -97,6 +98,11 @@ type SearchPlaygroundOptions struct {
 	Explain  bool
 	// AllRoots opts into cross-root search. Default false: resolve or needsChoice.
 	AllRoots bool
+	// LibraryDocs filters (API-layer; no schema change).
+	LibraryDocsOnly    bool
+	ExcludeLibraryDocs bool
+	LibraryDocsLevel   string
+	LibraryDocsStatus  string
 }
 
 // SearchPlayground runs a retrieval query with optional EXPLAIN QUERY PLAN.
@@ -145,6 +151,8 @@ func SearchPlayground(ctx context.Context, st *store.Store, opt SearchPlayground
 	if opt.Explain {
 		store.AttachScoreBreakdown(hits, q)
 	}
+	hits = librarydocs.EnrichHits(ctx, st, hits, librarydocs.DefaultRankingConfig())
+	hits = librarydocs.FilterHits(hits, opt.LibraryDocsOnly, opt.ExcludeLibraryDocs, opt.LibraryDocsLevel, opt.LibraryDocsStatus)
 	res := &SearchPlaygroundResult{Query: q, Roots: roots, Hits: hits, Count: len(hits)}
 	if opt.Explain {
 		plan, err := st.ExplainSearchPlan(ctx, q, roots)

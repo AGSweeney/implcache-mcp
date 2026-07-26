@@ -16,13 +16,17 @@ import (
 )
 
 type searchPlaygroundRequest struct {
-	Query    string   `json:"query"`
-	Roots    []string `json:"roots,omitempty"`
-	RootName string   `json:"rootName,omitempty"`
-	Limit    int      `json:"limit,omitempty"`
-	Semantic bool     `json:"semantic,omitempty"`
-	Explain  bool     `json:"explain,omitempty"`
-	AllRoots bool     `json:"allRoots,omitempty"`
+	Query              string   `json:"query"`
+	Roots              []string `json:"roots,omitempty"`
+	RootName           string   `json:"rootName,omitempty"`
+	Limit              int      `json:"limit,omitempty"`
+	Semantic           bool     `json:"semantic,omitempty"`
+	Explain            bool     `json:"explain,omitempty"`
+	AllRoots           bool     `json:"allRoots,omitempty"`
+	LibraryDocsOnly    bool     `json:"libraryDocsOnly,omitempty"`
+	ExcludeLibraryDocs bool     `json:"excludeLibraryDocs,omitempty"`
+	LibraryDocsLevel   string   `json:"libraryDocsLevel,omitempty"`
+	LibraryDocsStatus  string   `json:"libraryDocsStatus,omitempty"`
 }
 
 func (h *handler) handleSearchPlayground(w http.ResponseWriter, r *http.Request) {
@@ -33,13 +37,17 @@ func (h *handler) handleSearchPlayground(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	res, err := librarian.SearchPlayground(r.Context(), h.opt.Store, librarian.SearchPlaygroundOptions{
-		Query:    req.Query,
-		Roots:    req.Roots,
-		RootName: req.RootName,
-		Limit:    req.Limit,
-		Semantic: req.Semantic || h.opt.EnableSemantic,
-		Explain:  req.Explain,
-		AllRoots: req.AllRoots,
+		Query:              req.Query,
+		Roots:              req.Roots,
+		RootName:           req.RootName,
+		Limit:              req.Limit,
+		Semantic:           req.Semantic || h.opt.EnableSemantic,
+		Explain:            req.Explain,
+		AllRoots:           req.AllRoots,
+		LibraryDocsOnly:    req.LibraryDocsOnly,
+		ExcludeLibraryDocs: req.ExcludeLibraryDocs,
+		LibraryDocsLevel:   req.LibraryDocsLevel,
+		LibraryDocsStatus:  req.LibraryDocsStatus,
 	})
 	if err != nil {
 		var need *store.ErrNeedsRoot

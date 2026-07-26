@@ -299,6 +299,8 @@ Unchanged content is skipped via content hash. Cap defaults: 50 000 files per 
 
 Prefer **`ingestcli`** for large trees. Full flag tables and tips: [INGEST.md](INGEST.md).
 
+Repos with a conventional `LibraryDocs/` package are detected during git/project ingest (`auto` by default; see [LibraryDocs-aware ingest](INGEST.md#librarydocs-aware-ingest) and [LIBRARYDOCS.md](LIBRARYDOCS.md)). Handling can be set via ingest options or `.implcache.yaml` `libraryDocsHandling` (`auto` \| `normal` \| `exclude`); change requires reindex.
+
 ### 7.2 Root naming
 
 Use stable ids (`example-device-sdk`, `my_app`). Never mix unrelated product families into one root. Ingest project code as its own root so ranking can prefer `current_project`.

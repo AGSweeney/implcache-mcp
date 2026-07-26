@@ -92,6 +92,9 @@ type SearchHit struct {
 	Rank           float64 `json:"rank"`
 	Score          float64 `json:"score,omitempty"`     // composite score after authority/symbol boosts
 	MatchKind      string  `json:"matchKind,omitempty"` // symbol|filename|path|heading|body|semantic
+	ContentClass   string  `json:"contentClass,omitempty"`
+	// LibraryDocs is optional enrichment attached after search (not a DB column).
+	LibraryDocs any `json:"libraryDocs,omitempty"`
 	// ScoreBreakdown is populated when explain scoring is requested.
 	ScoreBreakdown *ScoreBreakdown `json:"scoreBreakdown,omitempty"`
 }
@@ -105,6 +108,7 @@ type ScoreBreakdown struct {
 	SymbolBias        float64 `json:"symbolBias"`
 	ArchivedPenalty   float64 `json:"archivedPenalty,omitempty"`
 	DeprecatedPenalty float64 `json:"deprecatedPenalty,omitempty"`
+	LibraryDocsBoost  float64 `json:"libraryDocsBoost,omitempty"`
 	Total             float64 `json:"total"`
 }
 
@@ -503,6 +507,36 @@ func (s *Store) DeleteDocument(ctx context.Context, uri string) (bool, error) {
 		return false, err
 	}
 	return n > 0, nil
+}
+
+// UpdateDocumentTrust updates authority and deprecated flags without rewriting chunks.
+// Used by LibraryDocs enrichment after content ingest (no schema change).
+func (s *Store) UpdateDocumentTrust(ctx context.Context, uri, authority string, deprecated bool) error {
+	uri = strings.TrimSpace(uri)
+	if uri == "" {
+		return fmt.Errorf("uri is required")
+	}
+	if authority == "" {
+		authority = AuthorityUnknown
+	}
+	dep := 0
+	if deprecated {
+		dep = 1
+	}
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE documents SET authority = ?, deprecated = ?, updated_at = ?
+		WHERE uri = ?`, authority, dep, time.Now().Unix(), uri)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // DeleteDocumentsByURIPrefix deletes all documents whose URI starts with prefix.
