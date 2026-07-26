@@ -21,7 +21,7 @@ Related docs: [CONFIGURATION.md](CONFIGURATION.md#local-usage-analytics), [API_V
 2. Open **Inspect → Analytics** in the Librarian UI (`http://127.0.0.1:8080/analytics`), or use Search Lab / MCP / `POST /api/v1/search/context` to generate traffic first.
 3. Confirm the green banner: analytics enabled, metadata-only, DB path, and retention.
 
-Analytics Overview
+![Analytics Overview](images/analytics/analytics-overview.png)
 
 If the banner says analytics are disabled or unavailable, fix Settings (below) or the `-usage-db` path / permissions. Retrieval still works when analytics cannot write.
 
@@ -94,7 +94,7 @@ URL query params keep the same filters (useful for bookmarks). Changing **Covera
 
 ## 6. Overview and Usage — summary cards
 
-Usage tab with summary cards
+![Usage tab with summary cards](images/analytics/analytics-usage.png)
 
 
 | Card                            | Meaning                                                                               |
@@ -123,13 +123,13 @@ Line chart of total / grounded / root choice / no match / errors. Toggle series 
 
 ## 7. Recent requests and request detail
 
-Recent requests table
+![Recent requests table](images/analytics/analytics-recent-requests.png)
 
 Columns: Time, Tool, Root, Status, Coverage, Tokens, Sources, Latency. Sort by column headers; paginate with Previous / Next.
 
 Click a row to open **Request detail**:
 
-Request detail drill-down
+![Request detail drill-down](images/analytics/analytics-request-detail.png)
 
 
 | Field group | Contents                                                                               |
@@ -149,7 +149,7 @@ Close with **Close** or the backdrop. Full excerpts appear only if diagnostic st
 
 ## 8. Retrieval Quality — coverage
 
-Retrieval Quality tab
+![Retrieval Quality tab](images/analytics/analytics-quality.png)
 
 Coverage describes how complete the **implementation package** looked for grounded requests:
 
@@ -172,7 +172,7 @@ The same tab repeats **Request Outcomes** (exclusive) and **Evidence Usage** (ov
 
 ## 9. Outcomes and knowledge usage
 
-Outcomes tab
+![Outcomes tab](images/analytics/analytics-outcomes.png)
 
 ### Request Outcomes (mutually exclusive)
 
@@ -210,7 +210,7 @@ Use these to see which corpora agents lean on and which files dominate citations
 
 ## 10. Efficiency — context reduction
 
-Efficiency tab
+![Efficiency tab](images/analytics/analytics-efficiency.png)
 
 **Tokens served** measures usage volume. **Tokens avoided** measures context efficiency. A high served-token total is not automatically good or bad unless interpreted alongside grounding, package size, reduction, and outcomes.
 
@@ -245,7 +245,7 @@ Interpret reduction as a **relative efficiency signal**, not a guarantee of mode
 
 Open **System → Settings → Usage analytics**.
 
-Settings usage analytics
+![Settings usage analytics](images/analytics/analytics-settings.png)
 
 
 | Control                                 | Effect                                                                  |
