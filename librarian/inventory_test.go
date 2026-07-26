@@ -68,6 +68,39 @@ func TestListSourcesUnified(t *testing.T) {
 	}
 }
 
+func TestLocalIndexedSourceCountsAsHealthy(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "stats-local.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+
+	_, err = st.UpsertDocument(ctx, store.UpsertInput{
+		URI: "project://local-root/a.md", Title: "A", SourceType: store.SourceMarkdown,
+		RootName: "local-root", Hash: "h1", Chunks: []store.Chunk{{Body: "hello", StartLine: 1, EndLine: 1}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := librarian.GetLibraryStats(ctx, st, filepath.Join(t.TempDir(), "missing.db"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.SourcesTotal < 1 || stats.SourcesOK < 1 {
+		t.Fatalf("expected local root counted healthy: %+v", stats)
+	}
+
+	h, err := librarian.GetSourceHealth(ctx, st, librarian.KindLocal, "local-root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.State != "ok" {
+		t.Fatalf("local health state=%q want ok", h.State)
+	}
+}
+
 func TestOperationTracker(t *testing.T) {
 	tr := librarian.NewTracker(8)
 	id := tr.Start(librarian.SourceRef{Kind: librarian.KindWeb, ID: "x"}, "crawl")

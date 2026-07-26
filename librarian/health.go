@@ -6,6 +6,7 @@ package librarian
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"implcache-mcp/store"
@@ -38,12 +39,15 @@ func LibraryHealth(ctx context.Context, st *store.Store) ([]HealthIssue, error) 
 		})
 	}
 
-	emptyDocs, _ := st.CountDocumentsWithoutChunks(ctx)
-	if emptyDocs > 0 {
+	if report, err := st.DocumentsWithoutChunksReport(ctx, 8); err != nil {
 		issues = append(issues, HealthIssue{
 			Severity: "warning", Code: "documents_without_chunks",
-			Description: "documents exist with no chunks", Action: "Re-ingest affected sources",
+			SourceKind: "library", SourceID: "all",
+			Description: "failed to inspect chunkless documents: " + err.Error(),
+			Action:      "Check database integrity",
 		})
+	} else if report.Total > 0 {
+		issues = append(issues, emptyChunksIssue(report))
 	}
 
 	sources, err := ListSources(ctx, st)
@@ -76,4 +80,72 @@ func LibraryHealth(ctx context.Context, st *store.Store) ([]HealthIssue, error) 
 		}
 	}
 	return issues, nil
+}
+
+func emptyChunksIssue(report store.DocumentsWithoutChunksReport) HealthIssue {
+	rootParts := make([]string, 0, len(report.ByRoot))
+	rootNames := make([]string, 0, len(report.ByRoot))
+	for _, r := range report.ByRoot {
+		label := r.RootName
+		if label == "" {
+			label = "(empty root)"
+		}
+		if r.SourceType != "" {
+			rootParts = append(rootParts, fmt.Sprintf("%s [%s]: %d", label, r.SourceType, r.Count))
+		} else {
+			rootParts = append(rootParts, fmt.Sprintf("%s: %d", label, r.Count))
+		}
+		if r.RootName != "" {
+			rootNames = append(rootNames, r.RootName)
+		}
+	}
+
+	desc := fmt.Sprintf("%d document(s) have no chunks", report.Total)
+	if len(rootParts) > 0 {
+		desc += " — by root: " + strings.Join(rootParts, "; ")
+	}
+	if len(report.SampleURIs) > 0 {
+		desc += ". Examples: " + strings.Join(report.SampleURIs, ", ")
+		if report.Total > len(report.SampleURIs) {
+			desc += ", …"
+		}
+	}
+
+	action := "Re-ingest or remove the listed roots (Library → filter by root, or Sources → Refresh / Remove)."
+	if len(rootNames) > 0 {
+		uniq := uniqueStrings(rootNames)
+		action = "Purge stub docs from Librarian Health (Purge chunkless docs), " +
+			"or: ingestcli -mode purge-empty-docs -db <db> " +
+			"(roots: " + strings.Join(uniq, ", ") + ")."
+	}
+
+	primary := "all"
+	if len(rootNames) == 1 {
+		primary = rootNames[0]
+	}
+
+	return HealthIssue{
+		Severity:    "warning",
+		Code:        "documents_without_chunks",
+		SourceKind:  "library",
+		SourceID:    primary,
+		Description: desc,
+		Action:      action,
+	}
+}
+
+func uniqueStrings(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
 }

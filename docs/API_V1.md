@@ -88,6 +88,7 @@ Kinds: `web`, `pdf`, `repo`, `local`. IDs are URL-escaped (PDF URIs).
 | GET | `/library/documents` | Paginated documents (`?root=&sourceType=&limit=&offset=`) |
 | GET | `/library/documents/{id}` | Document + bounded chunks |
 | GET | `/library/documents/{id}/symbols` | Symbols for document |
+| POST | `/library/purge-empty-docs` | Delete documents with no chunks (admin/delete; returns `{deleted,before,…}`) |
 
 ## Roots
 

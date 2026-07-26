@@ -36,6 +36,16 @@ type KnowledgeEntry struct {
 	SourceURIs   []string `json:"sourceUris,omitempty"`
 }
 
+// DeleteAllKnowledgeEntries removes every recipe (knowledge_entries).
+// Source lineage rows cascade via FK.
+func (s *Store) DeleteAllKnowledgeEntries(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM knowledge_entries`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // UpsertKnowledgeEntry stores a recipe with source lineage.
 func (s *Store) UpsertKnowledgeEntry(ctx context.Context, e KnowledgeEntry) (int64, error) {
 	if strings.TrimSpace(e.URI) == "" || strings.TrimSpace(e.BodyMarkdown) == "" {

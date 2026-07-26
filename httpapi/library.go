@@ -22,6 +22,29 @@ func (h *handler) handleLibraryStats(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, stats)
 }
 
+// handlePurgeEmptyDocs deletes documents that have no chunk rows (ingest stubs).
+func (h *handler) handlePurgeEmptyDocs(w http.ResponseWriter, r *http.Request) {
+	if !h.allowMutation(w, r, "delete") {
+		return
+	}
+	report, err := h.opt.Store.DocumentsWithoutChunksReport(r.Context(), 8)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	n, err := h.opt.Store.DeleteDocumentsWithoutChunks(r.Context())
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"deleted":    n,
+		"before":     report.Total,
+		"byRoot":     nonNilSlice(report.ByRoot),
+		"sampleUris": nonNilSlice(report.SampleURIs),
+	})
+}
+
 func (h *handler) handleListDocuments(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	root := q.Get("root")

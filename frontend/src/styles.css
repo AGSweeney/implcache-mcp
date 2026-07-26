@@ -1419,20 +1419,65 @@ button.linkish:hover { text-decoration: underline; }
 .hljs .hljs-emphasis { font-style: italic; }
 .hljs .hljs-strong { font-weight: 700; }
 
+.health-desc {
+  max-width: 36rem;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.45;
+}
+.health-action { max-width: 18rem; line-height: 1.4; }
+.health-action-links {
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.35rem;
+  align-items: center;
+}
+.health-callout {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.health-callout-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 12rem;
+  flex: 1;
+}
+.health-callout-text p { margin: 0; color: var(--ink-soft); font-size: 0.92rem; line-height: 1.45; }
+button.linkish {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+button.linkish:hover { text-decoration: underline; }
+button.linkish:disabled { opacity: 0.55; cursor: not-allowed; }
+
 .confirm-dialog {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 0;
   max-width: 28rem;
   width: calc(100% - 2rem);
-  box-shadow: 0 16px 40px rgba(16, 24, 32, 0.18);
+  color: var(--ink);
+  background: var(--bg-surface);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
 }
 .confirm-dialog::backdrop { background: rgba(6, 12, 20, 0.62); }
-.confirm-dialog-inner { padding: 1.15rem 1.2rem; }
+.confirm-dialog-inner { padding: 1.15rem 1.2rem; background: transparent; }
 .confirm-dialog-inner h2 {
   margin: 0 0 0.65rem;
   font-family: var(--display);
   font-size: 1.25rem;
+  color: var(--ink);
 }
 .confirm-dialog-body { color: var(--ink-soft); font-size: 0.92rem; line-height: 1.5; margin-bottom: 1rem; }
 .confirm-dialog-body ul { margin: 0.5rem 0 0; padding-left: 1.1rem; }

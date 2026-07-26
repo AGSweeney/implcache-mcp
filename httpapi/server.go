@@ -154,6 +154,7 @@ func (h *handler) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+apiPrefix+"library/documents", h.handleListDocuments)
 	mux.HandleFunc("GET "+apiPrefix+"library/documents/{id}", h.handleGetDocument)
 	mux.HandleFunc("GET "+apiPrefix+"library/documents/{id}/symbols", h.handleDocumentSymbols)
+	mux.HandleFunc("POST "+apiPrefix+"library/purge-empty-docs", h.handlePurgeEmptyDocs)
 
 	mux.HandleFunc("GET "+apiPrefix+"roots", h.handleListRoots)
 	mux.HandleFunc("GET "+apiPrefix+"root-groups", h.handleListRootGroups)

@@ -201,6 +201,51 @@ func TestHandleDeleteLocalSource(t *testing.T) {
 	}
 }
 
+func TestHandlePurgeEmptyDocs(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	if _, err := st.UpsertDocument(ctx, store.UpsertInput{
+		URI: "project://demo/empty.md", Title: "empty", SourceType: store.SourceMarkdown,
+		RootName: "demo", Hash: "e1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpsertDocument(ctx, store.UpsertInput{
+		URI: "project://demo/ok.md", Title: "ok", SourceType: store.SourceMarkdown,
+		RootName: "demo", Hash: "e2", Chunks: []store.Chunk{{Body: "hello"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHandler(Options{Store: st, DBPath: dbPath, AllowIngest: true, AllowDelete: true, LibrarianEnabled: true})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/library/purge-empty-docs", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Deleted int64 `json:"deleted"`
+		Before  int   `json:"before"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Deleted != 1 || got.Before != 1 {
+		t.Fatalf("got %+v", got)
+	}
+	doc, _, err := st.GetDocumentByURI(ctx, "project://demo/ok.md")
+	if err != nil || doc == nil {
+		t.Fatalf("kept doc missing: %v", err)
+	}
+}
+
 func TestHandleDeletePDFSourceKeepsFullURI(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")

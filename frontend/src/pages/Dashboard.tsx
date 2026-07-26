@@ -62,14 +62,6 @@ function IconSymbols() {
     </svg>
   );
 }
-function IconRecipes() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
-      <path d="M6 4.5h9.5L19 8v11.5A1.5 1.5 0 0 1 17.5 21H6A1.5 1.5 0 0 1 4.5 19.5v-13A1.5 1.5 0 0 1 6 4.5Z" />
-      <path d="M8.5 11h7M8.5 14.5h5" strokeLinecap="round" />
-    </svg>
-  );
-}
 function IconDb() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
@@ -145,7 +137,6 @@ export default function Dashboard() {
     { label: "Documents", value: s?.documents, accent: "var(--copper)", icon: <IconDocs />, group: "corpus" },
     { label: "Chunks", value: s?.chunks, accent: "var(--accent-hover)", icon: <IconChunks />, group: "corpus" },
     { label: "Symbols", value: s?.symbols, accent: "var(--info)", icon: <IconSymbols />, group: "corpus" },
-    { label: "Recipes", value: s?.recipes, accent: "var(--copper-soft)", icon: <IconRecipes />, group: "corpus" },
     {
       label: "Database",
       value: s ? formatBytes(s.databaseBytes) : undefined,

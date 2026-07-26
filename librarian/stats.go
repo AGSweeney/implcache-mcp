@@ -41,7 +41,7 @@ func GetLibraryStats(ctx context.Context, st *store.Store, dbPath string, tracke
 	}
 	s.SourcesTotal = len(sources)
 	for _, src := range sources {
-		switch classifyState(src.LastStatus) {
+		switch sourceOperationalState(src) {
 		case "ok":
 			s.SourcesOK++
 		case "failed", "degraded":

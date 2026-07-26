@@ -116,6 +116,13 @@ export const api = {
   job: (id: string) => request<Operation>(`/api/v1/jobs/${id}`),
   cancelJob: (id: string) => request(`/api/v1/jobs/${id}/cancel`, { method: "POST" }),
   health: () => request<{ issues: HealthIssue[] } | HealthIssue[]>("/api/v1/health"),
+  purgeEmptyDocs: () =>
+    request<{
+      deleted: number;
+      before: number;
+      byRoot?: { rootName: string; count: number; sourceType?: string }[];
+      sampleUris?: string[];
+    }>("/api/v1/library/purge-empty-docs", { method: "POST", body: "{}" }),
   documents: (q: URLSearchParams) =>
     request<{ documents: Doc[]; total: number; count: number }>(`/api/v1/library/documents?${q}`),
   document: (id: number) => request(`/api/v1/library/documents/${id}`),

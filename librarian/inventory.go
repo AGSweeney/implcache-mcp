@@ -124,7 +124,7 @@ func GetSourceHealth(ctx context.Context, st *store.Store, kind SourceKind, id s
 		DocumentCount: sum.DocumentCount,
 		ChunkCount:    sum.ChunkCount,
 		SymbolCount:   sum.SymbolCount,
-		State:         classifyState(sum.LastStatus),
+		State:         sourceOperationalState(*sum),
 	}
 	errs, err := RecentErrors(ctx, st, kind, id, 10)
 	if err == nil {
@@ -198,6 +198,17 @@ func classifyState(status string) string {
 	default:
 		return "unknown"
 	}
+}
+
+// sourceOperationalState maps a source to ok/failed/idle for dashboard counts and
+// health. Local roots are synthesized without lastStatus; treat indexed corpora
+// (docs or chunks present) as healthy so stats match the Sources "Ready" UI.
+func sourceOperationalState(src SourceSummary) string {
+	st := classifyState(src.LastStatus)
+	if st == "idle" && (src.DocumentCount > 0 || src.ChunkCount > 0) {
+		return "ok"
+	}
+	return st
 }
 
 func firstNonEmpty(a, b string) string {

@@ -61,6 +61,135 @@ func (s *Store) CountDocumentsWithoutChunks(ctx context.Context) (int, error) {
 	return n, err
 }
 
+// DeleteDocumentsWithoutChunks removes documents that have no chunk rows
+// (ingest stubs / binary-ish files that never produced searchable text).
+func (s *Store) DeleteDocumentsWithoutChunks(ctx context.Context) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT d.id FROM documents d
+		WHERE NOT EXISTS (SELECT 1 FROM chunks c WHERE c.document_id = d.id)`)
+	if err != nil {
+		return 0, err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	if err := retractDocumentsSemanticStats(ctx, tx, ids); err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, `
+		DELETE FROM documents
+		WHERE id IN (
+			SELECT d.id FROM documents d
+			WHERE NOT EXISTS (SELECT 1 FROM chunks c WHERE c.document_id = d.id)
+		)`)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// EmptyChunkRootCount is how many chunkless documents sit under one root.
+type EmptyChunkRootCount struct {
+	RootName   string `json:"rootName"`
+	Count      int    `json:"count"`
+	SourceType string `json:"sourceType,omitempty"`
+}
+
+// DocumentsWithoutChunksReport summarizes orphan documents for health UX.
+type DocumentsWithoutChunksReport struct {
+	Total      int                   `json:"total"`
+	ByRoot     []EmptyChunkRootCount `json:"byRoot"`
+	SampleURIs []string              `json:"sampleUris"`
+}
+
+const emptyChunkDocSQL = `
+FROM documents d
+WHERE NOT EXISTS (SELECT 1 FROM chunks c WHERE c.document_id = d.id)`
+
+// DocumentsWithoutChunksReport returns totals, per-root breakdown, and sample URIs.
+func (s *Store) DocumentsWithoutChunksReport(ctx context.Context, sampleLimit int) (DocumentsWithoutChunksReport, error) {
+	var out DocumentsWithoutChunksReport
+	if sampleLimit <= 0 {
+		sampleLimit = 8
+	}
+	if sampleLimit > 25 {
+		sampleLimit = 25
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) `+emptyChunkDocSQL).Scan(&out.Total); err != nil {
+		return out, err
+	}
+	if out.Total == 0 {
+		return out, nil
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT d.root_name, COALESCE(d.source_type, ''), COUNT(*)
+		`+emptyChunkDocSQL+`
+		GROUP BY d.root_name, d.source_type
+		ORDER BY COUNT(*) DESC, d.root_name ASC
+		LIMIT 20`)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var r EmptyChunkRootCount
+		if err := rows.Scan(&r.RootName, &r.SourceType, &r.Count); err != nil {
+			return out, err
+		}
+		out.ByRoot = append(out.ByRoot, r)
+	}
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
+
+	uriRows, err := s.db.QueryContext(ctx, `
+		SELECT d.uri
+		`+emptyChunkDocSQL+`
+		ORDER BY d.root_name ASC, d.uri ASC
+		LIMIT ?`, sampleLimit)
+	if err != nil {
+		return out, err
+	}
+	defer uriRows.Close()
+	for uriRows.Next() {
+		var uri string
+		if err := uriRows.Scan(&uri); err != nil {
+			return out, err
+		}
+		out.SampleURIs = append(out.SampleURIs, uri)
+	}
+	return out, uriRows.Err()
+}
+
 // ListDocumentsPage returns a page of documents with optional filters.
 func (s *Store) ListDocumentsPage(ctx context.Context, rootName, sourceType string, limit, offset int) ([]Document, int, error) {
 	if limit <= 0 {

@@ -24,7 +24,7 @@ import (
 func main() {
 	dbPath := flag.String("db", "./implcache.db", "sqlite db path")
 	path := flag.String("path", "", "path to ingest (markdown/project/pdf/local repo)")
-	mode := flag.String("mode", "markdown", "markdown|project|delete-prefix|url|pdf-*|repo-*")
+	mode := flag.String("mode", "markdown", "markdown|project|delete-prefix|purge-empty-docs|purge-recipes|url|pdf-*|repo-*")
 	recursive := flag.Bool("recursive", true, "recurse for markdown mode")
 	rootName := flag.String("root", "", "rootName for project://, pdf://, or git:// URIs")
 	prefix := flag.String("prefix", "", "URI prefix for delete-prefix mode")
@@ -86,6 +86,20 @@ func main() {
 		}
 		fmt.Printf("mode=delete-prefix deleted=%d prefix=%q elapsed=%s\n",
 			n, *prefix, time.Since(start).Round(time.Millisecond))
+	case "purge-empty-docs":
+		n, err := st.DeleteDocumentsWithoutChunks(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("mode=purge-empty-docs deleted=%d elapsed=%s\n",
+			n, time.Since(start).Round(time.Millisecond))
+	case "purge-recipes":
+		n, err := st.DeleteAllKnowledgeEntries(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("mode=purge-recipes deleted=%d elapsed=%s\n",
+			n, time.Since(start).Round(time.Millisecond))
 	case "url":
 		if *urlFlag == "" {
 			log.Fatal("-url is required for url mode")
