@@ -16,6 +16,7 @@ ImplCache LibraryDocs-aware ingest (phases 1–2 + light phase 3). **No schema c
 | Search hit enrichment | `store.SearchHit.LibraryDocs`, `librarydocs.EnrichHits` |
 | Fixtures | `testdata/librarydocs/` |
 | Operator docs | [INGEST.md](INGEST.md#librarydocs-aware-ingest), [USERS_MANUAL.md](USERS_MANUAL.md) pointer |
+| Authoring skill | [CREATE_LIBRARYDOCS.md](CREATE_LIBRARYDOCS.md) · [`tools/create-librarydocs/`](../tools/create-librarydocs/) · zip [`tools/create-librarydocs.zip`](../tools/create-librarydocs.zip) |
 
 ## Schema changes
 
@@ -71,6 +72,10 @@ Ordinary repos without `LibraryDocs/` behave as before (summary `detected=false`
 - LibraryDocs analytics counters in the usage DB
 - Deeper mixed-package builder using `source_paths`
 - Executing VALIDATION scripts (**never**)
+
+## Authoring skill
+
+Packages are produced with the **create-librarydocs** Cursor skill (v2.1.0), shipped in this repo as [`tools/create-librarydocs/`](../tools/create-librarydocs/) and [`tools/create-librarydocs.zip`](../tools/create-librarydocs.zip). Install globally once; do not embed the skill in every consumer repo. Full install, workflow, and standards index: [CREATE_LIBRARYDOCS.md](CREATE_LIBRARYDOCS.md).
 
 ## mqtt-client unified-package example
 

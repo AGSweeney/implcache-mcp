@@ -22,6 +22,10 @@ relatedRoots:
 versions:
   device_sdk: "3.x"
   protocol: "1.0"
+
+# How LibraryDocs/ is handled on git/project ingest (optional)
+# auto | normal | exclude — see CREATE_LIBRARYDOCS.md and INGEST.md
+libraryDocsHandling: auto
 ```
 
 ## Rules

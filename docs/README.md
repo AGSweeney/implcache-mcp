@@ -18,6 +18,8 @@ ImplCache MCP is a **local implementation-context server** for coding agents. It
 | [MANIFEST.md](MANIFEST.md) | `.implcache.yaml` workspace configuration |
 | [DATA_MODEL.md](DATA_MODEL.md) | URIs, schema, authority, recipes, symbols |
 | [INGEST.md](INGEST.md) | Markdown/HTML/project, web, PDF, and Git ingest + CLI |
+| [CREATE_LIBRARYDOCS.md](CREATE_LIBRARYDOCS.md) | create-librarydocs skill (author `LibraryDocs/` packages) |
+| [LIBRARYDOCS.md](LIBRARYDOCS.md) | LibraryDocs ingest deliverable notes (no schema change) |
 | [OPERATIONS.md](OPERATIONS.md) | Build, flags, security, validation, evaluation, [limitations/risks](OPERATIONS.md#limitations-and-risks) |
 | [API_V1.md](API_V1.md) | Librarian REST admin API (`/api/v1`) + embedded UI |
 | [ANALYTICS_USERS_GUIDE.md](ANALYTICS_USERS_GUIDE.md) | Analytics Dashboard User Guide (screenshots) |

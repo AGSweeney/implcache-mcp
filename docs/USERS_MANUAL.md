@@ -301,6 +301,8 @@ Prefer **`ingestcli`** for large trees. Full flag tables and tips: [INGEST.md](I
 
 Repos with a conventional `LibraryDocs/` package are detected during git/project ingest (`auto` by default; see [LibraryDocs-aware ingest](INGEST.md#librarydocs-aware-ingest) and [LIBRARYDOCS.md](LIBRARYDOCS.md)). Handling can be set via ingest options or `.implcache.yaml` `libraryDocsHandling` (`auto` \| `normal` \| `exclude`); change requires reindex.
 
+To **build** those packages in a source repo, install the create-librarydocs Cursor skill from [`tools/create-librarydocs.zip`](../tools/create-librarydocs.zip) (or the unpacked [`tools/create-librarydocs/`](../tools/create-librarydocs/) tree). Overview: [CREATE_LIBRARYDOCS.md](CREATE_LIBRARYDOCS.md).
+
 ### 7.2 Root naming
 
 Use stable ids (`example-device-sdk`, `my_app`). Never mix unrelated product families into one root. Ingest project code as its own root so ranking can prefer `current_project`.

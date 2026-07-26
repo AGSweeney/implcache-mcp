@@ -119,7 +119,7 @@ Boosts are additive only; exact symbol matches stay higher priority. Search Lab 
 - Full mixed-package builder polish beyond `source_paths` citation hints
 - Executing VALIDATION scripts (never)
 
-See also [LIBRARYDOCS.md](LIBRARYDOCS.md) for the deliverable summary and mqtt-client fixture example.
+See also [LIBRARYDOCS.md](LIBRARYDOCS.md) for the deliverable summary and mqtt-client fixture example. To **author** `LibraryDocs/` packages, use the create-librarydocs skill ([CREATE_LIBRARYDOCS.md](CREATE_LIBRARYDOCS.md); bundle [`tools/create-librarydocs.zip`](../tools/create-librarydocs.zip)).
 
 ## CLI (`cmd/ingestcli`)
 
