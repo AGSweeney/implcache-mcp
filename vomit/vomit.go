@@ -165,6 +165,9 @@ func Generate(ctx context.Context, st *store.Store, req Request) (*Result, error
 		res.OutPath = outAbs
 	}
 	if req.SaveRecipe {
+		if len(sources) == 0 {
+			return nil, fmt.Errorf("saveRecipe requires non-empty source lineage; no citation URIs were gathered")
+		}
 		root := ""
 		if len(inf.Roots) > 0 {
 			root = inf.Roots[0]
@@ -190,7 +193,7 @@ func Generate(ctx context.Context, st *store.Store, req Request) (*Result, error
 			return nil, fmt.Errorf("save recipe: %w", err)
 		}
 		res.RecipeURI = recipeURI
-		res.ReviewNote = fmt.Sprintf("saved generated recipe id=%d (not human-reviewed; will not outrank curated recipes)", id)
+		res.ReviewNote = fmt.Sprintf("saved generated recipe id=%d (not human-reviewed; will not outrank curated recipes); lineage=%d sources", id, len(sources))
 	}
 	return res, nil
 }

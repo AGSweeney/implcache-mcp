@@ -520,7 +520,7 @@ func (s *Store) hydrateSemanticHits(ctx context.Context, ranked []semanticScored
 		       COALESCE(d.root_name, ''), COALESCE(d.path, ''),
 		       COALESCE(d.authority, 'unknown'), COALESCE(d.language, ''),
 		       COALESCE(d.technology, ''), COALESCE(d.product_version, ''),
-		       COALESCE(d.archived, 0),
+		       COALESCE(d.deprecated, 0), COALESCE(d.archived, 0),
 		       c.ordinal, c.heading, c.body, c.start_line, c.end_line
 		FROM chunks c
 		JOIN documents d ON d.id = c.document_id
@@ -534,18 +534,25 @@ func (s *Store) hydrateSemanticHits(ctx context.Context, ranked []semanticScored
 	hitsByID := make(map[int64]SearchHit, len(ranked))
 	for rows.Next() {
 		var h SearchHit
-		var archived int
+		var deprecated, archived int
 		if err := rows.Scan(
 			&h.ChunkID, &h.DocumentID, &h.URI, &h.Title, &h.RootName, &h.Path,
-			&h.Authority, &h.Language, &h.Technology, &h.ProductVersion, &archived,
+			&h.Authority, &h.Language, &h.Technology, &h.ProductVersion, &deprecated, &archived,
 			&h.Ordinal, &h.Heading, &h.Snippet, &h.StartLine, &h.EndLine,
 		); err != nil {
 			return nil, err
 		}
+		h.Deprecated = deprecated != 0
 		h.Archived = archived != 0
 		r := byID[h.ChunkID]
 		h.MatchKind = MatchKindSemantic
 		h.Score = r.sim*2.0 + AuthorityBoost(h.Authority)
+		if h.ArchivedHint() {
+			h.Score -= 25
+		}
+		if h.Deprecated {
+			h.Score -= 20
+		}
 		h.Rank = 1.0 - r.sim
 		h.Snippet = ClipExcerpt(h.Snippet, 240)
 		hitsByID[h.ChunkID] = h
@@ -559,13 +566,7 @@ func (s *Store) hydrateSemanticHits(ctx context.Context, ranked []semanticScored
 			out = append(out, h)
 		}
 	}
-	// Re-sort after authority boost may reorder equal-sim ties across authorities.
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Score == out[j].Score {
-			return out[i].ChunkID < out[j].ChunkID
-		}
-		return out[i].Score > out[j].Score
-	})
+	sortSearchHits(out)
 	return out, nil
 }
 

@@ -28,14 +28,15 @@ var (
 	reGoFunc = regexp.MustCompile(`(?m)^func\s+(?:\(([^)]*)\)\s+)?([A-Za-z_][\w]*)\s*\(`)
 
 	// C/C++ definitions (body opens with {). Angle brackets normalized before match.
-	reCDef = regexp.MustCompile(`(?m)^(?:static\s+|extern\s+|inline\s+|constexpr\s+|virtual\s+|typename\s+)*[\w:<>,\s\*\&]+\s+([A-Za-z_][\w:]*)\s*\([^;]*\)\s*(?:const\s*|noexcept\s*)?\{`)
+	// Also matches trailing-return form: auto Name(...) -> T {
+	reCDef = regexp.MustCompile(`(?m)^(?:static\s+|extern\s+|inline\s+|constexpr\s+|virtual\s+|typename\s+)*(?:auto\s+|[\w:<>,\s\*\&]+\s+)([A-Za-z_][\w:]*)\s*\([^;]*\)\s*(?:const\s*|noexcept\s*)?(?:->\s*[\w:<>,\s\*\&]+\s*)?\{`)
 
 	// C/C++ declarations / prototypes ending with ; (require a return-type token so
 	// call statements like `ns::Helper();` are not treated as prototypes).
-	reCDecl = regexp.MustCompile(`(?m)^(?:static\s+|extern\s+|inline\s+|constexpr\s+|virtual\s+)*(?:[A-Za-z_][\w:<>,\*\&]*\s+)+([A-Za-z_][\w:]*)\s*\([^;]*\)\s*(?:const\s*|noexcept\s*)?;`)
+	reCDecl = regexp.MustCompile(`(?m)^(?:static\s+|extern\s+|inline\s+|constexpr\s+|virtual\s+)*(?:auto\s+|(?:[A-Za-z_][\w:<>,\*\&]*\s+)+)([A-Za-z_][\w:]*)\s*\([^;]*\)\s*(?:const\s*|noexcept\s*)?(?:->\s*[\w:<>,\s\*\&]+\s*)?;`)
 
-	// C++ scoped method definitions: Type::Method(...) {
-	reCppMethodDef = regexp.MustCompile(`(?m)^(?:[\w:<>,\s\*\&]+\s+)?([A-Za-z_][\w]*::[A-Za-z_][\w]*)\s*\([^;{]*\)\s*(?:const\s*|noexcept\s*)?\{`)
+	// C++ scoped method definitions: Type::Method(...) {  (incl. trailing return)
+	reCppMethodDef = regexp.MustCompile(`(?m)^(?:[\w:<>,\s\*\&]+\s+|auto\s+)?([A-Za-z_][\w]*::[A-Za-z_][\w]*)\s*\([^;{]*\)\s*(?:const\s*|noexcept\s*)?(?:->\s*[\w:<>,\s\*\&]+\s*)?\{`)
 
 	// template<...> class/struct/using and template functions (after angle normalization).
 	reTemplateType = regexp.MustCompile(`(?m)^template\s*<>\s*(?:class|struct|enum(?:\s+class)?|union)\s+([A-Za-z_][\w]*)`)
@@ -391,16 +392,28 @@ func LooksLikeAPIToken(s string) bool {
 }
 
 // InferAuthority picks a default authority from root/path heuristics.
+// Prefers unknown over a false upgrade; never maps bare source extensions to
+// related_internal_project. Path segment cues (sample/, examples/, docs/) beat
+// substring matches inside unrelated filenames.
 func InferAuthority(rootName, relPath string) string {
-	r := strings.ToLower(rootName + " " + relPath)
+	root := strings.ToLower(strings.TrimSpace(rootName))
+	rel := strings.ToLower(strings.ReplaceAll(relPath, `\`, `/`))
+	joined := root + " " + rel
+
+	hasSeg := func(seg string) bool {
+		return strings.Contains("/"+rel+"/", "/"+seg+"/") ||
+			strings.HasPrefix(rel, seg+"/") ||
+			strings.Contains(root, seg)
+	}
+
 	switch {
-	case strings.Contains(r, "recipe") || strings.Contains(r, "curated"):
+	case hasSeg("recipe") || hasSeg("curated") || strings.Contains(joined, "_recipes/"):
 		return store.AuthorityCuratedRecipe
-	case strings.Contains(r, "sample") || strings.Contains(r, "example"):
+	case hasSeg("sample") || hasSeg("samples") || hasSeg("example") || hasSeg("examples"):
 		return store.AuthorityOfficialExample
-	case strings.Contains(r, "help") || strings.Contains(r, "doc") || strings.Contains(r, "api/dita"):
+	case hasSeg("help") || hasSeg("doc") || hasSeg("docs") || strings.Contains(rel, "api/dita"):
 		return store.AuthorityOfficialDocs
-	case strings.Contains(r, "testdata") || strings.HasSuffix(relPath, ".go") || strings.Contains(r, "/src/"):
+	case hasSeg("testdata") || hasSeg("internal") || strings.Contains(root, "related"):
 		return store.AuthorityRelatedProject
 	default:
 		return store.AuthorityUnknown

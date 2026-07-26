@@ -258,13 +258,32 @@ func seedDemoCorpus(ctx context.Context, st *store.Store) error {
 			},
 		},
 		{
-			URI: "project://demo-embedded-project/drivers/gpio.cpp", Title: "gpio",
-			SourceType: store.SourceSource, Path: "drivers/gpio.cpp", RootName: "demo-embedded-project",
+			URI: "project://example-device-app/drivers/gpio.cpp", Title: "gpio",
+			SourceType: store.SourceSource, Path: "drivers/gpio.cpp", RootName: "example-device-app",
 			Authority: store.AuthorityCurrentProject, Hash: "e1",
 			Chunks: chunkBody("SpiTransfer ConfigurePin GPIO expander"),
 			Symbols: []store.SymbolInput{
 				{Name: "SpiTransfer", Kind: "function", Language: "cpp"},
 				{Name: "ConfigurePin", Kind: "function", Language: "cpp"},
+			},
+		},
+		{
+			URI: "project://sqlite-reference/pragma.md", Title: "PRAGMA",
+			SourceType: store.SourceMarkdown, Path: "pragma.md", RootName: "sqlite-reference",
+			Authority: store.AuthorityOfficialDocs, Hash: "sql1",
+			Chunks: chunkBody("PRAGMA user_version schema migration reference"),
+			Symbols: []store.SymbolInput{
+				{Name: "user_version", Kind: "api", Language: "sql"},
+			},
+		},
+		{
+			URI: "project://example-mcp-sdk/tools.md", Title: "MCP tools",
+			SourceType: store.SourceMarkdown, Path: "tools.md", RootName: "example-mcp-sdk",
+			Authority: store.AuthorityOfficialDocs, Hash: "mcpdocs",
+			Chunks: chunkBody("AddTool CallToolResult MCP tool registration"),
+			Symbols: []store.SymbolInput{
+				{Name: "AddTool", Kind: "api", Language: "go"},
+				{Name: "CallToolResult", Kind: "type", Language: "go"},
 			},
 		},
 		{
@@ -307,20 +326,20 @@ func seedDemoCorpus(ctx context.Context, st *store.Store) error {
 		// Noise docs share generic vocabulary with real tasks so FTS/semantic
 		// ranking is measurable (seed corpus used to saturate recall).
 		{
-			URI: "project://example-noise-docs/generic-network.md", Title: "Generic network",
-			SourceType: store.SourceMarkdown, Path: "generic-network.md", RootName: "example-noise-docs",
+			URI: "project://example-network-noise/generic-network.md", Title: "Generic network",
+			SourceType: store.SourceMarkdown, Path: "generic-network.md", RootName: "example-network-noise",
 			Authority: store.AuthorityOfficialDocs, Hash: "noise-net",
 			Chunks: chunkBody("The network client application handles configuration and session lifecycle for typical deployments without RetryPolicy"),
 		},
 		{
-			URI: "project://example-noise-docs/generic-plugin.md", Title: "Generic plugin",
-			SourceType: store.SourceMarkdown, Path: "generic-plugin.md", RootName: "example-noise-docs",
+			URI: "project://example-network-noise/generic-plugin.md", Title: "Generic plugin",
+			SourceType: store.SourceMarkdown, Path: "generic-plugin.md", RootName: "example-network-noise",
 			Authority: store.AuthorityOfficialDocs, Hash: "noise-plugin",
 			Chunks: chunkBody("Plugin command menus and application configuration guides for operators"),
 		},
 		{
-			URI: "project://example-noise-docs/generic-session.md", Title: "Generic session",
-			SourceType: store.SourceMarkdown, Path: "generic-session.md", RootName: "example-noise-docs",
+			URI: "project://example-network-noise/generic-session.md", Title: "Generic session",
+			SourceType: store.SourceMarkdown, Path: "generic-session.md", RootName: "example-network-noise",
 			Authority: store.AuthorityOfficialDocs, Hash: "noise-session",
 			Chunks: chunkBody("Device session lifecycle and configuration notes for network client deployments"),
 		},

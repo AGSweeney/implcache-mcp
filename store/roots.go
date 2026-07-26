@@ -36,7 +36,7 @@ var rootAliases = []struct {
 	{"sqlite-reference", []string{"sqlite-reference"}, 100},
 
 	{"device sdk", []string{"example-device-sdk"}, 80},
-	{"gpio expander", []string{"example-device-sdk", "demo-embedded-project"}, 85},
+	{"gpio expander", []string{"example-device-sdk", "example-device-app", "demo-embedded-project"}, 85},
 	{"spitransfer", []string{"example-device-sdk"}, 80},
 	{"configurepin", []string{"example-device-sdk"}, 75},
 
@@ -55,23 +55,32 @@ var rootAliases = []struct {
 }
 
 func rootFamily(root string) string {
-	r := strings.ToLower(root)
-	switch {
-	case strings.Contains(r, "device"):
-		return "device"
-	case strings.Contains(r, "plugin"):
-		return "plugin"
-	case strings.Contains(r, "network"):
-		return "network"
-	case strings.Contains(r, "database") || strings.Contains(r, "sqlite"):
-		return "database"
-	case strings.Contains(r, "embedded"):
-		return "embedded"
-	case strings.Contains(r, "control"):
-		return "control"
-	default:
-		return "other:" + r
+	r := strings.ToLower(strings.TrimSpace(root))
+	r = strings.TrimPrefix(r, "example-")
+	r = strings.TrimPrefix(r, "demo-")
+	// Product tokens (order matters for overlapping names).
+	for _, tok := range []string{
+		"network", "plugin", "device", "embedded", "database", "sqlite",
+		"control", "mcp", "logging", "config", "concurrency", "http",
+		"cache", "protocol", "noise",
+	} {
+		if strings.Contains(r, tok) {
+			if tok == "sqlite" {
+				return "database"
+			}
+			return tok
+		}
 	}
+	// Collapse role suffixes: foo-sdk / foo-app / foo-service → foo.
+	for _, suf := range []string{
+		"-sdk", "-app", "-service", "-docs", "-server", "-tool",
+		"-reference", "-project", "-lib",
+	} {
+		if strings.HasSuffix(r, suf) {
+			return strings.TrimSuffix(r, suf)
+		}
+	}
+	return "other:" + r
 }
 
 // ListRootNames returns distinct non-empty root_name values in the DB.
@@ -127,8 +136,13 @@ func (s *Store) ResolveRoots(ctx context.Context, query string, explicit []strin
 		explicitClean = append(explicitClean, r)
 	}
 	if len(explicitClean) > 0 {
-		inf.Roots = uniqueSorted(explicitClean)
 		inf.MatchedHints = []string{"explicit rootName"}
+		scoped := ValidateRootScope(explicitClean, available)
+		if scoped.NeedsChoice {
+			scoped.MatchedHints = inf.MatchedHints
+			return scoped, nil
+		}
+		inf.Roots = scoped.Roots
 		return inf, nil
 	}
 
@@ -253,6 +267,55 @@ func uniqueSorted(in []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// ValidateRootScope ensures roots are known and belong to a single product family.
+// Empty roots yield NeedsChoice (callers must ResolveRoots or pass AllRoots for admin).
+func ValidateRootScope(roots []string, available []string) RootInference {
+	availSet := map[string]struct{}{}
+	for _, r := range available {
+		availSet[r] = struct{}{}
+	}
+	inf := RootInference{AvailableRoots: available}
+	var clean []string
+	for _, r := range roots {
+		r = strings.TrimSpace(r)
+		if r == "" {
+			continue
+		}
+		if _, ok := availSet[r]; !ok {
+			return RootInference{
+				NeedsChoice:    true,
+				AvailableRoots: available,
+				Message: fmt.Sprintf(
+					"Unknown rootName %q. Choose one of: %s",
+					r, strings.Join(available, ", ")),
+			}
+		}
+		clean = append(clean, r)
+	}
+	clean = uniqueSorted(clean)
+	if len(clean) == 0 {
+		inf.NeedsChoice = true
+		inf.Message = formatRootPrompt(
+			"No knowledge root selected.",
+			"", available)
+		return inf
+	}
+	families := map[string]struct{}{}
+	for _, r := range clean {
+		families[rootFamily(r)] = struct{}{}
+	}
+	if len(families) > 1 {
+		inf.NeedsChoice = true
+		inf.Roots = clean
+		inf.Message = formatRootPrompt(
+			"Selected roots span multiple product families — pick a single family or one rootName.",
+			strings.Join(clean, ", "), available)
+		return inf
+	}
+	inf.Roots = clean
+	return inf
 }
 
 // ErrNeedsRoot is returned by helpers that refuse to search without a root.

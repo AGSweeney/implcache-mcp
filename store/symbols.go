@@ -387,7 +387,9 @@ func (s *Store) querySymbols(ctx context.Context, where, arg string, roots []str
 		WHEN 'curated_internal_recipe' THEN 2
 		WHEN 'official_example' THEN 3
 		WHEN 'official_documentation' THEN 4
-		ELSE 9 END, COALESCE(d.archived, 0), s.start_line
+		WHEN 'generated_summary' THEN 5
+		WHEN 'third_party_reference' THEN 6
+		ELSE 7 END, COALESCE(d.archived, 0), s.start_line
 		LIMIT ?`
 	args = append(args, limit)
 
@@ -450,7 +452,8 @@ func (s *Store) ListSymbolsByDocumentIDs(ctx context.Context, docIDs []int64, li
 			CASE d.authority
 			WHEN 'current_project' THEN 0 WHEN 'related_internal_project' THEN 1
 			WHEN 'curated_internal_recipe' THEN 2 WHEN 'official_example' THEN 3
-			WHEN 'official_documentation' THEN 4 ELSE 9 END,
+			WHEN 'official_documentation' THEN 4 WHEN 'generated_summary' THEN 5
+			WHEN 'third_party_reference' THEN 6 ELSE 7 END,
 			s.start_line
 		LIMIT ?`
 	rows, err := s.db.QueryContext(ctx, q, args...)

@@ -80,6 +80,7 @@ type SearchHit struct {
 	Language       string  `json:"language,omitempty"`
 	Technology     string  `json:"technology,omitempty"`
 	ProductVersion string  `json:"productVersion,omitempty"`
+	Deprecated     bool    `json:"deprecated,omitempty"`
 	Archived       bool    `json:"archived,omitempty"`
 	Ordinal        int     `json:"ordinal"`
 	Heading        string  `json:"heading"`
@@ -90,7 +91,21 @@ type SearchHit struct {
 	EndPage        int     `json:"endPage,omitempty"`
 	Rank           float64 `json:"rank"`
 	Score          float64 `json:"score,omitempty"`     // composite score after authority/symbol boosts
-	MatchKind      string  `json:"matchKind,omitempty"` // symbol|filename|path|heading|body
+	MatchKind      string  `json:"matchKind,omitempty"` // symbol|filename|path|heading|body|semantic
+	// ScoreBreakdown is populated when explain scoring is requested.
+	ScoreBreakdown *ScoreBreakdown `json:"scoreBreakdown,omitempty"`
+}
+
+// ScoreBreakdown explains compositeScore components (admin/debug).
+type ScoreBreakdown struct {
+	BM25              float64 `json:"bm25"`
+	AuthorityBoost    float64 `json:"authorityBoost"`
+	AuthorityRank     int     `json:"authorityRank"`
+	PathTitleBias     float64 `json:"pathTitleBias"`
+	SymbolBias        float64 `json:"symbolBias"`
+	ArchivedPenalty   float64 `json:"archivedPenalty,omitempty"`
+	DeprecatedPenalty float64 `json:"deprecatedPenalty,omitempty"`
+	Total             float64 `json:"total"`
 }
 
 // Limits for query / result size (overridable via SearchOptions).
@@ -560,6 +575,8 @@ type SearchOptions struct {
 	// Semantic enables optional sparse term-vector similarity to supplement FTS.
 	// Uses chunk_term_vectors + chunk_term_postings with query-time IDF. Off by default.
 	Semantic bool
+	// PreferredVersion softly prefers matching product_version within an authority tier.
+	PreferredVersion string
 }
 
 // Search runs an FTS5 query and returns ranked hits with snippets.
@@ -656,13 +673,42 @@ func (s *Store) SearchOpts(ctx context.Context, opt SearchOptions) ([]SearchHit,
 			candidates = append(candidates, h)
 		}
 	}
-	sort.SliceStable(candidates, func(i, j int) bool {
-		if candidates[i].Score == candidates[j].Score {
-			return candidates[i].Rank < candidates[j].Rank
-		}
-		return candidates[i].Score > candidates[j].Score
-	})
+	applyVersionPreference(candidates, opt.PreferredVersion)
+	sortSearchHits(candidates)
 	return diversifyHits(candidates, limit, maxPerDoc), nil
+}
+
+func applyVersionPreference(hits []SearchHit, preferred string) {
+	pref := strings.ToLower(strings.TrimSpace(preferred))
+	if pref == "" || pref == "unknown" {
+		return
+	}
+	for i := range hits {
+		ver := strings.ToLower(strings.TrimSpace(hits[i].ProductVersion))
+		if ver == "" {
+			continue
+		}
+		if ver == pref {
+			hits[i].Score += 5
+		} else {
+			hits[i].Score -= 8
+		}
+	}
+}
+
+// sortSearchHits orders by authority tier first (lower AuthorityRank wins),
+// then composite Score, then BM25 Rank. Path/title biases cannot invert tiers.
+func sortSearchHits(hits []SearchHit) {
+	sort.SliceStable(hits, func(i, j int) bool {
+		ri, rj := AuthorityRank(hits[i].Authority), AuthorityRank(hits[j].Authority)
+		if ri != rj {
+			return ri < rj
+		}
+		if hits[i].Score != hits[j].Score {
+			return hits[i].Score > hits[j].Score
+		}
+		return hits[i].Rank < hits[j].Rank
+	})
 }
 
 func (s *Store) searchFTS(ctx context.Context, ftsQuery string, roots []string, candidateLimit int, query string) ([]SearchHit, error) {
@@ -683,6 +729,7 @@ func (s *Store) searchFTS(ctx context.Context, ftsQuery string, roots []string, 
 				COALESCE(d.language, ''),
 				COALESCE(d.technology, ''),
 				COALESCE(d.product_version, ''),
+				COALESCE(d.deprecated, 0),
 				COALESCE(d.archived, 0),
 				c.ordinal,
 				c.heading,
@@ -731,14 +778,15 @@ func (s *Store) searchFTS(ctx context.Context, ftsQuery string, roots []string, 
 	var candidates []SearchHit
 	for rows.Next() {
 		var h SearchHit
-		var archived int
+		var deprecated, archived int
 		if err := rows.Scan(
 			&h.ChunkID, &h.DocumentID, &h.URI, &h.Title, &h.RootName, &h.Path,
-			&h.Authority, &h.Language, &h.Technology, &h.ProductVersion, &archived,
+			&h.Authority, &h.Language, &h.Technology, &h.ProductVersion, &deprecated, &archived,
 			&h.Ordinal, &h.Heading, &h.Snippet, &h.StartLine, &h.EndLine, &h.StartPage, &h.EndPage, &h.Rank,
 		); err != nil {
 			return nil, err
 		}
+		h.Deprecated = deprecated != 0
 		h.Archived = archived != 0
 		h.Score, h.MatchKind = compositeScore(h, query)
 		candidates = append(candidates, h)
@@ -759,7 +807,7 @@ func (s *Store) pathTitleCandidates(ctx context.Context, query string, roots []s
 	sqlText := `
 		SELECT c.id, c.document_id, d.uri, d.title, COALESCE(d.root_name, ''), COALESCE(d.path, ''),
 		       COALESCE(d.authority, 'unknown'), COALESCE(d.language, ''), COALESCE(d.technology, ''),
-		       COALESCE(d.product_version, ''), COALESCE(d.archived, 0),
+		       COALESCE(d.product_version, ''), COALESCE(d.deprecated, 0), COALESCE(d.archived, 0),
 		       c.ordinal, c.heading, substr(c.body, 1, 240), c.start_line, c.end_line, c.start_page, c.end_page
 		FROM documents d
 		JOIN chunks c ON c.document_id = d.id AND c.ordinal = 0
@@ -784,14 +832,15 @@ func (s *Store) pathTitleCandidates(ctx context.Context, query string, roots []s
 	var out []SearchHit
 	for rows.Next() {
 		var h SearchHit
-		var archived int
+		var deprecated, archived int
 		if err := rows.Scan(
 			&h.ChunkID, &h.DocumentID, &h.URI, &h.Title, &h.RootName, &h.Path,
-			&h.Authority, &h.Language, &h.Technology, &h.ProductVersion, &archived,
+			&h.Authority, &h.Language, &h.Technology, &h.ProductVersion, &deprecated, &archived,
 			&h.Ordinal, &h.Heading, &h.Snippet, &h.StartLine, &h.EndLine, &h.StartPage, &h.EndPage,
 		); err != nil {
 			return nil, err
 		}
+		h.Deprecated = deprecated != 0
 		h.Archived = archived != 0
 		h.Rank = 0
 		h.Score, h.MatchKind = compositeScore(h, query)
@@ -805,34 +854,40 @@ func (s *Store) pathTitleCandidates(ctx context.Context, query string, roots []s
 }
 
 func compositeScore(h SearchHit, query string) (float64, string) {
+	bd := explainCompositeScore(h, query)
+	return bd.Total, bd.matchKind
+}
+
+func explainCompositeScore(h SearchHit, query string) scoreParts {
 	// BM25: more negative/lower is better in SQLite; invert for a positive score.
-	score := -h.Rank
-	score += AuthorityBoost(h.Authority)
+	bm25 := -h.Rank
+	authBoost := AuthorityBoost(h.Authority)
 	q := strings.ToLower(strings.TrimSpace(query))
 	pathLower := strings.ToLower(strings.ReplaceAll(h.Path, `\`, `/`))
 	base := strings.ToLower(BasenamePath(h.Path))
 	titleLower := strings.ToLower(h.Title)
 	headingLower := strings.ToLower(h.Heading)
 	matchKind := "body"
+	var pathBias, symbolBias float64
 
 	if base != "" && (base == q || strings.TrimSuffix(base, filepath.Ext(base)) == q) {
-		score += 28
+		pathBias += 28
 		matchKind = "filename"
 	} else if base != "" && strings.Contains(base, q) {
-		score += 18
+		pathBias += 18
 		matchKind = "filename"
 	} else if pathLower != "" && strings.Contains(pathLower, q) {
-		score += 12
+		pathBias += 12
 		matchKind = "path"
 	}
 	if titleLower != "" && strings.Contains(titleLower, q) {
-		score += 6
+		pathBias += 6
 		if matchKind == "body" {
 			matchKind = "heading"
 		}
 	}
 	if headingLower != "" && strings.Contains(headingLower, q) {
-		score += 10
+		pathBias += 10
 		if matchKind == "body" {
 			matchKind = "heading"
 		}
@@ -843,17 +898,52 @@ func compositeScore(h SearchHit, query string) (float64, string) {
 		}
 		tl := strings.ToLower(tok)
 		if strings.Contains(strings.ToLower(h.Snippet), tl) || strings.Contains(headingLower, tl) || strings.Contains(titleLower, tl) {
-			score += 14
+			symbolBias += 14
 			matchKind = "symbol"
 		}
 		if base != "" && strings.Contains(base, tl) {
-			score += 8
+			symbolBias += 8
 		}
 	}
+	var archivedPen, deprecatedPen float64
 	if h.ArchivedHint() {
-		score -= 25
+		archivedPen = 25
 	}
-	return score, matchKind
+	if h.Deprecated {
+		deprecatedPen = 20
+	}
+	total := bm25 + authBoost + pathBias + symbolBias - archivedPen - deprecatedPen
+	return scoreParts{
+		BM25: bm25, AuthorityBoost: authBoost, AuthorityRank: AuthorityRank(h.Authority),
+		PathTitleBias: pathBias, SymbolBias: symbolBias,
+		ArchivedPenalty: archivedPen, DeprecatedPenalty: deprecatedPen,
+		Total: total, matchKind: matchKind,
+	}
+}
+
+type scoreParts struct {
+	BM25              float64
+	AuthorityBoost    float64
+	AuthorityRank     int
+	PathTitleBias     float64
+	SymbolBias        float64
+	ArchivedPenalty   float64
+	DeprecatedPenalty float64
+	Total             float64
+	matchKind         string
+}
+
+// AttachScoreBreakdown fills ScoreBreakdown on each hit (admin explain path).
+func AttachScoreBreakdown(hits []SearchHit, query string) {
+	for i := range hits {
+		p := explainCompositeScore(hits[i], query)
+		hits[i].ScoreBreakdown = &ScoreBreakdown{
+			BM25: p.BM25, AuthorityBoost: p.AuthorityBoost, AuthorityRank: p.AuthorityRank,
+			PathTitleBias: p.PathTitleBias, SymbolBias: p.SymbolBias,
+			ArchivedPenalty: p.ArchivedPenalty, DeprecatedPenalty: p.DeprecatedPenalty,
+			Total: p.Total,
+		}
+	}
 }
 
 // ArchivedHint is true when the document is marked archived or path suggests obsolete material.
@@ -865,7 +955,31 @@ func (h SearchHit) ArchivedHint() bool {
 	return a == "archived" || strings.Contains(strings.ToLower(h.Path), "/archive/")
 }
 
+// AuthorityRank returns the sort tier for an authority class (0 = highest).
+// Lower rank always sorts before higher rank, regardless of path/title bias.
+func AuthorityRank(authority string) int {
+	switch authority {
+	case AuthorityCurrentProject:
+		return 0
+	case AuthorityRelatedProject:
+		return 1
+	case AuthorityCuratedRecipe:
+		return 2
+	case AuthorityOfficialExample:
+		return 3
+	case AuthorityOfficialDocs:
+		return 4
+	case AuthorityGeneratedSummary:
+		return 5
+	case AuthorityThirdParty:
+		return 6
+	default:
+		return 7
+	}
+}
+
 // AuthorityBoost returns a ranking bonus for a source authority class.
+// Values match ARCHITECTURE.md order (generated above third_party).
 func AuthorityBoost(authority string) float64 {
 	switch authority {
 	case AuthorityCurrentProject:
@@ -879,9 +993,9 @@ func AuthorityBoost(authority string) float64 {
 	case AuthorityOfficialDocs:
 		return 14
 	case AuthorityGeneratedSummary:
-		return 4
+		return 8
 	case AuthorityThirdParty:
-		return 6
+		return 4
 	default:
 		return 0
 	}

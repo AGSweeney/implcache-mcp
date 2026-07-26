@@ -95,6 +95,8 @@ type SearchPlaygroundOptions struct {
 	Limit    int
 	Semantic bool
 	Explain  bool
+	// AllRoots opts into cross-root search. Default false: resolve or needsChoice.
+	AllRoots bool
 }
 
 // SearchPlayground runs a retrieval query with optional EXPLAIN QUERY PLAN.
@@ -110,11 +112,38 @@ func SearchPlayground(ctx context.Context, st *store.Store, opt SearchPlayground
 	if opt.Limit <= 0 {
 		opt.Limit = 10
 	}
+
+	if !opt.AllRoots {
+		if len(roots) == 0 {
+			inf, err := st.ResolveRoots(ctx, q, nil)
+			if err != nil {
+				return nil, err
+			}
+			if inf.NeedsChoice {
+				return nil, &store.ErrNeedsRoot{Inference: inf}
+			}
+			roots = inf.Roots
+		} else {
+			available, err := st.ListRootNames(ctx)
+			if err != nil {
+				return nil, err
+			}
+			inf := store.ValidateRootScope(roots, available)
+			if inf.NeedsChoice {
+				return nil, &store.ErrNeedsRoot{Inference: inf}
+			}
+			roots = inf.Roots
+		}
+	}
+
 	hits, err := st.SearchOpts(ctx, store.SearchOptions{
 		Query: q, Roots: roots, Limit: opt.Limit, Semantic: opt.Semantic,
 	})
 	if err != nil {
 		return nil, err
+	}
+	if opt.Explain {
+		store.AttachScoreBreakdown(hits, q)
 	}
 	res := &SearchPlaygroundResult{Query: q, Roots: roots, Hits: hits, Count: len(hits)}
 	if opt.Explain {

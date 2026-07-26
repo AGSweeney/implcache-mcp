@@ -126,12 +126,14 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			Task:             args.Task,
 			Language:         args.Language,
 			Technology:       args.Technology,
+			Version:          args.Version,
 			ProjectRoot:      projectRoot,
 			PreferredRoots:   preferred,
 			RootGroup:        args.RootGroup,
 			MaxContextTokens: args.MaxContextTokens,
 			MaxResults:       opt.MaxResults,
 			Semantic:         opt.EnableSemantic || args.Semantic,
+			Debug:            args.Debug,
 		})
 		if err != nil {
 			var need *store.ErrNeedsRoot
@@ -149,18 +151,30 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "find_symbol",
-		Description: "Symbol lookup with staged exact/normalized/qualified/prefix/suffix matching within preferred roots",
+		Name: "find_symbol",
+		Description: "Symbol lookup with staged exact/normalized/qualified/prefix/suffix matching within preferred roots. " +
+			"Requires a resolved knowledge root; if ambiguous, returns needsChoice with availableRoots.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args findSymbolArgs) (*mcp.CallToolResult, findSymbolResult, error) {
-		var roots []string
+		var explicit []string
 		if r := strings.TrimSpace(args.RootName); r != "" {
-			roots = []string{r}
+			explicit = []string{r}
 		} else if len(args.PreferredRoots) > 0 {
-			roots = args.PreferredRoots
+			explicit = args.PreferredRoots
 		} else if len(opt.DefaultPreferredRoots) > 0 {
-			roots = opt.DefaultPreferredRoots
+			explicit = opt.DefaultPreferredRoots
 		}
-		syms, err := st.FindSymbols(ctx, args.Name, roots, store.ClampSearchLimit(args.Limit, opt.MaxResults))
+		inf, err := st.ResolveRoots(ctx, args.Name, explicit)
+		if err != nil {
+			return nil, findSymbolResult{}, err
+		}
+		if inf.NeedsChoice {
+			payload, _ := json.MarshalIndent(inf, "", "  ")
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: string(payload)}},
+				IsError: true,
+			}, findSymbolResult{}, nil
+		}
+		syms, err := st.FindSymbols(ctx, args.Name, inf.Roots, store.ClampSearchLimit(args.Limit, opt.MaxResults))
 		if err != nil {
 			return nil, findSymbolResult{}, err
 		}
@@ -743,14 +757,24 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 		})
 
 		mcp.AddTool(server, &mcp.Tool{
-			Name:        "search_playground",
-			Description: "Admin search playground with optional EXPLAIN QUERY PLAN",
+			Name: "search_playground",
+			Description: "Admin search playground with optional EXPLAIN QUERY PLAN and score breakdown. " +
+				"Resolves roots by default; pass allRoots=true to search every root.",
 		}, func(ctx context.Context, _ *mcp.CallToolRequest, args searchPlaygroundArgs) (*mcp.CallToolResult, librarian.SearchPlaygroundResult, error) {
 			res, err := librarian.SearchPlayground(ctx, st, librarian.SearchPlaygroundOptions{
 				Query: args.Query, Roots: args.Roots, RootName: args.RootName,
 				Limit: args.Limit, Semantic: args.Semantic, Explain: args.Explain,
+				AllRoots: args.AllRoots,
 			})
 			if err != nil {
+				var need *store.ErrNeedsRoot
+				if asNeedsRoot(err, &need) {
+					payload, _ := json.MarshalIndent(need.Inference, "", "  ")
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: string(payload)}},
+						IsError: true,
+					}, librarian.SearchPlaygroundResult{}, nil
+				}
 				return nil, librarian.SearchPlaygroundResult{}, err
 			}
 			b, _ := json.MarshalIndent(res, "", "  ")
@@ -841,10 +865,12 @@ type implContextArgs struct {
 	Language         string   `json:"language,omitempty" jsonschema:"Language hint (C, C++, Go, …)"`
 	Technology       string   `json:"technology,omitempty" jsonschema:"Platform/library hint (Example Plugin SDK, …)"`
 	ProjectRoot      string   `json:"projectRoot,omitempty" jsonschema:"Preferred current-project knowledge root"`
-	PreferredRoots   []string `json:"preferredRoots,omitempty" jsonschema:"Ordered knowledge roots to search"`
+	Version          string   `json:"version,omitempty" jsonschema:"Requested product/API version for freshness and soft ranking"`
+	PreferredRoots   []string `json:"preferredRoots,omitempty" jsonschema:"Ordered knowledge roots to search (single product family)"`
 	RootGroup        string   `json:"rootGroup,omitempty" jsonschema:"Named root group with priorities"`
 	MaxContextTokens int      `json:"maxContextTokens,omitempty" jsonschema:"Soft token budget (estimate; default 2500)"`
 	Semantic         bool     `json:"semantic,omitempty" jsonschema:"Supplement FTS with sparse term-vector similarity (also -enable-semantic)"`
+	Debug            bool     `json:"debug,omitempty" jsonschema:"Include debugTaskTokens (identifier-like tokens from task)"`
 }
 
 type findSymbolArgs struct {
@@ -1155,7 +1181,8 @@ type searchPlaygroundArgs struct {
 	RootName string   `json:"rootName,omitempty" jsonschema:"Optional single rootName filter"`
 	Limit    int      `json:"limit,omitempty" jsonschema:"Max hits (default 10)"`
 	Semantic bool     `json:"semantic,omitempty" jsonschema:"Enable sparse semantic supplement"`
-	Explain  bool     `json:"explain,omitempty" jsonschema:"Include EXPLAIN QUERY PLAN"`
+	Explain  bool     `json:"explain,omitempty" jsonschema:"Include EXPLAIN QUERY PLAN and score breakdown"`
+	AllRoots bool     `json:"allRoots,omitempty" jsonschema:"Search all roots (admin escape; default false)"`
 }
 
 type opIDArgs struct {

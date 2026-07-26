@@ -56,6 +56,85 @@ func TestFilenameAndAuthorityRanking(t *testing.T) {
 	}
 }
 
+func TestAuthorityTierBeatsPathBias(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "tier.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+
+	_, _ = st.UpsertDocument(ctx, UpsertInput{
+		URI: "project://proj/notes.md", Title: "notes",
+		SourceType: SourceMarkdown, Path: "notes.md", RootName: "proj",
+		Authority: AuthorityCurrentProject, Hash: "p",
+		Chunks: []Chunk{{Heading: "misc", Body: "mentions WidgetAPI briefly", StartLine: 1, EndLine: 1}},
+	})
+	_, _ = st.UpsertDocument(ctx, UpsertInput{
+		URI: "project://gen/WidgetAPI.md", Title: "WidgetAPI",
+		SourceType: SourceMarkdown, Path: "WidgetAPI.md", RootName: "gen",
+		Authority: AuthorityGeneratedSummary, Hash: "g",
+		Chunks: []Chunk{{Heading: "WidgetAPI", Body: "WidgetAPI generated summary full match", StartLine: 1, EndLine: 1}},
+	})
+
+	hits, err := st.SearchOpts(ctx, SearchOptions{
+		Query: "WidgetAPI", Limit: 10, Roots: []string{"proj", "gen"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) < 2 {
+		t.Fatalf("want both hits, got %+v", hits)
+	}
+	if hits[0].Authority != AuthorityCurrentProject {
+		t.Fatalf("current_project must beat generated+filename, got %+v", hits[0])
+	}
+}
+
+func TestAuthorityBoostOrderMatchesDocs(t *testing.T) {
+	order := []string{
+		AuthorityCurrentProject,
+		AuthorityRelatedProject,
+		AuthorityCuratedRecipe,
+		AuthorityOfficialExample,
+		AuthorityOfficialDocs,
+		AuthorityGeneratedSummary,
+		AuthorityThirdParty,
+		AuthorityUnknown,
+	}
+	for i := 1; i < len(order); i++ {
+		if AuthorityRank(order[i-1]) >= AuthorityRank(order[i]) {
+			t.Fatalf("rank order broken: %s (%d) vs %s (%d)",
+				order[i-1], AuthorityRank(order[i-1]), order[i], AuthorityRank(order[i]))
+		}
+		if AuthorityBoost(order[i-1]) <= AuthorityBoost(order[i]) && order[i] != AuthorityUnknown {
+			// unknown is 0; third_party is 4 — allow equality only if identical (shouldn't happen)
+			if AuthorityBoost(order[i-1]) < AuthorityBoost(order[i]) {
+				t.Fatalf("boost order broken: %s (%.0f) vs %s (%.0f)",
+					order[i-1], AuthorityBoost(order[i-1]), order[i], AuthorityBoost(order[i]))
+			}
+		}
+	}
+	if AuthorityBoost(AuthorityGeneratedSummary) <= AuthorityBoost(AuthorityThirdParty) {
+		t.Fatalf("generated must outrank third_party in boost")
+	}
+}
+
+func TestDeprecatedPenaltyInScore(t *testing.T) {
+	h := SearchHit{
+		Authority: AuthorityOfficialDocs, Rank: -1,
+		Path: "api.md", Title: "API", Heading: "API", Snippet: "API details",
+		Deprecated: true,
+	}
+	scoreDep, _ := compositeScore(h, "API")
+	h.Deprecated = false
+	scoreOK, _ := compositeScore(h, "API")
+	if scoreDep >= scoreOK {
+		t.Fatalf("deprecated should lower score: dep=%.2f ok=%.2f", scoreDep, scoreOK)
+	}
+}
+
 func TestExplainSearchPlan(t *testing.T) {
 	dir := t.TempDir()
 	st, err := Open(filepath.Join(dir, "p.db"))

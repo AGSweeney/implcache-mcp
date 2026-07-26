@@ -5,10 +5,12 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 
 	"implcache-mcp/implctx"
 	"implcache-mcp/librarian"
+	"implcache-mcp/store"
 )
 
 type searchPlaygroundRequest struct {
@@ -18,6 +20,7 @@ type searchPlaygroundRequest struct {
 	Limit    int      `json:"limit,omitempty"`
 	Semantic bool     `json:"semantic,omitempty"`
 	Explain  bool     `json:"explain,omitempty"`
+	AllRoots bool     `json:"allRoots,omitempty"`
 }
 
 func (h *handler) handleSearchPlayground(w http.ResponseWriter, r *http.Request) {
@@ -33,8 +36,14 @@ func (h *handler) handleSearchPlayground(w http.ResponseWriter, r *http.Request)
 		Limit:    req.Limit,
 		Semantic: req.Semantic || h.opt.EnableSemantic,
 		Explain:  req.Explain,
+		AllRoots: req.AllRoots,
 	})
 	if err != nil {
+		var need *store.ErrNeedsRoot
+		if errors.As(err, &need) {
+			WriteJSON(w, http.StatusConflict, need.Inference)
+			return
+		}
 		WriteError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
@@ -75,11 +84,13 @@ type searchContextRequest struct {
 	Task             string   `json:"task"`
 	Language         string   `json:"language,omitempty"`
 	Technology       string   `json:"technology,omitempty"`
+	Version          string   `json:"version,omitempty"`
 	ProjectRoot      string   `json:"projectRoot,omitempty"`
 	PreferredRoots   []string `json:"preferredRoots,omitempty"`
 	RootGroup        string   `json:"rootGroup,omitempty"`
 	MaxContextTokens int      `json:"maxContextTokens,omitempty"`
 	Semantic         bool     `json:"semantic,omitempty"`
+	Debug            bool     `json:"debug,omitempty"`
 }
 
 func (h *handler) handleSearchContext(w http.ResponseWriter, r *http.Request) {
@@ -92,13 +103,20 @@ func (h *handler) handleSearchContext(w http.ResponseWriter, r *http.Request) {
 		Task:             req.Task,
 		Language:         req.Language,
 		Technology:       req.Technology,
+		Version:          req.Version,
 		ProjectRoot:      req.ProjectRoot,
 		PreferredRoots:   req.PreferredRoots,
 		RootGroup:        req.RootGroup,
 		MaxContextTokens: req.MaxContextTokens,
 		Semantic:         req.Semantic || h.opt.EnableSemantic,
+		Debug:            req.Debug,
 	})
 	if err != nil {
+		var need *store.ErrNeedsRoot
+		if errors.As(err, &need) {
+			WriteJSON(w, http.StatusConflict, need.Inference)
+			return
+		}
 		WriteError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}

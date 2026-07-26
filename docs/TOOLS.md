@@ -24,19 +24,24 @@ Schema: `PRAGMA user_version = 11`. Symbol extraction at ingest supports: Go, C/
 | `rootGroup` | string | no | Named root group (DB) |
 | `maxContextTokens` | int | no | Soft budget (default ~2500) |
 | `semantic` | bool | no | Supplement FTS with sparse term vectors and indexed term postings (`-enable-semantic`) |
+| `debug` | bool | no | Include `debugTaskTokens` (identifier-like tokens pulled from `task`) |
+| `version` | string | no | Requested product/API version (affects freshness + soft ranking preference) |
 
 **Returns** (`implctx.Response`), including:
 
 - `summary`, `requiredApis`, `relevantSymbols`, `includes`, `sequence`
 - `examples[]` (short excerpts + authority)
 - `constraints`, `pitfalls`, `projectConventions`
-- `citations[]` (`uri`, `title`, `section`, `lines`, `authority`, `rootName`)
+- `citations[]` (`uri`, `title`, `section`, `lines`, `authority`, `rootName`, optional `sourceUris` for recipes)
 - `coverage` (`high` \| `medium` \| `low`)
 - `freshness` (independent of authority: `current` \| `version-specific` \| `mixed` \| `stale` \| `unknown`)
 - `webSearchRecommended` (from coverage + freshness)
 - `contextFingerprint` (hash of the **final trimmed** payload the client receives)
-- `missingInformation`, `recommendedFollowUp`
-- `rootsUsed`, `estimatedTokens`, `chars`, `tokenEstimateNote`
+- `missingInformation`, `recommendedFollowUp` (staged next tools when coverage is low)
+- `rootsUsed`, `recipeReviewStatus`, `estimatedTokens`, `chars`, `tokenEstimateNote`
+- `debugTaskTokens` when `debug=true` — tokens matching CamelCase / `snake_case` / `ns::name` / `obj.method` heuristics
+
+`preferredRoots` / `rootGroup` / `projectRoot` must resolve to a **single product family**; otherwise the tool returns `needsChoice` + `availableRoots` (do not silently mix corpora).
 
 ---
 
@@ -50,10 +55,10 @@ Staged lookup of APIs, functions, and types from the `symbols` table:
 |----------|------|----------|-------------|
 | `name` | string | yes | Symbol name (e.g. `RegisterCommand`) |
 | `rootName` | string | no | Single root filter |
-| `preferredRoots` | string[] | no | Multi-root filter |
+| `preferredRoots` | string[] | no | Multi-root filter (same product family) |
 | `limit` | int | no | Default 20 |
 
-**Returns:** `{ symbols: Symbol[], count }`
+**Returns:** `{ symbols: Symbol[], count }` or `{ needsChoice, message, availableRoots }` when root scope is missing/ambiguous. Empty roots are never searched globally.
 
 `Symbol` fields include `name`, `matchType`, `confidence`, `kind`, `language`, `signature`, `uri`, `rootName`, `authority`, line range. Definitions outrank declarations and calls.
 

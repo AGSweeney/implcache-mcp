@@ -69,6 +69,45 @@ func TestResolveRootsInfersAndPrompts(t *testing.T) {
 	if inf.NeedsChoice || inf.Roots[0] != "example-device-sdk" {
 		t.Fatalf("explicit: %+v", inf)
 	}
+
+	inf, err = st.ResolveRoots(ctx, "anything", []string{"example-device-sdk", "example-plugin-sdk"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !inf.NeedsChoice {
+		t.Fatalf("expected needsChoice for multi-family explicit roots, got %+v", inf)
+	}
+}
+
+func TestValidateRootScope(t *testing.T) {
+	avail := []string{
+		"example-device-sdk", "example-device-app", "example-plugin-sdk",
+		"example-network-sdk", "example-http-service", "example-http-sdk",
+	}
+	inf := ValidateRootScope([]string{"example-device-sdk"}, avail)
+	if inf.NeedsChoice || len(inf.Roots) != 1 {
+		t.Fatalf("single root: %+v", inf)
+	}
+	inf = ValidateRootScope([]string{"example-device-sdk", "example-device-app"}, avail)
+	if inf.NeedsChoice {
+		t.Fatalf("same-family device roots should be allowed: %+v", inf)
+	}
+	inf = ValidateRootScope([]string{"example-http-service", "example-http-sdk"}, avail)
+	if inf.NeedsChoice {
+		t.Fatalf("same-family http roots should be allowed: %+v", inf)
+	}
+	inf = ValidateRootScope([]string{"example-device-sdk", "example-plugin-sdk"}, avail)
+	if !inf.NeedsChoice {
+		t.Fatalf("multi-family: %+v", inf)
+	}
+	inf = ValidateRootScope([]string{"missing-root"}, avail)
+	if !inf.NeedsChoice || !strings.Contains(inf.Message, "Unknown") {
+		t.Fatalf("unknown: %+v", inf)
+	}
+	inf = ValidateRootScope(nil, avail)
+	if !inf.NeedsChoice {
+		t.Fatalf("empty: %+v", inf)
+	}
 }
 
 func TestSearchOptsFiltersRoot(t *testing.T) {

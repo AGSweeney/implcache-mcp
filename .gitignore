@@ -42,6 +42,7 @@ testdata/validation/reports/validation.db*
 # Go / editor
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.tmp
 tmp_*.go

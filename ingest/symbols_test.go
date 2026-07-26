@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"implcache-mcp/store"
 )
 
 func TestExtractSymbolsTableDriven(t *testing.T) {
@@ -216,7 +218,32 @@ typedef int StatusCode;
 	}
 }
 
+func TestInferAuthorityTightHeuristics(t *testing.T) {
+	if got := InferAuthority("my-app", "src/main.go"); got != store.AuthorityUnknown {
+		t.Fatalf("bare .go/src path should be unknown, got %q", got)
+	}
+	if got := InferAuthority("sdk", "examples/gpio/main.c"); got != store.AuthorityOfficialExample {
+		t.Fatalf("examples/ segment: got %q", got)
+	}
+	if got := InferAuthority("help-docs", "api/dita/foo.md"); got != store.AuthorityOfficialDocs {
+		t.Fatalf("docs cues: got %q", got)
+	}
+	if got := InferAuthority("app", "notes-about-example-usage.md"); got != store.AuthorityUnknown {
+		t.Fatalf("substring example in filename must not upgrade: got %q", got)
+	}
+}
+
 func TestExtractionEdgeCases(t *testing.T) {
+	t.Run("trailing return type definition", func(t *testing.T) {
+		syms := ExtractSymbols("ret.cpp", "auto ComputeValue(int x) -> int {\n  return x;\n}\n")
+		got := map[string]bool{}
+		for _, s := range syms {
+			got[s.Name] = true
+		}
+		if !got["ComputeValue"] {
+			t.Fatalf("missing trailing-return function: %+v", syms)
+		}
+	})
 	t.Run("unclosed comparison preserves later definition", func(t *testing.T) {
 		syms := ExtractSymbols("compare.cpp", "bool Less(int a, int b) { return a<b;\n}\nvoid LaterDefinition() {}\n")
 		got := map[string]bool{}

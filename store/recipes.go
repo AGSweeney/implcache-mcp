@@ -46,6 +46,24 @@ func (s *Store) DeleteAllKnowledgeEntries(ctx context.Context) (int64, error) {
 	return res.RowsAffected()
 }
 
+// normalizeRecipeAuthority enforces review_status ↔ authority invariants.
+func normalizeRecipeAuthority(e *KnowledgeEntry) error {
+	switch e.ReviewStatus {
+	case ReviewGenerated:
+		e.Authority = AuthorityGeneratedSummary
+	case ReviewHumanReviewed:
+		if e.Authority == "" || e.Authority == AuthorityGeneratedSummary || e.Authority == AuthorityUnknown {
+			e.Authority = AuthorityCuratedRecipe
+		}
+		if AuthorityRank(e.Authority) > AuthorityRank(AuthorityCuratedRecipe) {
+			return fmt.Errorf("human_reviewed recipes require authority at least curated_internal_recipe, got %q", e.Authority)
+		}
+	default:
+		return fmt.Errorf("invalid review_status %q (want generated|human_reviewed)", e.ReviewStatus)
+	}
+	return nil
+}
+
 // UpsertKnowledgeEntry stores a recipe with source lineage.
 func (s *Store) UpsertKnowledgeEntry(ctx context.Context, e KnowledgeEntry) (int64, error) {
 	if strings.TrimSpace(e.URI) == "" || strings.TrimSpace(e.BodyMarkdown) == "" {
@@ -54,12 +72,8 @@ func (s *Store) UpsertKnowledgeEntry(ctx context.Context, e KnowledgeEntry) (int
 	if e.ReviewStatus == "" {
 		e.ReviewStatus = ReviewGenerated
 	}
-	if e.Authority == "" {
-		if e.ReviewStatus == ReviewHumanReviewed {
-			e.Authority = AuthorityCuratedRecipe
-		} else {
-			e.Authority = AuthorityGeneratedSummary
-		}
+	if err := normalizeRecipeAuthority(&e); err != nil {
+		return 0, err
 	}
 	if e.Confidence == "" {
 		e.Confidence = "medium"
@@ -175,5 +189,67 @@ func (s *Store) SearchKnowledgeEntries(ctx context.Context, task, technology, la
 		}
 		out = append(out, e)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		uris, err := s.listKnowledgeEntrySources(ctx, out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].SourceURIs = uris
+	}
+	return out, nil
+}
+
+func (s *Store) listKnowledgeEntrySources(ctx context.Context, entryID int64) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT source_uri FROM knowledge_entry_sources WHERE entry_id = ? ORDER BY source_uri`, entryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var uri string
+		if err := rows.Scan(&uri); err != nil {
+			return nil, err
+		}
+		out = append(out, uri)
+	}
 	return out, rows.Err()
+}
+
+// SetKnowledgeEntryReviewStatus promotes or demotes a recipe's review status.
+// human_reviewed sets authority to curated_internal_recipe and verified_at=now.
+func (s *Store) SetKnowledgeEntryReviewStatus(ctx context.Context, uri, status string) error {
+	uri = strings.TrimSpace(uri)
+	status = strings.TrimSpace(status)
+	if uri == "" {
+		return fmt.Errorf("uri is required")
+	}
+	e := KnowledgeEntry{ReviewStatus: status}
+	if err := normalizeRecipeAuthority(&e); err != nil {
+		return err
+	}
+	now := time.Now().Unix()
+	verified := int64(0)
+	if status == ReviewHumanReviewed {
+		verified = now
+	}
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE knowledge_entries
+		SET review_status = ?, authority = ?, verified_at = ?
+		WHERE uri = ?`, status, e.Authority, verified, uri)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("knowledge entry not found: %s", uri)
+	}
+	return nil
 }

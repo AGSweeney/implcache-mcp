@@ -34,10 +34,10 @@ tasks:
     task: Add an SPI GPIO-expander driver using SpiTransfer and ConfigurePin.
     technology: Example Embedded SDK
     language: cpp
-    preferred_roots: [demo-embedded-project, example-device-sdk]
+    preferred_roots: [example-device-app, example-device-sdk]
     expected_symbols: [SpiTransfer, ConfigurePin]
     expected_sources:
-      - project://demo-embedded-project/drivers/gpio.cpp
+      - project://example-device-app/drivers/gpio.cpp
       - project://example-device-sdk/spi.md
     max_context_tokens: 2400
 
@@ -45,7 +45,7 @@ tasks:
     task: Add a new MCP tool using AddTool and CallToolResult.
     technology: Model Context Protocol
     language: go
-    preferred_roots: [example-mcp-server, mcp-sdk-docs]
+    preferred_roots: [example-mcp-server, example-mcp-sdk]
     expected_symbols: [AddTool, CallToolResult]
     expected_sources: [project://example-mcp-server/main.go]
     max_context_tokens: 2000
@@ -54,18 +54,17 @@ tasks:
     task: Initialize a device session with OpenSession and CloseSession.
     technology: Example Device SDK
     language: cpp
-    preferred_roots: [example-device-sdk, example-control-app]
+    preferred_roots: [example-device-sdk]
     expected_symbols: [OpenSession, CloseSession]
     expected_sources:
       - project://example-device-sdk/session.h
-      - project://example-control-app/app.cpp
     max_context_tokens: 2000
 
   - id: configure-logging
     task: Configure structured logging with SetLogLevel and AttachSink.
     technology: Example Logging SDK
     language: go
-    preferred_roots: [example-logging-sdk, example-control-app]
+    preferred_roots: [example-logging-sdk]
     expected_symbols: [SetLogLevel, AttachSink]
     expected_sources: [project://example-logging-sdk/log.go]
     max_context_tokens: 1800
@@ -84,7 +83,7 @@ tasks:
     task: Start a worker pool with SubmitJob and ShutdownPool.
     technology: Example Concurrency SDK
     language: cpp
-    preferred_roots: [example-control-app, example-concurrency-sdk]
+    preferred_roots: [example-concurrency-sdk]
     expected_symbols: [SubmitJob, ShutdownPool]
     expected_sources: [project://example-concurrency-sdk/pool.h]
     max_context_tokens: 2000
@@ -104,7 +103,7 @@ tasks:
     task: Persist a cache entry with PutEntry and GetEntry.
     technology: Example Cache SDK
     language: cpp
-    preferred_roots: [example-cache-sdk, example-control-app]
+    preferred_roots: [example-cache-sdk]
     expected_symbols: [PutEntry, GetEntry]
     expected_sources: [project://example-cache-sdk/cache.h]
     max_context_tokens: 1800
@@ -124,7 +123,7 @@ tasks:
     task: Reconnect a flaky network client with RetryPolicy backoff after Connect fails.
     technology: Example Networking SDK
     language: cpp
-    preferred_roots: [example-network-service, example-network-sdk, example-noise-docs]
+    preferred_roots: [example-network-service, example-network-sdk, example-network-noise]
     expected_symbols: [RetryPolicy, Connect]
     expected_sources:
       - project://example-network-sdk/retry.h

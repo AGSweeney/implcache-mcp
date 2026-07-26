@@ -31,17 +31,20 @@ type Request struct {
 	MaxResults int `json:"-"`
 	// Semantic supplements FTS with sparse term-vector similarity (server -enable-semantic).
 	Semantic bool `json:"semantic,omitempty"`
+	// Debug includes task-token extraction in the response.
+	Debug bool `json:"debug,omitempty"`
 }
 
 // Citation points at a grounded source.
 type Citation struct {
-	URI       string `json:"uri"`
-	Title     string `json:"title,omitempty"`
-	Section   string `json:"section,omitempty"`
-	Lines     string `json:"lines,omitempty"`
-	Authority string `json:"authority,omitempty"`
-	RootName  string `json:"rootName,omitempty"`
-	Version   string `json:"version,omitempty"`
+	URI        string   `json:"uri"`
+	Title      string   `json:"title,omitempty"`
+	Section    string   `json:"section,omitempty"`
+	Lines      string   `json:"lines,omitempty"`
+	Authority  string   `json:"authority,omitempty"`
+	RootName   string   `json:"rootName,omitempty"`
+	Version    string   `json:"version,omitempty"`
+	SourceURIs []string `json:"sourceUris,omitempty"` // recipe lineage
 }
 
 // ExampleRef is a short cited example.
@@ -78,6 +81,7 @@ type Response struct {
 	RootsUsed            []string       `json:"rootsUsed,omitempty"`
 	RecipeReviewStatus   string         `json:"recipeReviewStatus,omitempty"`
 	Version              string         `json:"version,omitempty"`
+	DebugTaskTokens      []string       `json:"debugTaskTokens,omitempty"`
 	ContextFingerprint   string         `json:"contextFingerprint,omitempty"`
 	EstimatedTokens      int            `json:"estimatedTokens,omitempty"`
 	Chars                int            `json:"chars,omitempty"`
@@ -170,6 +174,7 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 			}
 			resp.Citations = append(resp.Citations, Citation{
 				URI: r.URI, Title: r.Subject, Authority: r.Authority, RootName: r.RootName, Version: r.Version,
+				SourceURIs: append([]string{}, r.SourceURIs...),
 			})
 			if r.ReviewStatus == store.ReviewHumanReviewed {
 				break
@@ -179,6 +184,9 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 
 	// 2) Symbol hits from explicit identifier-like task tokens.
 	taskToks := symbolTokens(task)
+	if req.Debug {
+		resp.DebugTaskTokens = append([]string{}, taskToks...)
+	}
 	for _, tok := range taskToks {
 		syms, err := st.FindSymbols(ctx, tok, roots, 5)
 		if err != nil {
@@ -200,12 +208,13 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 
 	// 3) Budgeted FTS for examples / constraints / pitfalls / grounded workflow text.
 	hits, err := st.SearchOpts(ctx, store.SearchOptions{
-		Query:      task,
-		Limit:      budget.MaxResults * 3,
-		MaxResults: req.MaxResults,
-		Roots:      roots,
-		MaxPerDoc:  budget.MaxPerDocument,
-		Semantic:   req.Semantic,
+		Query:            task,
+		Limit:            budget.MaxResults * 3,
+		MaxResults:       req.MaxResults,
+		Roots:            roots,
+		MaxPerDoc:        budget.MaxPerDocument,
+		Semantic:         req.Semantic,
+		PreferredVersion: req.Version,
 	})
 	if err != nil {
 		return nil, err
@@ -304,16 +313,7 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 	resp.Coverage = coverageOf(resp)
 	resp.Freshness = freshnessFromSources(resp.Citations, versions, archivedHints, req.Version)
 	resp.WebSearchRecommended = webSearchFrom(resp.Coverage, resp.Freshness)
-	if resp.Coverage == "low" {
-		resp.MissingInformation = appendUnique(resp.MissingInformation, "Few grounded local hits; verify against current vendor docs if versions matter.")
-	}
-	if len(resp.Examples) == 0 {
-		resp.RecommendedFollowUp = append(resp.RecommendedFollowUp, "search_knowledge for a worked sample")
-	}
-	if len(resp.RelevantSymbols) == 0 && len(resp.RequiredAPIs) > 0 {
-		resp.RecommendedFollowUp = append(resp.RecommendedFollowUp, "find_symbol on a required API for signature/lineage")
-	}
-	resp.RecommendedFollowUp = append(resp.RecommendedFollowUp, "get_document on a citation URI only if deeper context is required")
+	enrichPackageSignals(resp, req.Version, versions)
 
 	trimToBudget(resp, budget.MaxTokensEstimate)
 	// Fingerprint the final trimmed payload the client receives.
@@ -408,7 +408,18 @@ func resolveRoots(ctx context.Context, st *store.Store, req Request) ([]string, 
 			add(m.RootName)
 		}
 	}
-	return roots, nil
+	if len(roots) == 0 {
+		return nil, nil
+	}
+	available, err := st.ListRootNames(ctx)
+	if err != nil {
+		return nil, err
+	}
+	inf := store.ValidateRootScope(roots, available)
+	if inf.NeedsChoice {
+		return nil, &store.ErrNeedsRoot{Inference: inf}
+	}
+	return inf.Roots, nil
 }
 
 func symbolTokens(task string) []string {
@@ -522,6 +533,67 @@ func coverageOf(r *Response) string {
 	default:
 		return "low"
 	}
+}
+
+// enrichPackageSignals fills actionable missingInformation and recommendedFollowUp.
+func enrichPackageSignals(resp *Response, requestedVersion string, detectedVersions []string) {
+	if resp.Coverage == "low" {
+		resp.MissingInformation = appendUnique(resp.MissingInformation,
+			"Few grounded local hits; verify against current vendor docs if versions matter.")
+		if len(resp.RelevantSymbols) == 0 && len(resp.RequiredAPIs) == 0 {
+			resp.RecommendedFollowUp = appendUnique(resp.RecommendedFollowUp,
+				"search_knowledge with a narrower API or error-string query")
+		}
+	}
+	if len(resp.Examples) == 0 {
+		resp.RecommendedFollowUp = appendUnique(resp.RecommendedFollowUp,
+			"search_knowledge for a worked sample")
+	}
+	if len(resp.RelevantSymbols) == 0 && len(resp.RequiredAPIs) > 0 {
+		api := resp.RequiredAPIs[0]
+		resp.RecommendedFollowUp = appendUnique(resp.RecommendedFollowUp,
+			"find_symbol name=\""+api+"\" for signature/lineage")
+	}
+	if len(resp.Sequence) == 0 && len(resp.RequiredAPIs) > 0 {
+		resp.RecommendedFollowUp = appendUnique(resp.RecommendedFollowUp,
+			"get_document on a citation URI that mentions initialization or call order")
+	}
+	req := strings.TrimSpace(requestedVersion)
+	if req != "" && (resp.Freshness == "mixed" || resp.Freshness == "unknown") {
+		uniq := uniqueNonEmpty(detectedVersions)
+		msg := "Requested version " + req + " is not clearly satisfied by local sources"
+		if len(uniq) > 0 {
+			msg += " (seen: " + strings.Join(uniq, ", ") + ")"
+		} else {
+			msg += " (no product_version on citations)"
+		}
+		resp.MissingInformation = appendUnique(resp.MissingInformation, msg)
+		resp.RecommendedFollowUp = appendUnique(resp.RecommendedFollowUp,
+			"re-run with preferredRoots pinned to the matching versioned corpus, or refresh official docs")
+	}
+	if resp.Freshness == "stale" {
+		resp.MissingInformation = appendUnique(resp.MissingInformation,
+			"Citations include archived/obsolete material; prefer non-archived sources before coding.")
+	}
+	resp.RecommendedFollowUp = appendUnique(resp.RecommendedFollowUp,
+		"get_document on a citation URI only if deeper context is required")
+}
+
+func uniqueNonEmpty(in []string) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
 }
 
 func firstSentence(s string) string {
