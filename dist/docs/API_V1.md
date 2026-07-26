@@ -23,9 +23,27 @@ Returns server capabilities. No auth required when `authMode` is `none`.
   "supportedSourceTypes": ["local", "web", "pdf", "repo"],
   "authMode": "none",
   "librarianEnabled": true,
-  "role": "administrator"
+  "role": "administrator",
+  "analyticsEnabled": true,
+  "analyticsAvailable": true
 }
 ```
+
+## Analytics (local usage)
+
+Separate SQLite DB (`implcache-usage.db` by default). Viewer may read; PUT/DELETE require administrator.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/analytics/status` | Enabled, path, size, retention, counts |
+| GET | `/analytics/summary` | Overview cards (`from`, `to`, `days`, `root`, `tool`, `coverage`, `status`) including coverage denominators / unclassified |
+| GET | `/analytics/timeseries` | Request counts by `bucket=hour\|day\|week` |
+| GET | `/analytics/coverage` | Explicit coverage + status bars (high/medium/low/unclassified/insufficient/no match/root choice) |
+| GET | `/analytics/grounding` | `{ outcomes, evidence }` — exclusive request classification + overlapping evidence usage |
+| GET | `/analytics/requests` | Recent requests (`limit`, same filters) |
+| GET | `/analytics/requests/{id}` | Request drill-down with evidence metadata |
+| PUT | `/settings/analytics` | Body: `enabled`, `retentionDays`, `storeTaskText`, `storeEvidenceText` |
+| DELETE | `/analytics/data` | Body: `{ "confirm": true, "vacuum"?: true }` — clears usage DB only |
 
 ## Error envelope
 

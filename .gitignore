@@ -46,3 +46,7 @@ testdata/validation/reports/validation.db*
 *.swp
 *.tmp
 tmp_*.go
+
+# Local scratch / temp scaffolds (never publish)
+/_scratch/
+

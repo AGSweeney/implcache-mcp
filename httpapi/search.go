@@ -7,10 +7,12 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"implcache-mcp/implctx"
 	"implcache-mcp/librarian"
 	"implcache-mcp/store"
+	"implcache-mcp/usage"
 )
 
 type searchPlaygroundRequest struct {
@@ -24,6 +26,7 @@ type searchPlaygroundRequest struct {
 }
 
 func (h *handler) handleSearchPlayground(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	var req searchPlaygroundRequest
 	if err := decodeJSON(r, &req); err != nil {
 		WriteError(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -41,12 +44,46 @@ func (h *handler) handleSearchPlayground(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		var need *store.ErrNeedsRoot
 		if errors.As(err, &need) {
+			h.recordUsage(r, usage.RootSelectionEvent("search", req.Query, need.Inference.AvailableRoots, time.Since(start)))
 			WriteJSON(w, http.StatusConflict, need.Inference)
 			return
 		}
+		h.recordUsage(r, usage.ErrorEvent("search", req.Query, "request_error", err.Error(), time.Since(start)))
 		WriteError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	ev := usage.RequestEvent{
+		RequestID:     usage.NewRequestID(),
+		OccurredAt:    time.Now().UTC(),
+		ToolName:      "search",
+		TaskHash:      usage.HashTask(req.Query),
+		LatencyMS:     int(time.Since(start).Milliseconds()),
+		CitationCount: len(res.Hits),
+		SourceCount:   len(res.Hits),
+		ResultStatus:  usage.StatusGroundedLocal,
+	}
+	if len(res.Hits) == 0 {
+		ev.ResultStatus = usage.StatusNoLocalMatch
+	}
+	for _, root := range res.Roots {
+		ev.Roots = append(ev.Roots, usage.RootRef{RootKey: root, RootName: root, Selected: true})
+	}
+	ev.RootCount = len(ev.Roots)
+	for i, hit := range res.Hits {
+		if i >= 32 {
+			break
+		}
+		ev.Evidence = append(ev.Evidence, usage.EvidenceEvent{
+			EvidenceType:       usage.EvidenceCitation,
+			EvidenceKey:        hit.URI,
+			RootKey:            hit.RootName,
+			SourceURI:          hit.URI,
+			Authority:          hit.Authority,
+			RankPosition:       i + 1,
+			SelectedForPackage: true,
+		})
+	}
+	h.recordUsage(r, ev)
 	WriteJSON(w, http.StatusOK, res)
 }
 
@@ -57,6 +94,7 @@ type findSymbolsRequest struct {
 }
 
 func (h *handler) handleSearchSymbols(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	var req findSymbolsRequest
 	if err := decodeJSON(r, &req); err != nil {
 		WriteError(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -64,9 +102,39 @@ func (h *handler) handleSearchSymbols(w http.ResponseWriter, r *http.Request) {
 	}
 	syms, err := h.opt.Store.FindSymbols(r.Context(), req.Name, req.Roots, req.Limit)
 	if err != nil {
+		h.recordUsage(r, usage.ErrorEvent("search_symbols", req.Name, "request_error", err.Error(), time.Since(start)))
 		WriteError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	ev := usage.RequestEvent{
+		RequestID:    usage.NewRequestID(),
+		OccurredAt:   time.Now().UTC(),
+		ToolName:     "search_symbols",
+		TaskHash:     usage.HashTask(req.Name),
+		LatencyMS:    int(time.Since(start).Milliseconds()),
+		SymbolCount:  len(syms),
+		ResultStatus: usage.StatusGroundedLocal,
+	}
+	if len(syms) == 0 {
+		ev.ResultStatus = usage.StatusNoLocalMatch
+	}
+	for i, sym := range syms {
+		if i >= 32 {
+			break
+		}
+		ev.Evidence = append(ev.Evidence, usage.EvidenceEvent{
+			EvidenceType:       usage.EvidenceSymbol,
+			EvidenceKey:        usage.SymbolKey(sym.NameNorm, sym.RootName),
+			RootKey:            sym.RootName,
+			RankPosition:       i + 1,
+			SelectedForPackage: true,
+		})
+	}
+	for _, root := range req.Roots {
+		ev.Roots = append(ev.Roots, usage.RootRef{RootKey: root, RootName: root, Selected: true})
+	}
+	ev.RootCount = len(ev.Roots)
+	h.recordUsage(r, ev)
 	WriteJSON(w, http.StatusOK, map[string]any{"symbols": nonNilSlice(syms), "count": len(syms)})
 }
 
@@ -94,6 +162,7 @@ type searchContextRequest struct {
 }
 
 func (h *handler) handleSearchContext(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	var req searchContextRequest
 	if err := decodeJSON(r, &req); err != nil {
 		WriteError(w, http.StatusBadRequest, "bad_request", err.Error())
@@ -114,11 +183,14 @@ func (h *handler) handleSearchContext(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var need *store.ErrNeedsRoot
 		if errors.As(err, &need) {
+			h.recordUsage(r, usage.RootSelectionEvent("search_context", req.Task, need.Inference.AvailableRoots, time.Since(start)))
 			WriteJSON(w, http.StatusConflict, need.Inference)
 			return
 		}
+		h.recordUsage(r, usage.ErrorEvent("search_context", req.Task, "request_error", err.Error(), time.Since(start)))
 		WriteError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	h.recordUsage(r, usage.FromImplementationContext("search_context", req.Task, res, time.Since(start)))
 	WriteJSON(w, http.StatusOK, res)
 }

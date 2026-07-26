@@ -15,6 +15,7 @@ import (
 
 	"implcache-mcp/librarian"
 	"implcache-mcp/store"
+	"implcache-mcp/usage"
 )
 
 // Options configures the Librarian REST API v1 handler returned by NewHandler.
@@ -42,6 +43,9 @@ type Options struct {
 	StaticFS fs.FS // optional embedded frontend dist (may be nil)
 
 	Tracker *librarian.Tracker // default librarian.DefaultTracker if nil
+
+	// Usage is optional local analytics (nil-safe).
+	Usage *usage.Store
 }
 
 // normalize fills in defaults for optional fields.

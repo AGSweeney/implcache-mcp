@@ -165,6 +165,21 @@ func (h *handler) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+apiPrefix+"search/symbols", h.handleSearchSymbols)
 	mux.HandleFunc("POST "+apiPrefix+"search/context", h.handleSearchContext)
 
+	mux.HandleFunc("GET "+apiPrefix+"analytics/status", h.handleAnalyticsStatus)
+	mux.HandleFunc("GET "+apiPrefix+"analytics/summary", h.handleAnalyticsSummary)
+	mux.HandleFunc("GET "+apiPrefix+"analytics/timeseries", h.handleAnalyticsTimeseries)
+	mux.HandleFunc("GET "+apiPrefix+"analytics/coverage", h.handleAnalyticsCoverage)
+	mux.HandleFunc("GET "+apiPrefix+"analytics/grounding", h.handleAnalyticsGrounding)
+	mux.HandleFunc("GET "+apiPrefix+"analytics/outcomes", h.handleAnalyticsOutcomes)
+	mux.HandleFunc("GET "+apiPrefix+"analytics/evidence", h.handleAnalyticsEvidence)
+	mux.HandleFunc("GET "+apiPrefix+"analytics/efficiency", h.handleAnalyticsEfficiency)
+	mux.HandleFunc("GET "+apiPrefix+"analytics/knowledge", h.handleAnalyticsKnowledge)
+	mux.HandleFunc("GET "+apiPrefix+"analytics/requests", h.handleAnalyticsRequests)
+	mux.HandleFunc("GET "+apiPrefix+"analytics/requests/{id}", h.handleAnalyticsRequestDetail)
+	mux.HandleFunc("POST "+apiPrefix+"analytics/export", h.handleAnalyticsExport)
+	mux.HandleFunc("PUT "+apiPrefix+"settings/analytics", h.handleAnalyticsSettings)
+	mux.HandleFunc("DELETE "+apiPrefix+"analytics/data", h.handleAnalyticsClear)
+
 	mux.HandleFunc("GET "+apiPrefix+"health", h.handleLibraryHealth)
 	mux.HandleFunc("GET "+apiPrefix+"logs", h.handleLogs)
 
@@ -206,6 +221,8 @@ type serverCapabilities struct {
 	MaxDocumentBytes      int64    `json:"maxDocumentBytes"`
 	MaxIngestFiles        int      `json:"maxIngestFiles"`
 	Role                  string   `json:"role"`
+	AnalyticsEnabled      bool     `json:"analyticsEnabled"`
+	AnalyticsAvailable    bool     `json:"analyticsAvailable"`
 }
 
 func (h *handler) handleServer(w http.ResponseWriter, r *http.Request) {
@@ -223,6 +240,12 @@ func (h *handler) handleServer(w http.ResponseWriter, r *http.Request) {
 			schema = v
 		}
 	}
+	analyticsEnabled, analyticsAvailable := false, false
+	if h.opt.Usage != nil {
+		st := h.opt.Usage.Status(r.Context())
+		analyticsEnabled = st.Enabled
+		analyticsAvailable = st.Available
+	}
 	WriteJSON(w, http.StatusOK, serverCapabilities{
 		ServerVersion:        firstNonEmpty(h.opt.ServerVersion, "dev"),
 		APIVersion:           1,
@@ -238,5 +261,7 @@ func (h *handler) handleServer(w http.ResponseWriter, r *http.Request) {
 		MaxDocumentBytes:     h.opt.MaxDocumentBytes,
 		MaxIngestFiles:       h.opt.MaxIngestFiles,
 		Role:                 role,
+		AnalyticsEnabled:     analyticsEnabled,
+		AnalyticsAvailable:   analyticsAvailable,
 	})
 }

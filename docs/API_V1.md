@@ -23,9 +23,32 @@ Returns server capabilities. No auth required when `authMode` is `none`.
   "supportedSourceTypes": ["local", "web", "pdf", "repo"],
   "authMode": "none",
   "librarianEnabled": true,
-  "role": "administrator"
+  "role": "administrator",
+  "analyticsEnabled": true,
+  "analyticsAvailable": true
 }
 ```
+
+## Analytics (local usage)
+
+Separate SQLite DB (`implcache-usage.db` by default). Viewer may read; PUT/DELETE require administrator.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/analytics/status` | Enabled, path, size, retention, counts, estimator/schema version |
+| GET | `/analytics/summary` | Overview cards including `localContextTokensServed`, reconciliation, coverage denominators / unclassified warning |
+| GET | `/analytics/timeseries` | Request counts by `bucket=hour\|day\|week\|month` (total/grounded/root/no-match/errors + token series) |
+| GET | `/analytics/coverage` | Explicit coverage + status bars (high/medium/low/unclassified/not_applicable + outcomes) |
+| GET | `/analytics/grounding` | `{ outcomes, evidence }` — exclusive request classification + overlapping evidence usage |
+| GET | `/analytics/outcomes` | Mutually exclusive request outcomes |
+| GET | `/analytics/evidence` | Overlapping evidence usage counts |
+| GET | `/analytics/efficiency` | Token totals, reduction, source-type breakdown, token timeseries |
+| GET | `/analytics/knowledge` | Ranked roots / evidence keys from usage |
+| GET | `/analytics/requests` | Recent requests (`limit`, `offset`, `sort`, `order`, same filters) |
+| GET | `/analytics/requests/{id}` | Request drill-down with evidence + token metrics |
+| POST | `/analytics/export` | Aggregate export (`format=json\|csv`) — no sensitive diagnostics |
+| PUT | `/settings/analytics` | Body: `enabled`, `retentionDays`, `storeTaskText`, `storeEvidenceText` |
+| DELETE | `/analytics/data` | Body: `{ "confirm": true, "vacuum"?: true }` — clears usage DB only |
 
 ## Error envelope
 

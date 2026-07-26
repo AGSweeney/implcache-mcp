@@ -17,6 +17,7 @@ import (
 	"implcache-mcp/librarian"
 	"implcache-mcp/pdf"
 	"implcache-mcp/store"
+	"implcache-mcp/usage"
 	"implcache-mcp/vomit"
 	"implcache-mcp/web"
 
@@ -114,6 +115,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			"(APIs, sequence, examples, constraints, pitfalls) within a token budget. " +
 			"Prefer this over dumping search hits or full documents.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args implContextArgs) (*mcp.CallToolResult, implctx.Response, error) {
+		start := time.Now()
 		projectRoot := args.ProjectRoot
 		if strings.TrimSpace(projectRoot) == "" {
 			projectRoot = opt.DefaultProjectRoot
@@ -138,14 +140,18 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 		if err != nil {
 			var need *store.ErrNeedsRoot
 			if asNeedsRoot(err, &need) {
+				roots := need.Inference.AvailableRoots
+				opt.recordUsage(usage.RootSelectionEvent("get_implementation_context", args.Task, roots, time.Since(start)))
 				payload, _ := json.MarshalIndent(need.Inference, "", "  ")
 				return &mcp.CallToolResult{
 					Content: []mcp.Content{&mcp.TextContent{Text: string(payload)}},
 					IsError: true,
 				}, implctx.Response{}, nil
 			}
+			opt.recordUsage(usage.ErrorEvent("get_implementation_context", args.Task, "request_error", err.Error(), time.Since(start)))
 			return nil, implctx.Response{}, err
 		}
+		opt.recordUsage(usage.FromImplementationContext("get_implementation_context", args.Task, res, time.Since(start)))
 		payload, _ := json.MarshalIndent(res, "", "  ")
 		return textResult(string(payload)), *res, nil
 	})
@@ -155,6 +161,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 		Description: "Symbol lookup with staged exact/normalized/qualified/prefix/suffix matching within preferred roots. " +
 			"Requires a resolved knowledge root; if ambiguous, returns needsChoice with availableRoots.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args findSymbolArgs) (*mcp.CallToolResult, findSymbolResult, error) {
+		start := time.Now()
 		var explicit []string
 		if r := strings.TrimSpace(args.RootName); r != "" {
 			explicit = []string{r}
@@ -165,9 +172,11 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 		}
 		inf, err := st.ResolveRoots(ctx, args.Name, explicit)
 		if err != nil {
+			opt.recordUsage(usage.ErrorEvent("find_symbol", args.Name, "request_error", err.Error(), time.Since(start)))
 			return nil, findSymbolResult{}, err
 		}
 		if inf.NeedsChoice {
+			opt.recordUsage(usage.RootSelectionEvent("find_symbol", args.Name, inf.AvailableRoots, time.Since(start)))
 			payload, _ := json.MarshalIndent(inf, "", "  ")
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: string(payload)}},
@@ -176,9 +185,37 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 		}
 		syms, err := st.FindSymbols(ctx, args.Name, inf.Roots, store.ClampSearchLimit(args.Limit, opt.MaxResults))
 		if err != nil {
+			opt.recordUsage(usage.ErrorEvent("find_symbol", args.Name, "request_error", err.Error(), time.Since(start)))
 			return nil, findSymbolResult{}, err
 		}
 		out := findSymbolResult{Symbols: syms, Count: len(syms)}
+		ev := usage.RequestEvent{
+			RequestID:    usage.NewRequestID(),
+			OccurredAt:   time.Now().UTC(),
+			ToolName:     "find_symbol",
+			TaskHash:     usage.HashTask(args.Name),
+			LatencyMS:    int(time.Since(start).Milliseconds()),
+			SymbolCount:  len(syms),
+			RootCount:    len(inf.Roots),
+			Roots:        rootsForUsage(inf.Roots),
+			ResultStatus: usage.StatusGroundedLocal,
+		}
+		if len(syms) == 0 {
+			ev.ResultStatus = usage.StatusNoLocalMatch
+		}
+		for i, sym := range syms {
+			if i >= 32 {
+				break
+			}
+			ev.Evidence = append(ev.Evidence, usage.EvidenceEvent{
+				EvidenceType: usage.EvidenceSymbol,
+				EvidenceKey:  usage.SymbolKey(sym.NameNorm, sym.RootName),
+				RootKey:      sym.RootName,
+				RankPosition: i + 1,
+				SelectedForPackage: true,
+			})
+		}
+		opt.recordUsage(ev)
 		payload, _ := json.MarshalIndent(out, "", "  ")
 		return textResult(string(payload)), out, nil
 	})
@@ -545,12 +582,14 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			"Infers knowledge root from the query when possible; if ambiguous, returns needsChoice " +
 			"with availableRoots — ask the user and re-run with rootName.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, searchResult, error) {
+		start := time.Now()
 		var explicit []string
 		if r := strings.TrimSpace(args.RootName); r != "" {
 			explicit = []string{r}
 		}
 		inf, err := st.ResolveRoots(ctx, args.Query, explicit)
 		if err != nil {
+			opt.recordUsage(usage.ErrorEvent("search_knowledge", args.Query, "request_error", err.Error(), time.Since(start)))
 			return nil, searchResult{}, err
 		}
 		if inf.NeedsChoice {
@@ -560,6 +599,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 				AvailableRoots: inf.AvailableRoots,
 				MatchedHints:   inf.MatchedHints,
 			}
+			opt.recordUsage(usage.RootSelectionEvent("search_knowledge", args.Query, inf.AvailableRoots, time.Since(start)))
 			b, _ := json.MarshalIndent(out, "", "  ")
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
@@ -574,6 +614,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			Semantic:   opt.EnableSemantic || args.Semantic,
 		})
 		if err != nil {
+			opt.recordUsage(usage.ErrorEvent("search_knowledge", args.Query, "request_error", err.Error(), time.Since(start)))
 			return nil, searchResult{}, err
 		}
 		out := searchResult{
@@ -582,6 +623,36 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			Roots:        inf.Roots,
 			MatchedHints: inf.MatchedHints,
 		}
+		ev := usage.RequestEvent{
+			RequestID:     usage.NewRequestID(),
+			OccurredAt:    time.Now().UTC(),
+			ToolName:      "search_knowledge",
+			TaskHash:      usage.HashTask(args.Query),
+			LatencyMS:     int(time.Since(start).Milliseconds()),
+			CitationCount: len(hits),
+			SourceCount:   len(hits),
+			RootCount:     len(inf.Roots),
+			Roots:         rootsForUsage(inf.Roots),
+			ResultStatus:  usage.StatusGroundedLocal,
+		}
+		if len(hits) == 0 {
+			ev.ResultStatus = usage.StatusNoLocalMatch
+		}
+		for i, h := range hits {
+			if i >= 32 {
+				break
+			}
+			ev.Evidence = append(ev.Evidence, usage.EvidenceEvent{
+				EvidenceType:       usage.EvidenceCitation,
+				EvidenceKey:        h.URI,
+				RootKey:            h.RootName,
+				SourceURI:          h.URI,
+				Authority:          h.Authority,
+				RankPosition:       i + 1,
+				SelectedForPackage: true,
+			})
+		}
+		opt.recordUsage(ev)
 		b, _ := json.MarshalIndent(out, "", "  ")
 		return textResult(string(b)), out, nil
 	})
@@ -603,6 +674,11 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 		Name:        "get_document",
 		Description: "Fetch a document by uri (project://…) or numeric id",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args getDocumentArgs) (*mcp.CallToolResult, documentResult, error) {
+		start := time.Now()
+		task := args.URI
+		if args.ID > 0 {
+			task = fmt.Sprintf("id:%d", args.ID)
+		}
 		var (
 			doc    *store.Document
 			chunks []store.Chunk
@@ -617,6 +693,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			return nil, documentResult{}, fmt.Errorf("uri or id is required")
 		}
 		if err != nil {
+			opt.recordUsage(usage.ErrorEvent("get_document", task, "request_error", err.Error(), time.Since(start)))
 			return nil, documentResult{}, err
 		}
 		out := documentResult{Document: *doc, Chunks: chunks}
@@ -635,6 +712,27 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			}
 			out.Body = b.String()
 		}
+		ev := usage.RequestEvent{
+			RequestID:     usage.NewRequestID(),
+			OccurredAt:    time.Now().UTC(),
+			ToolName:      "get_document",
+			TaskHash:      usage.HashTask(task),
+			LatencyMS:     int(time.Since(start).Milliseconds()),
+			CitationCount: 1,
+			SourceCount:   1,
+			ResultStatus:  usage.StatusGroundedLocal,
+			Roots:         rootsForUsage([]string{doc.RootName}),
+			RootCount:     1,
+			Evidence: []usage.EvidenceEvent{{
+				EvidenceType:       usage.EvidenceDocument,
+				EvidenceKey:        doc.URI,
+				RootKey:            doc.RootName,
+				SourceURI:          doc.URI,
+				Authority:          doc.Authority,
+				SelectedForPackage: true,
+			}},
+		}
+		opt.recordUsage(ev)
 		payload, _ := json.MarshalIndent(out, "", "  ")
 		return textResult(string(payload)), out, nil
 	})
@@ -847,6 +945,18 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 	}
 
 	return registered
+}
+
+func rootsForUsage(names []string) []usage.RootRef {
+	out := make([]usage.RootRef, 0, len(names))
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		out = append(out, usage.RootRef{RootKey: n, RootName: n, Selected: true})
+	}
+	return out
 }
 
 func asNeedsRoot(err error, target **store.ErrNeedsRoot) bool {

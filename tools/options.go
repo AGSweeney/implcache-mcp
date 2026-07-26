@@ -4,6 +4,8 @@
 
 package tools
 
+import "implcache-mcp/usage"
+
 // ToolMode controls which MCP tool schemas are registered.
 type ToolMode string
 
@@ -33,6 +35,8 @@ type Options struct {
 	MaxDocumentBytes      int64
 	// EnableSemantic turns on optional sparse term-vector search alongside FTS.
 	EnableSemantic bool
+	// Usage is optional local analytics (nil-safe).
+	Usage *usage.Store
 }
 
 // EffectiveMode returns the tool registration mode.

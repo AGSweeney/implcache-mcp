@@ -11,6 +11,7 @@ import Roots from "./pages/Roots";
 import SearchLab from "./pages/SearchLab";
 import Health from "./pages/Health";
 import Settings from "./pages/Settings";
+import Analytics from "./pages/Analytics";
 import AddSource from "./pages/AddSource";
 import Logs from "./pages/Logs";
 
@@ -30,6 +31,7 @@ const navGroups = [
       ["/library", "Library"],
       ["/roots", "Roots"],
       ["/search", "Search Lab"],
+      ["/analytics", "Analytics"],
       ["/health", "Health"],
     ],
   },
@@ -50,6 +52,7 @@ const pageCrumbs: Record<string, string> = {
   "/library": "Library",
   "/roots": "Roots",
   "/search": "Search Lab",
+  "/analytics": "Analytics",
   "/health": "Health",
   "/logs": "Logs",
   "/settings": "Settings",
@@ -124,6 +127,7 @@ export default function App() {
               <Route path="/library" element={<Library />} />
               <Route path="/roots" element={<Roots />} />
               <Route path="/search" element={<SearchLab />} />
+              <Route path="/analytics" element={<Analytics />} />
               <Route path="/jobs" element={<Jobs />} />
               <Route path="/health" element={<Health />} />
               <Route path="/logs" element={<Logs />} />

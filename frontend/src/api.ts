@@ -9,6 +9,199 @@ export type ServerInfo = {
   authMode: string;
   librarianEnabled: boolean;
   role?: string;
+  analyticsEnabled?: boolean;
+  analyticsAvailable?: boolean;
+};
+
+export type AnalyticsStatus = {
+  enabled: boolean;
+  available: boolean;
+  dbPath?: string;
+  retentionDays: number;
+  storeTaskText: boolean;
+  storeEvidenceText: boolean;
+  databaseBytes?: number;
+  oldestAt?: string;
+  newestAt?: string;
+  requestCount: number;
+  droppedEvents: number;
+  message?: string;
+  localOnly: boolean;
+  metadataOnly: boolean;
+  tokenEstimatorVersion?: string;
+  schemaVersion?: number;
+};
+
+export type AnalyticsSummary = {
+  totalRequests: number;
+  groundedRequests: number;
+  localEvidenceRate: number;
+  curatedRequests: number;
+  curatedUsageRate: number;
+  highCoverage: number;
+  mediumCoverage: number;
+  lowCoverage: number;
+  unclassifiedCoverage: number;
+  notApplicableCoverage: number;
+  highCoverageRate: number;
+  mediumCoverageRate: number;
+  lowCoverageRate: number;
+  unclassifiedCoverageRate: number;
+  rootSelectionRequired: number;
+  rootSelectionRate: number;
+  localContextTokensServed: number;
+  avgPackageTokens?: number | null;
+  noLocalMatch: number;
+  localInsufficient: number;
+  errors: number;
+  reconcileOk: boolean;
+  reconcileSum: number;
+  unclassifiedCoverageWarning: boolean;
+  tokenEstimatorVersion?: string;
+};
+
+export type AnalyticsTimePoint = {
+  bucket: string;
+  total: number;
+  grounded: number;
+  rootChoice?: number;
+  noMatch?: number;
+  insufficient: number;
+  errors: number;
+  high?: number;
+  medium?: number;
+  low?: number;
+  tokensServed?: number;
+  sourceTokens?: number;
+  tokensAvoided?: number;
+  avgPackage?: number | null;
+  avgReduction?: number | null;
+};
+
+export type AnalyticsCoverage = {
+  high: number;
+  medium: number;
+  low: number;
+  unclassified: number;
+  notApplicable?: number;
+  localInsufficient: number;
+  noLocalMatch: number;
+  rootSelectionRequired: number;
+  errors: number;
+  grounded: number;
+  total: number;
+  unclassifiedWarning?: boolean;
+};
+
+export type AnalyticsOutcomes = {
+  curated: number;
+  local?: number;
+  recipe?: number;
+  symbolLed?: number;
+  rawDocLed?: number;
+  mixed: number;
+  noMatch: number;
+  insufficient: number;
+  rootSelectionRequired: number;
+  errors: number;
+  other: number;
+  total: number;
+};
+
+export type AnalyticsEvidence = {
+  curated: number;
+  recipe: number;
+  symbol: number;
+  rawDocuments: number;
+  document: number;
+};
+
+export type AnalyticsGrounding = {
+  outcomes: AnalyticsOutcomes;
+  evidence: AnalyticsEvidence;
+};
+
+export type AnalyticsEfficiency = {
+  localContextTokensServed?: number | null;
+  structuredTokensServed?: number | null;
+  rawDocumentTokensServed?: number | null;
+  avgPackageTokens?: number | null;
+  estimatedSourceTokens?: number | null;
+  estimatedTokensAvoided?: number | null;
+  avgContextReductionPercent?: number | null;
+  rawDocumentShare?: number | null;
+  tokensPerGroundedRequest?: number | null;
+  tokensPerSuccessfulOutcome?: number | null;
+  tokenEstimatorVersion?: string;
+  sourceTypeBreakdown?: { type: string; tokens: number; label: string }[];
+  tokenTimeseries?: AnalyticsTimePoint[];
+  packageTimeseries?: AnalyticsTimePoint[];
+  groundedRequests?: number;
+  successfulOutcomes?: number;
+};
+
+export type AnalyticsKnowledge = {
+  roots: { key: string; label?: string; timesSelected: number; timesIncluded: number }[];
+  evidence: { key: string; label?: string; timesSelected: number; timesIncluded: number }[];
+  curated: { key: string; label?: string; timesSelected: number; timesIncluded: number }[];
+};
+
+export type AnalyticsRequestRow = {
+  requestId: string;
+  occurredAt: string;
+  toolName: string;
+  resultStatus: string;
+  coverage?: string;
+  estimatedTokens: number;
+  returnedTokens?: number;
+  sourceCount?: number;
+  latencyMs: number;
+  requestClass?: string;
+  roots?: string[];
+  curated?: boolean;
+};
+
+export type AnalyticsRequestList = {
+  requests: AnalyticsRequestRow[];
+  count: number;
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type AnalyticsRequestDetail = AnalyticsRequestRow & {
+  clientName?: string;
+  modelName?: string;
+  sessionHash?: string;
+  freshness?: string;
+  contextFingerprint?: string;
+  taskHash?: string;
+  rootSelectionRequired: boolean;
+  additionalRetrievalRecommended: boolean;
+  citationCount: number;
+  curatedCount: number;
+  recipeCount: number;
+  symbolCount: number;
+  structuredTokens?: number;
+  rawDocumentTokens?: number;
+  estimatedSourceTokens?: number;
+  estimatedTokensAvoided?: number;
+  contextReductionPercent?: number | null;
+  tokenEstimatorVersion?: string;
+  coverageApplicable?: boolean | null;
+  errorCategory?: string;
+  errorMessage?: string;
+  evidence?: {
+    evidenceType: string;
+    evidenceKey?: string;
+    rootKey?: string;
+    sourceUri?: string;
+    authority?: string;
+    rankPosition: number;
+    selectedForPackage: boolean;
+    includedAfterTrimming: boolean;
+    estimatedTokens: number;
+  }[];
 };
 
 export type SourceSummary = {
@@ -174,6 +367,47 @@ export const api = {
   logs: (limit = 100) => request<{ lines: { at: number; level: string; message: string }[] }>(`/api/v1/logs?limit=${limit}`),
   ingestLocal: (body: Record<string, unknown>) =>
     request("/api/v1/sources/local/ingest", { method: "POST", body: JSON.stringify(body) }),
+  analyticsStatus: () => request<AnalyticsStatus>("/api/v1/analytics/status"),
+  analyticsSummary: (q: URLSearchParams) =>
+    request<AnalyticsSummary>(`/api/v1/analytics/summary?${q}`),
+  analyticsTimeseries: (q: URLSearchParams) =>
+    request<{ points: AnalyticsTimePoint[]; count: number }>(`/api/v1/analytics/timeseries?${q}`),
+  analyticsCoverage: (q: URLSearchParams) =>
+    request<AnalyticsCoverage>(`/api/v1/analytics/coverage?${q}`),
+  analyticsGrounding: (q: URLSearchParams) =>
+    request<AnalyticsGrounding>(`/api/v1/analytics/grounding?${q}`),
+  analyticsOutcomes: (q: URLSearchParams) =>
+    request<AnalyticsOutcomes>(`/api/v1/analytics/outcomes?${q}`),
+  analyticsEvidence: (q: URLSearchParams) =>
+    request<AnalyticsEvidence>(`/api/v1/analytics/evidence?${q}`),
+  analyticsEfficiency: (q: URLSearchParams) =>
+    request<AnalyticsEfficiency>(`/api/v1/analytics/efficiency?${q}`),
+  analyticsKnowledge: (q: URLSearchParams) =>
+    request<AnalyticsKnowledge>(`/api/v1/analytics/knowledge?${q}`),
+  analyticsRequests: (q: URLSearchParams) =>
+    request<AnalyticsRequestList>(`/api/v1/analytics/requests?${q}`),
+  analyticsRequest: (id: string) =>
+    request<AnalyticsRequestDetail>(`/api/v1/analytics/requests/${encodeURIComponent(id)}`),
+  analyticsExportUrl: (q: URLSearchParams, format: "json" | "csv" = "json") => {
+    const n = new URLSearchParams(q);
+    n.set("format", format);
+    return `/api/v1/analytics/export?${n}`;
+  },
+  putAnalyticsSettings: (body: {
+    enabled?: boolean;
+    retentionDays?: number;
+    storeTaskText?: boolean;
+    storeEvidenceText?: boolean;
+  }) =>
+    request<AnalyticsStatus>("/api/v1/settings/analytics", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  clearAnalyticsData: (confirm = true, vacuum = false) =>
+    request<AnalyticsStatus>("/api/v1/analytics/data", {
+      method: "DELETE",
+      body: JSON.stringify({ confirm, vacuum }),
+    }),
   upload: async (file: File) => {
     const fd = new FormData();
     fd.append("file", file);

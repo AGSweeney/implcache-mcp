@@ -23,6 +23,7 @@ import (
 	"implcache-mcp/manifest"
 	"implcache-mcp/store"
 	"implcache-mcp/tools"
+	"implcache-mcp/usage"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -55,6 +56,11 @@ func main() {
 	maxIngestFiles := flag.Int("max-ingest-files", 50000, "max files per ingest operation")
 	maxDocBytes := flag.Int64("max-document-bytes", 8<<20, "max bytes per ingested file")
 	enableSemantic := flag.Bool("enable-semantic", false, "supplement FTS with optional sparse term-vector similarity (not embeddings)")
+	telemetryMode := flag.String("telemetry", envOr("IMPLCACHE_TELEMETRY", "local"), "usage analytics: local|off (env IMPLCACHE_TELEMETRY)")
+	usageDBPath := flag.String("usage-db", envOr("IMPLCACHE_USAGE_DB", ""), "usage analytics SQLite path (default: <db-dir>/implcache-usage.db; env IMPLCACHE_USAGE_DB)")
+	telemetryRetention := flag.Int("telemetry-retention-days", 90, "usage analytics retention days (0 = unlimited)")
+	telemetryStoreTask := flag.Bool("telemetry-store-task-text", false, "store truncated task text in usage analytics (off by default)")
+	telemetryStoreEvidence := flag.Bool("telemetry-store-evidence-text", false, "store evidence text snippets in usage analytics (off by default)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -108,6 +114,30 @@ func main() {
 	}
 	defer st.Close()
 
+	usagePath := strings.TrimSpace(*usageDBPath)
+	if usagePath == "" {
+		usagePath = usage.DefaultUsageDBPath(*dbPath)
+	}
+	cliOff := strings.EqualFold(strings.TrimSpace(*telemetryMode), "off")
+	usageStore, err := usage.Open(usagePath, usage.Config{
+		Enabled:           !cliOff,
+		CLIDisabled:       cliOff,
+		RetentionDays:     *telemetryRetention,
+		StoreTaskText:     *telemetryStoreTask,
+		StoreEvidenceText: *telemetryStoreEvidence,
+	})
+	if err != nil {
+		log.Printf("usage analytics: %v (continuing without analytics)", err)
+		usageStore = nil
+	} else {
+		defer func() { _ = usageStore.Close() }()
+		if cliOff {
+			log.Printf("usage analytics disabled (-telemetry=off)")
+		} else {
+			log.Printf("usage analytics db=%s", usagePath)
+		}
+	}
+
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "implcache-mcp",
 		Version: version,
@@ -127,6 +157,7 @@ func main() {
 		MaxIngestFiles:        *maxIngestFiles,
 		MaxDocumentBytes:      *maxDocBytes,
 		EnableSemantic:        *enableSemantic,
+		Usage:                 usageStore,
 	}
 	registered := tools.RegisterWithOptions(server, st, toolOpt)
 	log.Printf("implcache-mcp %s mode=%s tools=%v", version, toolOpt.EffectiveMode(), registered)
@@ -162,6 +193,7 @@ func main() {
 			APIToken:          strings.TrimSpace(*librarianToken),
 			ViewerAPIToken:    strings.TrimSpace(*librarianViewerToken),
 			UploadDir:         uploads,
+			Usage:             usageStore,
 		}
 		if *enableLibrarian {
 			if sub, err := embedui.FS(); err != nil {
@@ -269,4 +301,11 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(h)
 	return ip != nil && ip.IsLoopback()
+}
+
+func envOr(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
 }

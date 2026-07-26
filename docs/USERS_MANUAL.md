@@ -69,7 +69,7 @@ Permission flags (`-readonly`, `-allow-ingest`, …) still apply when admin sche
 
 ### Configuration sources
 
-The Go server does **not** read application environment variables (no `IMPLCACHE_*`). Configuration is:
+Configuration is primarily flags and an optional workspace manifest. Analytics also accepts `IMPLCACHE_TELEMETRY` and `IMPLCACHE_USAGE_DB`. Configuration is:
 
 1. **CLI flags** on `implcache-mcp` / `ingestcli`
 2. Optional **`.implcache.yaml`** via `-workspace DIR`
