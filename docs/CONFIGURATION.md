@@ -95,7 +95,7 @@ Even in admin mode, you can deny writes with `-readonly` or individual `-allow-*
 
 ## Local usage analytics
 
-Analytics are **on by default**, metadata-only, and never block retrieval. Data is stored in a separate SQLite file (`implcache-usage.db`), not in the knowledge database. Disable with `-telemetry=off` or via Librarian **Settings → Usage analytics**. Clear via Settings or `DELETE /api/v1/analytics/data`. See [PRD_LOCAL_ANALYTICS.md](PRD_LOCAL_ANALYTICS.md) and the Analytics page in the Librarian UI.
+Analytics are **on by default**, metadata-only, and never block retrieval. Data is stored in a separate SQLite file (`implcache-usage.db`), not in the knowledge database. Disable with `-telemetry=off` or via Librarian **Settings → Usage analytics**. Clear via Settings or `DELETE /api/v1/analytics/data`. Operator walkthrough with screenshots: [ANALYTICS_USERS_GUIDE.md](ANALYTICS_USERS_GUIDE.md). Design notes: [PRD_LOCAL_ANALYTICS.md](PRD_LOCAL_ANALYTICS.md).
 
 ---
 

@@ -378,9 +378,11 @@ If a tool returns `needsChoice` / `availableRoots`:
 
 Enable with `-http` + `-enable-librarian` (usually also `-enable-http-mutations -mode admin`).
 
-**UI pages** (embedded SPA; no Node.js at runtime): Dashboard, Sources, Add Source, Jobs, Library, Roots, Search Lab, Health, Logs, Settings.
+**UI pages** (embedded SPA; no Node.js at runtime): Dashboard, Sources, Add Source, Jobs, Library, Roots, Search Lab, Analytics, Health, Logs, Settings.
 
 Production assets live in `embedui/dist`. Optional rebuild: see [frontend/README.md](../frontend/README.md).
+
+**Analytics** (local usage, grounding, coverage, efficiency): see the full walkthrough with screenshots in [ANALYTICS_USERS_GUIDE.md](ANALYTICS_USERS_GUIDE.md).
 
 ### Screenshots
 
@@ -393,6 +395,7 @@ Production assets live in `embedui/dist`. Optional rebuild: see [frontend/README
 | Library | ![Librarian Library](images/librarian/librarian-library.png) |
 | Document viewer | ![Librarian Document Viewer](images/librarian/librarian-document-viewer.png) |
 | Search Lab | ![Librarian Search Lab](images/librarian/librarian-search-lab.png) |
+| Analytics | ![Analytics Overview](images/analytics/analytics-overview.png) |
 | Health | ![Librarian Health](images/librarian/librarian-health.png) |
 
 **REST** base: `http://127.0.0.1:8080/api/v1`
