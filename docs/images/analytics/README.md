@@ -13,4 +13,4 @@ Captured from a local Librarian instance (`-enable-librarian` on `:8080`) for do
 | `analytics-efficiency.png` | Context efficiency / token metrics |
 | `analytics-settings.png` | Settings → Usage analytics |
 
-Referenced from [ANALYTICS_USERS_GUIDE.md](../../ANALYTICS_USERS_GUIDE.md).
+Referenced from [Analytics Dashboard User Guide](../../ANALYTICS_USERS_GUIDE.md).

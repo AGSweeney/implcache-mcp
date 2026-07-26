@@ -20,6 +20,6 @@ ImplCache MCP is a **local implementation-context server** for coding agents. It
 | [INGEST.md](INGEST.md) | Markdown/HTML/project, web, PDF, and Git ingest + CLI |
 | [OPERATIONS.md](OPERATIONS.md) | Build, flags, security, validation, evaluation, [limitations/risks](OPERATIONS.md#limitations-and-risks) |
 | [API_V1.md](API_V1.md) | Librarian REST admin API (`/api/v1`) + embedded UI |
-| [ANALYTICS_USERS_GUIDE.md](ANALYTICS_USERS_GUIDE.md) | Local Analytics dashboard users guide (screenshots) |
+| [ANALYTICS_USERS_GUIDE.md](ANALYTICS_USERS_GUIDE.md) | Analytics Dashboard User Guide (screenshots) |
 | [PRD_LOCAL_ANALYTICS.md](PRD_LOCAL_ANALYTICS.md) | Analytics product requirements / metrics design |
 | [../testdata/validation/README.md](../testdata/validation/README.md) | Real-source validation harness (`cmd/sourcevalidate`) |
