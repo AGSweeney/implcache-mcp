@@ -2,6 +2,7 @@ import { NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
 import EnvironmentStatus from "./components/EnvironmentStatus";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { ToastProvider } from "./components/Toast";
 import Dashboard from "./pages/Dashboard";
 import Sources from "./pages/Sources";
@@ -120,19 +121,21 @@ export default function App() {
             <EnvironmentStatus server={server.data} error={server.isError} />
           </header>
           <main className="main">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/sources" element={<Sources />} />
-              <Route path="/sources/add" element={<AddSource />} />
-              <Route path="/library" element={<Library />} />
-              <Route path="/roots" element={<Roots />} />
-              <Route path="/search" element={<SearchLab />} />
-              <Route path="/analytics" element={<Analytics />} />
-              <Route path="/jobs" element={<Jobs />} />
-              <Route path="/health" element={<Health />} />
-              <Route path="/logs" element={<Logs />} />
-              <Route path="/settings" element={<Settings />} />
-            </Routes>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/sources" element={<Sources />} />
+                <Route path="/sources/add" element={<AddSource />} />
+                <Route path="/library" element={<Library />} />
+                <Route path="/roots" element={<Roots />} />
+                <Route path="/search" element={<SearchLab />} />
+                <Route path="/analytics" element={<Analytics />} />
+                <Route path="/jobs" element={<Jobs />} />
+                <Route path="/health" element={<Health />} />
+                <Route path="/logs" element={<Logs />} />
+                <Route path="/settings" element={<Settings />} />
+              </Routes>
+            </ErrorBoundary>
           </main>
         </div>
       </div>

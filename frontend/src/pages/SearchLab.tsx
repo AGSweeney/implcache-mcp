@@ -20,7 +20,9 @@ export default function SearchLab() {
     queryFn: async () => normalizeList<string>(await api.roots(), "roots"),
   });
 
-  const rootOptions = [...(roots.data || [])].sort((a, b) => a.localeCompare(b));
+  const rootOptions = [...normalizeList<string>(roots.data as never, "roots")].sort((a, b) =>
+    a.localeCompare(b),
+  );
 
   async function run() {
     setBusy(true);

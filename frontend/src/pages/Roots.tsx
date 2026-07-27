@@ -38,7 +38,7 @@ export default function Roots() {
       <div className="panel">
         <h2 className="section-title">Roots</h2>
         <ul>
-          {(roots.data || []).map((r) => (
+          {normalizeList<string>(roots.data as never, "roots").map((r) => (
             <li key={r} className="mono">
               {r}
             </li>

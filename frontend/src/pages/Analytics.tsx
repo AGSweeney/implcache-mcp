@@ -965,7 +965,10 @@ export default function Analytics() {
     };
   })();
 
-  const roots = useQuery({ queryKey: ["roots"], queryFn: api.roots });
+  const roots = useQuery({
+    queryKey: ["roots"],
+    queryFn: async () => normalizeList<string>(await api.roots(), "roots"),
+  });
   const buckets = allowedBuckets(range);
   const bucketVal = sp.get("bucket") || (range === "24h" ? "hour" : "day");
 
@@ -1042,7 +1045,7 @@ export default function Analytics() {
             Root
             <select value={sp.get("root") || ""} onChange={(e) => setParam("root", e.target.value)}>
               <option value="">All roots</option>
-              {normalizeList(roots.data, "roots").map((r) => (
+              {(roots.data || []).map((r) => (
                 <option key={r} value={r}>
                   {r}
                 </option>
