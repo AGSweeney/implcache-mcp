@@ -170,6 +170,16 @@ Use **absolute paths**. Default agent mode is retrieval-only:
 
 Reload the MCP server in Cursor after rebuilding the binary.
 
+**Remote host (e.g. Jetson Orin NX on the LAN):** run ImplCache with `-http`, `-allow-remote-http`, and Librarian as needed, then add a second MCP entry that uses a URL instead of a local command:
+
+```json
+"implCacheRemote": {
+  "url": "http://172.16.82.121:8080/mcp"
+}
+```
+
+Full Jetson/LAN guide: [REMOTE.md](REMOTE.md).
+
 ### 4.5 First retrieval
 
 Have the agent call:

@@ -45,6 +45,22 @@ Use absolute paths for the binary and database.
 
 You can keep two MCP entries (e.g. `implcache` and `implcache-admin`) if you want both profiles available.
 
+### Remote server (Jetson / LAN) — URL transport
+
+When ImplCache runs on another machine with HTTP enabled, Cursor connects with a **`url`** entry (no local `command`). Endpoint must be the MCP Streamable HTTP path `/mcp`:
+
+```json
+{
+  "mcpServers": {
+    "implCacheRemote": {
+      "url": "http://172.16.82.121:8080/mcp"
+    }
+  }
+}
+```
+
+On the server you must bind a non-loopback address and pass `-allow-remote-http` (see [REMOTE.md](REMOTE.md)).
+
 ---
 
 ## Modes

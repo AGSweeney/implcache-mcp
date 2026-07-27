@@ -45,6 +45,26 @@ Use absolute paths for the binary and database.
 
 You can keep two MCP entries (e.g. `implcache` and `implcache-admin`) if you want both profiles available.
 
+### Remote server (Jetson / LAN) — URL transport
+
+When ImplCache runs on another machine with HTTP enabled, Cursor connects with a **`url`** entry (no local `command`). Endpoint must be the MCP Streamable HTTP path `/mcp`:
+
+```json
+{
+  "mcpServers": {
+    "implcache": {
+      "command": "D:/Tools/ImplCache/implcache-mcp.exe",
+      "args": ["-db", "D:/Tools/ImplCache/implcache.db", "-mode", "agent"]
+    },
+    "implCacheRemote": {
+      "url": "http://172.16.82.121:8080/mcp"
+    }
+  }
+}
+```
+
+On the server you must bind a non-loopback address and pass `-allow-remote-http` (see [REMOTE.md](REMOTE.md) for the Jetson Orin NX walkthrough, `run-librarian-lan.sh`, and security notes).
+
 ---
 
 ## Modes
@@ -149,7 +169,7 @@ Safety defaults:
 - Mutations over HTTP are off unless `-enable-http-mutations`
 - Optional Bearer auth: `-librarian-token` (admin), `-librarian-viewer-token` (viewer)
 
-MCP over HTTP is at `/mcp`. It does not use Librarian Bearer tokens; protect exposure with bind address, mutation flags, and a reverse proxy + HTTPS if you leave loopback.
+MCP over HTTP is at `/mcp`. It does not use Librarian Bearer tokens; protect exposure with bind address, mutation flags, and a reverse proxy + HTTPS if you leave loopback. For Cursor on another machine, see [REMOTE.md](REMOTE.md).
 
 Shared deployment example:
 

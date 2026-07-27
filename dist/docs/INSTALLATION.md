@@ -106,7 +106,15 @@ Add an MCP server entry that runs the binary with absolute paths. Example Cursor
 
 Reload the MCP server in the client after you replace binaries or change args.
 
-Full options: [CONFIGURATION.md](CONFIGURATION.md).
+For a **remote** ImplCache (e.g. Jetson on the LAN), use a URL entry instead of `command`:
+
+```json
+"implCacheRemote": {
+  "url": "http://172.16.82.121:8080/mcp"
+}
+```
+
+Server must run with `-allow-remote-http` and a non-loopback bind. See [REMOTE.md](REMOTE.md) and [CONFIGURATION.md](CONFIGURATION.md).
 
 ---
 

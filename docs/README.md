@@ -20,6 +20,7 @@ ImplCache MCP is a **local implementation-context server** for coding agents. It
 | [INGEST.md](INGEST.md) | Markdown/HTML/project, web, PDF, and Git ingest + CLI |
 | [CREATE_LIBRARYDOCS.md](CREATE_LIBRARYDOCS.md) | create-librarydocs skill (author `LibraryDocs/` packages) |
 | [LIBRARYDOCS.md](LIBRARYDOCS.md) | LibraryDocs ingest deliverable notes (no schema change) |
+| [REMOTE.md](REMOTE.md) | Remote / Jetson Orin NX LAN deploy + Cursor `mcp.json` URL entry |
 | [OPERATIONS.md](OPERATIONS.md) | Build, flags, security, validation, evaluation, [limitations/risks](OPERATIONS.md#limitations-and-risks) |
 | [API_V1.md](API_V1.md) | Librarian REST admin API (`/api/v1`) + embedded UI |
 | [ANALYTICS_USERS_GUIDE.md](ANALYTICS_USERS_GUIDE.md) | Analytics Dashboard User Guide (screenshots) |

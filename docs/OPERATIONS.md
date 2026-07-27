@@ -172,7 +172,7 @@ Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still ch
 | Freshness | Independent of authority. Official docs without version/date → `unknown`. `webSearchRecommended` uses coverage + freshness. |
 | Fingerprints | `contextFingerprint` is over the post-trim response (+ citation content hashes). |
 | Token estimates | `estimatedTokens` is roughly `utf8_runes/4` on the serialized JSON. Use for budgeting only — approximate, not exact. |
-| HTTP | Loopback rewrite and `-allow-remote-http` are the safety defaults. Librarian Bearer auth is optional (`-librarian-token`); remote exposure should use a reverse proxy + HTTPS + token. |
+| HTTP | Loopback rewrite and `-allow-remote-http` are the safety defaults. Librarian Bearer auth is optional (`-librarian-token`); remote exposure should use a reverse proxy + HTTPS + token. Jetson/LAN Cursor setup: [REMOTE.md](REMOTE.md). |
 | Librarian jobs | In-process only (survive browser reload, not process restart). |
 | Recipes | Quality depends on human review of `vomit` / `saveRecipe` output. Ranking already demotes generated entries vs human-reviewed and project code. |
 | Concurrency | SQLite **WAL** helps readers; multiple writers still need care (single writer process, or serialize admin ingest). See concurrent smoke tests; prefer one admin writer. |

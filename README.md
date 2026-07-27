@@ -139,9 +139,14 @@ go build -o ingestcli ./cmd/ingestcli
 
 # Read-only admin surface (tools visible; writes denied)
 ./implcache-mcp -db ./implcache.db -mode admin -readonly
+
+# LAN / Jetson: bind for remote Cursor (requires trusted network)
+./implcache-mcp -db ./implcache.db -http 0.0.0.0:8080 -allow-remote-http \
+  -enable-librarian -enable-http-mutations -mode admin
+# Cursor ~/.cursor/mcp.json → "implCacheRemote": { "url": "http://<host>:8080/mcp" }
 ```
 
-Optional workspace defaults via **`.implcache.yaml`** and `-workspace /path/to/repo` (or `-project-root my-app`). See [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+Remote Jetson Orin NX walkthrough: [docs/REMOTE.md](docs/REMOTE.md). Optional workspace defaults via **`.implcache.yaml`** and `-workspace /path/to/repo` (or `-project-root my-app`). See [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 React UI sources: `frontend/` → rebuild into `embedui/dist` (or run `scripts/pack-dist.ps1`).
 

@@ -14,14 +14,28 @@
 /dist/vomit-output/
 /dist/uploads/
 /dist/.implcache/
+/dist-linux-amd64/*.db-wal
+/dist-linux-amd64/*.db-shm
+/dist-linux-amd64/vomit-output/
+/dist-linux-amd64/uploads/
+/dist-linux-amd64/.implcache/
+/dist-jetson-orin-nx/*.db-wal
+/dist-jetson-orin-nx/*.db-shm
+/dist-jetson-orin-nx/vomit-output/
+/dist-jetson-orin-nx/uploads/
+/dist-jetson-orin-nx/.implcache/
 
 # Local knowledge databases (never publish ingested corpora)
 *.db
 !/dist/implcache.db
+!/dist-linux-amd64/implcache.db
+!/dist-jetson-orin-nx/implcache.db
 *.db-wal
 *.db-shm
 implcache.db*
 !/dist/implcache.db
+!/dist-linux-amd64/implcache.db
+!/dist-jetson-orin-nx/implcache.db
 testdata/validation/reports/validation.db*
 
 # Managed Git clone cache (beside the DB; recreated by ingest/refresh)
@@ -49,4 +63,5 @@ tmp_*.go
 
 # Local scratch / temp scaffolds (never publish)
 /_scratch/
+/_Scratch/
 
