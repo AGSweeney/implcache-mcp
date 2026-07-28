@@ -184,7 +184,7 @@ function RequestsOverTime({ points }: { points: AnalyticsTimePoint[] }) {
     total: "var(--accent)",
     grounded: "var(--success)",
     rootChoice: "var(--warning)",
-    noMatch: "var(--copper)",
+    noMatch: "var(--accent-deep)",
     errors: "var(--danger)",
   };
   const valueOf = (p: AnalyticsTimePoint, k: SeriesKey) => {
@@ -248,7 +248,7 @@ function RequestsOverTime({ points }: { points: AnalyticsTimePoint[] }) {
         })}
         {points.map((p, i) => (
           <g key={p.bucket}>
-            <circle cx={xs[i]} cy={h - padB - (p.total / max) * (h - padT - padB)} r="3" fill="var(--copper)">
+            <circle cx={xs[i]} cy={h - padB - (p.total / max) * (h - padT - padB)} r="3" fill="var(--accent)">
               <title>{`${formatBucketLabel(p.bucket)}: total ${p.total}, grounded ${p.grounded}, root ${p.rootChoice || 0}, no-match ${p.noMatch || 0}, errors ${p.errors}`}</title>
             </circle>
             <text x={xs[i]} y={h - 12} textAnchor="middle" fill="var(--muted)" fontSize="9">
@@ -330,7 +330,7 @@ function CoverageBars({
     {
       label: "Insufficient",
       value: c.localInsufficient,
-      color: "var(--copper)",
+      color: "var(--accent-deep)",
       title: `Local insufficient: ${c.localInsufficient}`,
     },
     {
@@ -377,7 +377,7 @@ function OutcomeAndEvidence({ g }: { g: AnalyticsGrounding }) {
     { label: "Grounded local", value: o.local || 0, color: "var(--success)" },
     { label: "Grounded mixed", value: o.mixed, color: "var(--warning)" },
     { label: "No match", value: o.noMatch, color: "var(--danger)" },
-    { label: "Insufficient", value: o.insufficient, color: "var(--copper)" },
+    { label: "Insufficient", value: o.insufficient, color: "var(--accent-deep)" },
     { label: "Root choice", value: o.rootSelectionRequired, color: "var(--warning)" },
     { label: "Errors", value: o.errors, color: "var(--danger)" },
     { label: "Other", value: o.other, color: "var(--muted)" },
@@ -859,7 +859,7 @@ function KnowledgePanel({ k }: { k: AnalyticsKnowledge }) {
           rows={(k.evidence || []).slice(0, 12).map((r) => ({
             label: (r.key || "").slice(0, 40),
             value: r.timesSelected,
-            color: "var(--copper)",
+            color: "var(--accent-deep)",
             title: r.key,
           }))}
           empty="No evidence usage yet."

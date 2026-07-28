@@ -134,7 +134,7 @@ export default function Dashboard() {
     { label: "Sources", value: s?.sourcesTotal, accent: "var(--accent)", icon: <IconSources />, group: "sources" },
     { label: "Healthy", value: s?.sourcesOk, accent: "var(--success)", icon: <IconOk />, group: "sources" },
     { label: "Failed", value: s?.sourcesFailed, accent: "var(--danger)", icon: <IconFail />, group: "sources" },
-    { label: "Documents", value: s?.documents, accent: "var(--copper)", icon: <IconDocs />, group: "corpus" },
+    { label: "Documents", value: s?.documents, accent: "var(--accent-deep)", icon: <IconDocs />, group: "corpus" },
     { label: "Chunks", value: s?.chunks, accent: "var(--accent-hover)", icon: <IconChunks />, group: "corpus" },
     { label: "Symbols", value: s?.symbols, accent: "var(--info)", icon: <IconSymbols />, group: "corpus" },
     {
@@ -147,10 +147,32 @@ export default function Dashboard() {
     { label: "Active jobs", value: s?.activeJobs, accent: "var(--warning)", icon: <IconJobs />, group: "jobs" },
   ];
 
+  const failed = s?.sourcesFailed ?? 0;
+  const activeJobs = s?.activeJobs ?? 0;
+  const postureLabel =
+    health.isLoading || stats.isLoading
+      ? "Checking…"
+      : issues.length > 0
+        ? `${issues.length} attention item${issues.length === 1 ? "" : "s"}`
+        : failed > 0
+          ? `${failed} failed source${failed === 1 ? "" : "s"}`
+          : "Library looks clear";
+
   return (
     <div className="dashboard">
       <PageHead title="Dashboard" blurb="Library posture, health signals, and recent activity." />
       {stats.isError && <div className="error-box">{(stats.error as Error).message}</div>}
+
+      <div className="dash-posture" role="status">
+        <strong>Posture</strong>
+        <span>{postureLabel}</span>
+        {activeJobs > 0 && <span className="muted">{activeJobs} active job{activeJobs === 1 ? "" : "s"}</span>}
+        {s && (
+          <span className="muted mono">
+            {s.documents ?? 0} docs · {formatBytes(s.databaseBytes)}
+          </span>
+        )}
+      </div>
 
       <section className="dash-metrics-block" aria-label="Library metrics">
         <div className="dash-metric-groups" aria-hidden="true">

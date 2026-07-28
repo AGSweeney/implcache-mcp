@@ -2,6 +2,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, getToken, normalizeList, type Operation } from "../api";
+import EmptyState from "../components/EmptyState";
+import ErrorState from "../components/ErrorState";
+import StatusBadge from "../components/StatusBadge";
 import PageHead from "../PageHead";
 
 function formatProgress(p?: Operation["progress"]) {
@@ -88,47 +91,73 @@ export default function Jobs() {
     setParams(id ? { op: id } : {});
   }
 
+  function jobVariant(state: string): "success" | "danger" | "info" | "neutral" | "warning" {
+    if (state === "ok" || state === "succeeded" || state === "completed") return "success";
+    if (state === "failed" || state === "error") return "danger";
+    if (state === "running" || state === "active" || state === "cancelling") return "info";
+    if (state === "queued" || state === "pending") return "warning";
+    return "neutral";
+  }
+
+  const list = jobs.data || [];
+
   return (
     <div>
       <PageHead title="Jobs" blurb="Live ingest and refresh operations." />
-      <div className="panel">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Source</th>
-              <th>State</th>
-              <th>Progress</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {(jobs.data || []).map((j) => (
-              <tr key={j.opId} className={j.opId === selected ? "on" : undefined}>
-                <td className="mono">
-                  <button type="button" onClick={() => selectJob(j.opId)}>
-                    {j.opId.slice(0, 8)}
-                  </button>
-                </td>
-                <td>
-                  {j.source?.kind}/{j.source?.id}
-                </td>
-                <td>
-                  <span className="badge">{j.state}</span>
-                </td>
-                <td>{formatProgress(j.progress)}</td>
-                <td>
-                  {(j.state === "running" || j.state === "cancelling") && (
-                    <button type="button" onClick={() => api.cancelJob(j.opId).then(() => qc.invalidateQueries({ queryKey: ["jobs"] }))}>
-                      Cancel
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {jobs.isError && (
+        <ErrorState message={(jobs.error as Error).message} onRetry={() => void jobs.refetch()} />
+      )}
+      {!jobs.isLoading && !jobs.isError && list.length === 0 && (
+        <EmptyState
+          title="No jobs yet"
+          body="Ingestion and refresh jobs will appear here after a source is added."
+        />
+      )}
+      {list.length > 0 && (
+        <div className="panel">
+          <div className="data-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Source</th>
+                  <th>State</th>
+                  <th>Progress</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((j) => (
+                  <tr key={j.opId} className={j.opId === selected ? "selected" : undefined}>
+                    <td className="mono">
+                      <button type="button" className="linkish" onClick={() => selectJob(j.opId)}>
+                        {j.opId.slice(0, 8)}
+                      </button>
+                    </td>
+                    <td>
+                      {j.source?.kind}/{j.source?.id}
+                    </td>
+                    <td>
+                      <StatusBadge variant={jobVariant(j.state)}>{j.state}</StatusBadge>
+                    </td>
+                    <td>{formatProgress(j.progress)}</td>
+                    <td>
+                      {(j.state === "running" || j.state === "cancelling") && (
+                        <button
+                          type="button"
+                          onClick={() => api.cancelJob(j.opId).then(() => qc.invalidateQueries({ queryKey: ["jobs"] }))}
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
       <div className="panel">
         <h2>Live</h2>
         <pre className="muted">{live || "Select a job…"}</pre>

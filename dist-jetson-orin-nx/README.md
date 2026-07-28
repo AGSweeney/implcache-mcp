@@ -35,7 +35,7 @@ pwsh ./scripts/pack-dist.ps1
 
 1. **[docs/INSTALLATION.md](docs/INSTALLATION.md)** — place binaries, create a database, smoke-test  
 2. **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** — Cursor MCP JSON, modes, flags, workspace file  
-3. **[docs/REMOTE.md](docs/REMOTE.md)** — LAN / remote Cursor (`url` → `/mcp`), Jetson Orin NX  
+3. **[docs/REMOTE.md](docs/REMOTE.md)** — LAN / remote Cursor (`url` → `/mcp`), e.g. Jetson Orin NX  
 4. **[docs/USERS_MANUAL.md](docs/USERS_MANUAL.md)** — full operator manual (ingest, agents, Librarian, maintenance)  
 5. **[docs/AGENT_GUIDE.md](docs/AGENT_GUIDE.md)** — how coding agents should call tools  
 
@@ -67,14 +67,6 @@ Point Cursor (or another MCP client) at the absolute path of `implcache-mcp` wit
 ```
 
 Then open `http://127.0.0.1:8080/`.
-
-**LAN / remote Cursor (Jetson):** use `./run-librarian-lan.sh` (`-allow-remote-http`, bind `0.0.0.0:8080`), then on the workstation add to `~/.cursor/mcp.json`:
-
-```json
-"implCacheRemote": { "url": "http://<jetson-ip>:8080/mcp" }
-```
-
-Details: [docs/REMOTE.md](docs/REMOTE.md).
 
 **Load corpora** (examples):
 

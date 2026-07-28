@@ -1,7 +1,7 @@
 # Pack a self-contained end-user folder into dist/:
 #   binaries (implcache-mcp, ingestcli) + docs/ + LICENSE/NOTICE + README
 # Docs under dist/docs are maintained in-repo; this script refreshes binaries,
-# license files, and screenshot assets from docs/images/librarian.
+# license files, and screenshot assets from docs/images/{librarian,analytics}.
 param(
     [string]$OutDir = (Join-Path $PSScriptRoot "..\dist"),
     [string]$Version = "",
@@ -56,12 +56,14 @@ try {
     Copy-Item -Force (Join-Path $RepoRoot "LICENSE") (Join-Path $OutDir "LICENSE")
     Copy-Item -Force (Join-Path $RepoRoot "NOTICE") (Join-Path $OutDir "NOTICE")
 
-    $shotsSrc = Join-Path $RepoRoot "docs\images\librarian"
-    $shotsDst = Join-Path $OutDir "docs\images\librarian"
-    if (Test-Path $shotsSrc) {
-        New-Item -ItemType Directory -Force -Path $shotsDst | Out-Null
-        Copy-Item -Force (Join-Path $shotsSrc "*") $shotsDst
-        Write-Host "Synced docs/images/librarian -> dist/docs/images/librarian"
+    foreach ($shotSet in @("librarian", "analytics")) {
+        $shotsSrc = Join-Path $RepoRoot "docs\images\$shotSet"
+        $shotsDst = Join-Path $OutDir "docs\images\$shotSet"
+        if (Test-Path $shotsSrc) {
+            New-Item -ItemType Directory -Force -Path $shotsDst | Out-Null
+            Copy-Item -Force (Join-Path $shotsSrc "*") $shotsDst
+            Write-Host "Synced docs/images/$shotSet -> dist/docs/images/$shotSet"
+        }
     }
 
     # Never ship a developer corpus. Always generate a fresh empty schema DB.

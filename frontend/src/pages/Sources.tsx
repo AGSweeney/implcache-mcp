@@ -175,7 +175,9 @@ export default function Sources() {
         subtitle="Unified inventory of local, Git, web, and PDF corpora."
         actions={
           <Link to="/sources/add">
-            <Button variant="primary">Add Source</Button>
+            <Button variant="secondary" className="btn-outline-accent">
+              Add Source
+            </Button>
           </Link>
         }
       />
@@ -248,6 +250,12 @@ export default function Sources() {
         <EmptyState
           title="No sources yet"
           body="Add a local folder, Git repo, web crawl, or PDF to start indexing."
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
+              <path d="M4 6.5h16M4 12h16M4 17.5h10" strokeLinecap="round" />
+              <circle cx="18.5" cy="17.5" r="1.5" fill="currentColor" stroke="none" />
+            </svg>
+          }
           action={
             <Link to="/sources/add">
               <Button variant="primary">Add Source</Button>
@@ -257,7 +265,16 @@ export default function Sources() {
       )}
 
       {!q.isLoading && !q.isError && all.length > 0 && rows.length === 0 && (
-        <EmptyState title="No matching sources" body="Try clearing filters or adjusting search." />
+        <EmptyState
+          title="No matching sources"
+          body="Try clearing filters or adjusting search."
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
+              <circle cx="11" cy="11" r="6.5" />
+              <path d="M16 16l4 4" strokeLinecap="round" />
+            </svg>
+          }
+        />
       )}
 
       {!q.isLoading && !q.isError && rows.length > 0 && (

@@ -34,8 +34,31 @@ export default function Health() {
     queryFn: async () => normalizeList<HealthIssue>(await api.health(), "issues"),
     refetchInterval: 15000,
   });
+  const server = useQuery({ queryKey: ["server"], queryFn: api.server });
 
-  const emptyChunkIssue = (health.data || []).find((i) => i.code === "documents_without_chunks");
+  const issues = health.data || [];
+  const errors = issues.filter((i) => i.severity === "error").length;
+  const warnings = issues.filter((i) => i.severity === "warning" || i.severity === "warn").length;
+  const emptyChunkIssue = issues.find((i) => i.code === "documents_without_chunks");
+
+  async function copyDiagnostics() {
+    const report = {
+      at: new Date().toISOString(),
+      serverVersion: server.data?.serverVersion,
+      schemaVersion: server.data?.schemaVersion,
+      role: server.data?.role,
+      issueCount: issues.length,
+      errors,
+      warnings,
+      issues,
+    };
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+      toast.push({ variant: "success", message: "Diagnostic report copied" });
+    } catch {
+      toast.push({ variant: "danger", message: "Copy failed" });
+    }
+  }
 
   const purge = useMutation({
     mutationFn: () => api.purgeEmptyDocs(),
@@ -60,16 +83,31 @@ export default function Health() {
         title="Health"
         subtitle="Library-wide issues and recommended actions."
         actions={
-          <Button
-            variant="danger"
-            disabled={purge.isPending}
-            onClick={() => setConfirmPurge(true)}
-            title="Delete documents that have no searchable chunks"
-          >
-            Purge chunkless docs
-          </Button>
+          <div className="row">
+            <Button variant="secondary" onClick={() => void copyDiagnostics()} disabled={health.isLoading}>
+              Copy Diagnostic Report
+            </Button>
+            <Button
+              variant="danger"
+              disabled={purge.isPending}
+              onClick={() => setConfirmPurge(true)}
+              title="Delete documents that have no searchable chunks"
+            >
+              Purge chunkless docs
+            </Button>
+          </div>
         }
       />
+      <div className="dash-posture" role="status">
+        <strong>{errors + warnings === 0 ? "Healthy" : "Attention"}</strong>
+        <span>
+          {errors} failure{errors === 1 ? "" : "s"} · {warnings} warning{warnings === 1 ? "" : "s"} ·{" "}
+          {issues.length} check{issues.length === 1 ? "" : "s"}
+        </span>
+        <Button variant="ghost" onClick={() => void health.refetch()} disabled={health.isFetching}>
+          Refresh
+        </Button>
+      </div>
       {health.isError && <div className="error-box">{(health.error as Error).message}</div>}
 
       {emptyChunkIssue && (

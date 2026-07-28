@@ -35,8 +35,9 @@ pwsh ./scripts/pack-dist.ps1
 
 1. **[docs/INSTALLATION.md](docs/INSTALLATION.md)** — place binaries, create a database, smoke-test  
 2. **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** — Cursor MCP JSON, modes, flags, workspace file  
-3. **[docs/USERS_MANUAL.md](docs/USERS_MANUAL.md)** — full operator manual (ingest, agents, Librarian, maintenance)  
-4. **[docs/AGENT_GUIDE.md](docs/AGENT_GUIDE.md)** — how coding agents should call tools  
+3. **[docs/REMOTE.md](docs/REMOTE.md)** — LAN / remote Cursor (`url` → `/mcp`), e.g. Jetson Orin NX  
+4. **[docs/USERS_MANUAL.md](docs/USERS_MANUAL.md)** — full operator manual (ingest, agents, Librarian, maintenance)  
+5. **[docs/AGENT_GUIDE.md](docs/AGENT_GUIDE.md)** — how coding agents should call tools  
 
 | Also useful | Contents |
 |-------------|----------|

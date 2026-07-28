@@ -10,7 +10,7 @@ Captured from a local Librarian instance (`-enable-librarian` on `:8080`) for do
 | `librarian-jobs.png` | Jobs / live operations |
 | `librarian-library.png` | Document browser |
 | `librarian-document-viewer.png` | Modal source viewer with code pane |
-| `librarian-search-lab.png` | Search Lab with a knowledge query result |
-| `librarian-health.png` | Library health issues table |
+| `librarian-search-lab.png` | Search Lab with an Implementation Context result |
+| `librarian-health.png` | Library health status and issues table |
 
 Referenced from [USERS_MANUAL.md](../../USERS_MANUAL.md#9-librarian-ui-and-rest).
