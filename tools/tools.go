@@ -131,6 +131,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 			Version:          args.Version,
 			ProjectRoot:      projectRoot,
 			PreferredRoots:   preferred,
+			KnowledgeGroup:   firstNonEmpty(args.KnowledgeGroup, args.RootGroup),
 			RootGroup:        args.RootGroup,
 			MaxContextTokens: args.MaxContextTokens,
 			MaxResults:       opt.MaxResults,
@@ -170,7 +171,7 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 		} else if len(opt.DefaultPreferredRoots) > 0 {
 			explicit = opt.DefaultPreferredRoots
 		}
-		inf, err := st.ResolveRoots(ctx, args.Name, explicit)
+		inf, err := resolveRootsOrGroup(ctx, st, args.Name, args.KnowledgeGroup, explicit)
 		if err != nil {
 			opt.recordUsage(usage.ErrorEvent("find_symbol", args.Name, "request_error", err.Error(), time.Since(start)))
 			return nil, findSymbolResult{}, err
@@ -587,17 +588,18 @@ func RegisterWithOptions(server *mcp.Server, st *store.Store, opt Options) []str
 		if r := strings.TrimSpace(args.RootName); r != "" {
 			explicit = []string{r}
 		}
-		inf, err := st.ResolveRoots(ctx, args.Query, explicit)
+		inf, err := resolveRootsOrGroup(ctx, st, args.Query, args.KnowledgeGroup, explicit)
 		if err != nil {
 			opt.recordUsage(usage.ErrorEvent("search_knowledge", args.Query, "request_error", err.Error(), time.Since(start)))
 			return nil, searchResult{}, err
 		}
 		if inf.NeedsChoice {
 			out := searchResult{
-				NeedsChoice:    true,
-				Message:        inf.Message,
-				AvailableRoots: inf.AvailableRoots,
-				MatchedHints:   inf.MatchedHints,
+				NeedsChoice:     true,
+				Message:         inf.Message,
+				AvailableRoots:  inf.AvailableRoots,
+				AvailableGroups: inf.AvailableGroups,
+				MatchedHints:    inf.MatchedHints,
 			}
 			opt.recordUsage(usage.RootSelectionEvent("search_knowledge", args.Query, inf.AvailableRoots, time.Since(start)))
 			b, _ := json.MarshalIndent(out, "", "  ")
@@ -976,8 +978,9 @@ type implContextArgs struct {
 	Technology       string   `json:"technology,omitempty" jsonschema:"Platform/library hint (Example Plugin SDK, …)"`
 	ProjectRoot      string   `json:"projectRoot,omitempty" jsonschema:"Preferred current-project knowledge root"`
 	Version          string   `json:"version,omitempty" jsonschema:"Requested product/API version for freshness and soft ranking"`
-	PreferredRoots   []string `json:"preferredRoots,omitempty" jsonschema:"Ordered knowledge roots to search (single product family)"`
-	RootGroup        string   `json:"rootGroup,omitempty" jsonschema:"Named root group with priorities"`
+	PreferredRoots   []string `json:"preferredRoots,omitempty" jsonschema:"Ordered knowledge roots (same knowledge group or single family)"`
+	KnowledgeGroup   string   `json:"knowledgeGroup,omitempty" jsonschema:"Knowledge group id for trusted cross-root retrieval (e.g. netburner)"`
+	RootGroup        string   `json:"rootGroup,omitempty" jsonschema:"Deprecated alias for knowledgeGroup"`
 	MaxContextTokens int      `json:"maxContextTokens,omitempty" jsonschema:"Soft token budget (estimate; default 2500)"`
 	Semantic         bool     `json:"semantic,omitempty" jsonschema:"Supplement FTS with sparse term-vector similarity (also -enable-semantic)"`
 	Debug            bool     `json:"debug,omitempty" jsonschema:"Include debugTaskTokens (identifier-like tokens from task)"`
@@ -987,6 +990,7 @@ type findSymbolArgs struct {
 	Name           string   `json:"name" jsonschema:"Symbol or API name (e.g. RegisterHandler)"`
 	RootName       string   `json:"rootName,omitempty"`
 	PreferredRoots []string `json:"preferredRoots,omitempty"`
+	KnowledgeGroup string   `json:"knowledgeGroup,omitempty" jsonschema:"Knowledge group id for trusted cross-root lookup"`
 	Limit          int      `json:"limit,omitempty"`
 }
 
@@ -1127,20 +1131,22 @@ type listRepoSourcesResult struct {
 }
 
 type searchArgs struct {
-	Query    string `json:"query" jsonschema:"Full-text search query"`
-	Limit    int    `json:"limit,omitempty" jsonschema:"Max hits to return (default 20, max 100)"`
-	RootName string `json:"rootName,omitempty" jsonschema:"Optional knowledge root (e.g. example-device-sdk). If omitted, inferred from query; if ambiguous, tool asks you to choose."`
-	Semantic bool   `json:"semantic,omitempty" jsonschema:"If true, also score related chunks via sparse term vectors (or enable server-wide with -enable-semantic)"`
+	Query          string `json:"query" jsonschema:"Full-text search query"`
+	Limit          int    `json:"limit,omitempty" jsonschema:"Max hits to return (default 20, max 100)"`
+	RootName       string `json:"rootName,omitempty" jsonschema:"Optional knowledge root (e.g. example-device-sdk). If omitted, inferred from query; if ambiguous, tool asks you to choose."`
+	KnowledgeGroup string `json:"knowledgeGroup,omitempty" jsonschema:"Knowledge group id for trusted cross-root search (e.g. netburner)"`
+	Semantic       bool   `json:"semantic,omitempty" jsonschema:"If true, also score related chunks via sparse term vectors (or enable server-wide with -enable-semantic)"`
 }
 
 type searchResult struct {
-	Hits           []store.SearchHit `json:"hits,omitempty"`
-	Count          int               `json:"count"`
-	Roots          []string          `json:"roots,omitempty"`
-	NeedsChoice    bool              `json:"needsChoice,omitempty"`
-	Message        string            `json:"message,omitempty"`
-	AvailableRoots []string          `json:"availableRoots,omitempty"`
-	MatchedHints   []string          `json:"matchedHints,omitempty"`
+	Hits             []store.SearchHit `json:"hits,omitempty"`
+	Count            int               `json:"count"`
+	Roots            []string          `json:"roots,omitempty"`
+	NeedsChoice      bool              `json:"needsChoice,omitempty"`
+	Message          string            `json:"message,omitempty"`
+	AvailableRoots   []string          `json:"availableRoots,omitempty"`
+	AvailableGroups  []string          `json:"availableGroups,omitempty"`
+	MatchedHints     []string          `json:"matchedHints,omitempty"`
 }
 
 type listRootsResult struct {
@@ -1196,6 +1202,53 @@ func textResult(s string) *mcp.CallToolResult {
 			&mcp.TextContent{Text: s},
 		},
 	}
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// resolveRootsOrGroup expands an explicit knowledgeGroup, otherwise ResolveRoots.
+func resolveRootsOrGroup(ctx context.Context, st *store.Store, query, knowledgeGroup string, explicit []string) (store.RootInference, error) {
+	if kg := strings.TrimSpace(knowledgeGroup); kg != "" {
+		g, err := st.LookupKnowledgeGroup(ctx, kg)
+		if err != nil {
+			return store.RootInference{}, err
+		}
+		if g == nil {
+			return store.RootInference{
+				NeedsChoice: true,
+				Message:     fmt.Sprintf("knowledgeGroup %q not found (configure the group first)", kg),
+			}, nil
+		}
+		available, err := st.ListRootNames(ctx)
+		if err != nil {
+			return store.RootInference{}, err
+		}
+		roots, err := store.ExpandKnowledgeGroup(g, available, store.ExpandOpts{
+			PreferredRoots:    explicit,
+			FilterToPreferred: len(explicit) > 0,
+		})
+		if err != nil {
+			return store.RootInference{}, err
+		}
+		id := g.ID
+		if id == "" {
+			id = g.Name
+		}
+		return store.RootInference{
+			Roots:           roots,
+			KnowledgeGroup:  id,
+			AvailableRoots:  available,
+			MatchedHints:    []string{"knowledgeGroup:" + id},
+		}, nil
+	}
+	return st.ResolveRoots(ctx, query, explicit)
 }
 
 func runTrackedCrawl(ctx context.Context, st *store.Store, args siteCrawlArgs, maxBytes int64, refresh bool) (*web.CrawlReport, error) {

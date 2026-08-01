@@ -11,10 +11,12 @@ import (
 )
 
 // currentSchemaVersion identifies the canonical schema (PRAGMA user_version).
-// It is a schema identity check, not a migration ladder: pre-release databases
-// with a different version must be deleted and recreated. Real migrations
-// begin only after a deployment contains data that must be preserved.
-const currentSchemaVersion = 11
+// New databases are created at this version. A narrow additive migrator exists
+// for 11→12 (knowledge-group columns). Other mismatched versions are refused.
+const currentSchemaVersion = 12
+
+// CurrentSchemaVersion returns the canonical knowledge DB schema identity version.
+func CurrentSchemaVersion() int { return currentSchemaVersion }
 
 // canonicalSchema is the complete, authoritative schema for new databases.
 //
@@ -40,19 +42,27 @@ var requiredSchemaObjects = []string{
 	"pdf_pages",
 	"repo_sources",
 	"repo_files",
+	"root_groups",
+	"root_group_members",
 }
 
 // ensureSchema opens-or-creates the canonical schema:
 //   - user_version == currentSchemaVersion: validate required objects, then open.
+//   - user_version == 11: additive migrate knowledge-group columns → 12.
 //   - empty database (user_version 0, no objects): create the schema.
-//   - anything else: refuse without modification, with instructions to
-//     delete and rebuild.
+//   - anything else: refuse without modification.
 func ensureSchema(db *sql.DB, path string) error {
 	var version int
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return fmt.Errorf("read user_version: %w", err)
 	}
 	if version == currentSchemaVersion {
+		return validateCanonicalSchema(db, path)
+	}
+	if version == 11 {
+		if err := migrateSchema11To12(db); err != nil {
+			return fmt.Errorf("migrate schema 11→12: %w", err)
+		}
 		return validateCanonicalSchema(db, path)
 	}
 	if version != 0 {
@@ -83,6 +93,68 @@ func ensureSchema(db *sql.DB, path string) error {
 		return err
 	}
 	return validateCanonicalSchema(db, path)
+}
+
+// migrateSchema11To12 adds knowledge-group columns without touching corpus tables.
+func migrateSchema11To12(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	alterIfMissing := func(table, column, ddl string) error {
+		ok, err := tableHasColumnTx(tx, table, column)
+		if err != nil {
+			return err
+		}
+		if ok {
+			return nil
+		}
+		_, err = tx.Exec(ddl)
+		return err
+	}
+	if err := alterIfMissing("root_groups", "id", `ALTER TABLE root_groups ADD COLUMN id TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := alterIfMissing("root_groups", "policies_json", `ALTER TABLE root_groups ADD COLUMN policies_json TEXT NOT NULL DEFAULT '{}'`); err != nil {
+		return err
+	}
+	if err := alterIfMissing("root_group_members", "role", `ALTER TABLE root_group_members ADD COLUMN role TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	// Backfill id from name when empty.
+	if _, err := tx.Exec(`UPDATE root_groups SET id = lower(replace(name, ' ', '-')) WHERE id = '' OR id IS NULL`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_root_groups_id ON root_groups(id) WHERE id != ''`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`PRAGMA user_version = 12`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func tableHasColumnTx(tx *sql.Tx, table, column string) (bool, error) {
+	rows, err := tx.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 func validateCanonicalSchema(db *sql.DB, path string) error {

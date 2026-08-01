@@ -35,6 +35,7 @@ var version = "dev"
 
 func main() {
 	dbPath := flag.String("db", "./implcache.db", "path to SQLite ImplCache database")
+	knowledgeGroups := flag.String("knowledge-groups", "", "optional YAML path; apply knowledge groups on startup (e.g. config/knowledge-groups.yaml)")
 	httpAddr := flag.String("http", "", "if set, serve HTTP (MCP at /mcp; Librarian API at /api/v1)")
 	mode := flag.String("mode", "agent", "tool surface: agent (retrieval only) or admin (includes ingest/delete/vomit)")
 	enableAdmin := flag.Bool("enable-admin-tools", false, "register administrative tools even when -mode=agent")
@@ -113,6 +114,18 @@ func main() {
 		log.Fatalf("open store: %v", err)
 	}
 	defer st.Close()
+
+	if kgPath := strings.TrimSpace(*knowledgeGroups); kgPath != "" {
+		if *readOnly {
+			log.Printf("knowledge-groups: skipped (-readonly); configure groups when not readonly")
+		} else {
+			applied, err := st.ApplyRootGroupsFile(context.Background(), kgPath)
+			if err != nil {
+				log.Fatalf("knowledge-groups: %v", err)
+			}
+			log.Printf("knowledge-groups applied from %s: %v", kgPath, applied)
+		}
+	}
 
 	usagePath := strings.TrimSpace(*usageDBPath)
 	if usagePath == "" {

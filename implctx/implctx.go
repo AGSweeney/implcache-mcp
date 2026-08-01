@@ -26,8 +26,11 @@ type Request struct {
 	Version          string   `json:"version,omitempty"` // optional requested product/API version
 	ProjectRoot      string   `json:"projectRoot,omitempty"`
 	PreferredRoots   []string `json:"preferredRoots,omitempty"`
-	RootGroup        string   `json:"rootGroup,omitempty"`
-	MaxContextTokens int      `json:"maxContextTokens,omitempty"`
+	// KnowledgeGroup is the preferred API for trusted cross-root retrieval.
+	KnowledgeGroup string `json:"knowledgeGroup,omitempty"`
+	// RootGroup is a deprecated alias for KnowledgeGroup (same semantics).
+	RootGroup        string `json:"rootGroup,omitempty"`
+	MaxContextTokens int    `json:"maxContextTokens,omitempty"`
 	// MaxResults is a server-side retrieval ceiling supplied by the tool layer.
 	MaxResults int `json:"-"`
 	// Semantic supplements FTS with sparse term-vector similarity (server -enable-semantic).
@@ -62,6 +65,7 @@ type ExampleRef struct {
 	Title     string `json:"title,omitempty"`
 	Excerpt   string `json:"excerpt"`
 	Authority string `json:"authority,omitempty"`
+	RootName  string `json:"rootName,omitempty"`
 	Lines     string `json:"lines,omitempty"`
 }
 
@@ -87,14 +91,26 @@ type Response struct {
 	WebSearchRecommended bool           `json:"webSearchRecommended,omitempty"`
 	MissingInformation   []string       `json:"missingInformation,omitempty"`
 	RecommendedFollowUp  []string       `json:"recommendedFollowUp,omitempty"`
-	RootsUsed            []string       `json:"rootsUsed,omitempty"`
+	RootsUsed            []string       `json:"rootsUsed,omitempty"` // roots searched
+	KnowledgeGroup       string         `json:"knowledgeGroup,omitempty"`
 	RecipeReviewStatus   string         `json:"recipeReviewStatus,omitempty"`
 	Version              string         `json:"version,omitempty"`
 	DebugTaskTokens      []string       `json:"debugTaskTokens,omitempty"`
-	ContextFingerprint   string         `json:"contextFingerprint,omitempty"`
-	EstimatedTokens      int            `json:"estimatedTokens,omitempty"`
-	Chars                int            `json:"chars,omitempty"`
-	TokenEstimateNote    string         `json:"tokenEstimateNote,omitempty"`
+	ContextFingerprint   string            `json:"contextFingerprint,omitempty"`
+	EstimatedTokens      int               `json:"estimatedTokens,omitempty"`
+	Chars                int               `json:"chars,omitempty"`
+	TokenEstimateNote    string            `json:"tokenEstimateNote,omitempty"`
+	// SelectionTrace explains package assembly choices (hydration, pins, diversity).
+	SelectionTrace []SelectionReason `json:"selectionTrace,omitempty"`
+	// RootContribution compares searched vs package-contributing roots (diagnostic).
+	RootContribution *RootContribution `json:"rootContribution,omitempty"`
+}
+
+// SelectionReason is one package-assembly decision for debugging/regression.
+type SelectionReason struct {
+	Stage  string `json:"stage"`
+	Reason string `json:"reason"`
+	URI    string `json:"uri,omitempty"`
 }
 
 // Get assembles a compact implementation package from local knowledge.
@@ -109,7 +125,7 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 		budget.MaxTotalChars = req.MaxContextTokens * 4
 	}
 
-	roots, err := resolveRoots(ctx, st, req)
+	roots, kgID, memberRoles, err := resolveRoots(ctx, st, req)
 	if err != nil {
 		return nil, err
 	}
@@ -122,6 +138,12 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 			return nil, &store.ErrNeedsRoot{Inference: inf}
 		}
 		roots = inf.Roots
+		kgID = inf.KnowledgeGroup
+		if kgID != "" {
+			if g, err := st.LookupKnowledgeGroup(ctx, kgID); err == nil && g != nil {
+				memberRoles = store.MemberRoleByRoot(g)
+			}
+		}
 	}
 
 	resp := &Response{
@@ -129,6 +151,7 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 		Technology:        req.Technology,
 		Language:          req.Language,
 		RootsUsed:         roots,
+		KnowledgeGroup:    kgID,
 		Freshness:         "unknown",
 		TokenEstimateNote: "estimated from serialized JSON payload (utf8_runes/4)",
 	}
@@ -178,7 +201,7 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 					break
 				}
 				resp.Examples = append(resp.Examples, ExampleRef{
-					URI: r.URI, Title: r.Subject, Excerpt: ex, Authority: r.Authority,
+					URI: r.URI, Title: r.Subject, Excerpt: ex, Authority: r.Authority, RootName: r.RootName,
 				})
 			}
 			resp.Citations = append(resp.Citations, Citation{
@@ -196,8 +219,16 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 	if req.Debug {
 		resp.DebugTaskTokens = append([]string{}, taskToks...)
 	}
+	apiCap := 8
+	symPerTok := 5
+	if budget.MaxResults > 0 && budget.MaxResults < apiCap {
+		apiCap = budget.MaxResults
+	}
+	if budget.MaxResults > 0 && budget.MaxResults < symPerTok {
+		symPerTok = budget.MaxResults
+	}
 	for _, tok := range taskToks {
-		syms, err := st.FindSymbols(ctx, tok, roots, 5)
+		syms, err := st.FindSymbols(ctx, tok, roots, symPerTok)
 		if err != nil {
 			continue
 		}
@@ -209,26 +240,28 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 				Lines:     fmt.Sprintf("%d-%d", sym.StartLine, sym.EndLine),
 				Authority: sym.Authority, RootName: sym.RootName,
 			})
-			if len(resp.RequiredAPIs) >= 8 {
+			if len(resp.RequiredAPIs) >= apiCap {
 				break
 			}
+		}
+		if len(resp.RequiredAPIs) >= apiCap {
+			break
 		}
 	}
 
 	// 3) Budgeted FTS for examples / constraints / pitfalls / grounded workflow text.
-	hits, err := st.SearchOpts(ctx, store.SearchOptions{
-		Query:            task,
-		Limit:            budget.MaxResults * 3,
-		MaxResults:       req.MaxResults,
-		Roots:            roots,
-		MaxPerDoc:        budget.MaxPerDocument,
-		Semantic:         req.Semantic,
-		PreferredVersion: req.Version,
-	})
+	hits, err := searchPackageHits(ctx, st, task, roots, budget, req, resp, kgID, memberRoles)
 	if err != nil {
 		return nil, err
 	}
 	hits = librarydocs.EnrichHits(ctx, st, hits, librarydocs.DefaultRankingConfig())
+	// Pull in project/official docs known via symbols when FTS preferred a weak decoy.
+	hits = mergeCitedDocumentHits(ctx, st, hits, resp)
+	// Prefer example/constraint/sequence sections within already-selected docs.
+	hits = mergeSignalChunksFromHits(ctx, st, hits, task, resp)
+	// FTS snippets are display windows — materialize bodies before extraction.
+	hits = materializeHitBodies(ctx, st, hits, resp)
+	pinURIs := map[string]string{}
 
 	// 3b) Natural-language tasks: harvest symbols from retrieved docs when few ID cues.
 	if len(taskToks) < 2 || len(resp.RelevantSymbols) == 0 {
@@ -274,18 +307,25 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 		}
 
 		lower := strings.ToLower(h.Heading + " " + h.Snippet)
-		switch {
-		case len(resp.Examples) < budget.MaxExamples &&
-			(h.Authority == store.AuthorityCurrentProject || h.Authority == store.AuthorityOfficialExample ||
-				h.Authority == store.AuthorityRelatedProject || strings.Contains(lower, "example")):
+		// Independent signals — a project/official_example hit may also carry constraints.
+		if len(resp.Examples) < budget.MaxExamples &&
+			(exampleEligibleAuthority(h.Authority) || strings.Contains(lower, "example")) {
 			resp.Examples = append(resp.Examples, ExampleRef{
-				URI: h.URI, Title: h.Title, Excerpt: ex, Authority: h.Authority, Lines: cit.Lines,
+				URI: h.URI, Title: h.Title, Excerpt: ex, Authority: h.Authority, RootName: h.RootName, Lines: cit.Lines,
 			})
-		case strings.Contains(lower, "pitfall") || strings.Contains(lower, "error") || strings.Contains(lower, "fail"):
+			pinURI(pinURIs, h.URI, "pinned_example_source")
+			trace(resp, "extract", "example_from_hit", h.URI)
+		}
+		if strings.Contains(lower, "pitfall") || strings.Contains(lower, "error") || strings.Contains(lower, "fail") {
 			resp.Pitfalls = appendUnique(resp.Pitfalls, store.ClipExcerpt(cleanupSnippet(h.Snippet), 180))
-		case strings.Contains(lower, "must") || strings.Contains(lower, "require") || strings.Contains(lower, "constraint"):
+			pinURI(pinURIs, h.URI, "pinned_pitfall_source")
+		}
+		if strings.Contains(lower, "must") || strings.Contains(lower, "require") || strings.Contains(lower, "constraint") {
 			resp.Constraints = appendUnique(resp.Constraints, store.ClipExcerpt(cleanupSnippet(h.Snippet), 180))
-		case h.Authority == store.AuthorityCurrentProject:
+			pinURI(pinURIs, h.URI, "pinned_constraint_source")
+			trace(resp, "extract", "constraint_from_hit", h.URI)
+		}
+		if h.Authority == store.AuthorityCurrentProject {
 			resp.ProjectConventions = appendUnique(resp.ProjectConventions, store.ClipExcerpt(cleanupSnippet(h.Snippet), 160))
 		}
 
@@ -294,6 +334,8 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 			if items := listItems(cleanupSnippet(h.Snippet)); len(items) >= 2 {
 				resp.Sequence = items
 				sequenceGrounded = true
+				pinURI(pinURIs, h.URI, "pinned_sequence_source")
+				trace(resp, "extract", "sequence_from_hit", h.URI)
 			}
 		}
 
@@ -301,8 +343,14 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 			resp.Includes = appendUnique(resp.Includes, inc)
 		}
 		for _, api := range extractAPILike(h.Snippet) {
+			if len(resp.RequiredAPIs) >= apiCap {
+				break
+			}
 			resp.RequiredAPIs = appendUnique(resp.RequiredAPIs, api)
 		}
+	}
+	if len(resp.RequiredAPIs) > apiCap {
+		resp.RequiredAPIs = resp.RequiredAPIs[:apiCap]
 	}
 
 	if resp.Summary == "" {
@@ -316,7 +364,8 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 		}
 	}
 
-	resp.Citations = dedupeCitations(resp.Citations)
+	resp.Citations = selectDiverseCitations(dedupeCitations(resp.Citations), budget.MaxResults, pinURIs, resp)
+	resp.RelevantSymbols = selectPackageSymbols(resp.RelevantSymbols, budget.MaxResults, resp)
 	if resp.Summary != "" && (len(resp.RequiredAPIs) > 0 || len(resp.Examples) > 0) {
 		resp.Summary = firstSentence(resp.Summary)
 	}
@@ -332,6 +381,18 @@ func Get(ctx context.Context, st *store.Store, req Request) (*Response, error) {
 	chars, tokens, _ := serializeTokens(resp)
 	resp.Chars = chars
 	resp.EstimatedTokens = tokens
+
+	policies := store.KnowledgeGroupPolicies{}
+	if kgID != "" {
+		if g, err := st.LookupKnowledgeGroup(ctx, kgID); err == nil && g != nil {
+			policies = g.Policies.Normalize()
+			if memberRoles == nil {
+				memberRoles = store.MemberRoleByRoot(g)
+			}
+		}
+	}
+	// Attach after token estimate so diagnostics do not inflate the budget figure.
+	attachRootContribution(resp, roots, memberRoles, policies)
 	return resp, nil
 }
 
@@ -344,6 +405,8 @@ func fingerprintResponse(ctx context.Context, st *store.Store, req Request, resp
 	cp.EstimatedTokens = 0
 	cp.Chars = 0
 	cp.TokenEstimateNote = ""
+	cp.SelectionTrace = nil    // assembly diagnostics must not affect fingerprint
+	cp.RootContribution = nil // searched-vs-contributing metrics must not affect fingerprint
 	// Stabilize ordering for fingerprint inputs.
 	roots := append([]string{}, cp.RootsUsed...)
 	sort.Strings(roots)
@@ -390,9 +453,43 @@ func fingerprintResponse(ctx context.Context, st *store.Store, req Request, resp
 	return "sha256:" + hex.EncodeToString(sum[:16])
 }
 
-func resolveRoots(ctx context.Context, st *store.Store, req Request) ([]string, error) {
+func resolveRoots(ctx context.Context, st *store.Store, req Request) (roots []string, knowledgeGroup string, roles map[string]string, err error) {
+	available, err := st.ListRootNames(ctx)
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	kg := strings.TrimSpace(req.KnowledgeGroup)
+	rg := strings.TrimSpace(req.RootGroup)
+	if kg != "" && rg != "" && !strings.EqualFold(kg, rg) {
+		return nil, "", nil, fmt.Errorf("knowledgeGroup %q and rootGroup %q disagree (use one field)", kg, rg)
+	}
+	if kg == "" {
+		kg = rg
+	}
+
+	if kg != "" {
+		g, err := st.LookupKnowledgeGroup(ctx, kg)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		if g == nil {
+			return nil, "", nil, fmt.Errorf("knowledgeGroup %q not found (configure the group first)", kg)
+		}
+		filterPreferred := len(req.PreferredRoots) > 0
+		expanded, err := store.ExpandKnowledgeGroup(g, available, store.ExpandOpts{
+			PreferredRoots:    req.PreferredRoots,
+			ProjectRoot:       req.ProjectRoot,
+			FilterToPreferred: filterPreferred,
+		})
+		if err != nil {
+			return nil, "", nil, err
+		}
+		return expanded, storeGroupKey(g), store.MemberRoleByRoot(g), nil
+	}
+
 	seen := map[string]struct{}{}
-	var roots []string
+	var selected []string
 	add := func(r string) {
 		r = strings.TrimSpace(r)
 		if r == "" {
@@ -402,7 +499,7 @@ func resolveRoots(ctx context.Context, st *store.Store, req Request) ([]string, 
 			return
 		}
 		seen[r] = struct{}{}
-		roots = append(roots, r)
+		selected = append(selected, r)
 	}
 	if req.ProjectRoot != "" {
 		add(req.ProjectRoot)
@@ -410,27 +507,46 @@ func resolveRoots(ctx context.Context, st *store.Store, req Request) ([]string, 
 	for _, r := range req.PreferredRoots {
 		add(r)
 	}
-	if g := strings.TrimSpace(req.RootGroup); g != "" {
-		members, err := st.ListRootGroupMembers(ctx, g)
-		if err != nil {
-			return nil, err
-		}
-		for _, m := range members {
-			add(m.RootName)
-		}
+	if len(selected) == 0 {
+		return nil, "", nil, nil
 	}
-	if len(roots) == 0 {
-		return nil, nil
-	}
-	available, err := st.ListRootNames(ctx)
+
+	inf, err := st.ValidateRootScope(ctx, selected, available)
 	if err != nil {
-		return nil, err
+		return nil, "", nil, err
 	}
-	inf := store.ValidateRootScope(roots, available)
 	if inf.NeedsChoice {
-		return nil, &store.ErrNeedsRoot{Inference: inf}
+		return nil, "", nil, &store.ErrNeedsRoot{Inference: inf}
 	}
-	return inf.Roots, nil
+
+	// Multiple roots in one knowledge group → auto-expand (single root stays narrow).
+	if len(inf.Roots) >= 2 && inf.KnowledgeGroup != "" {
+		g, err := st.LookupKnowledgeGroup(ctx, inf.KnowledgeGroup)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		if g != nil && g.Policies.Normalize().AllowCrossRootRetrieval {
+			expanded, err := store.ExpandKnowledgeGroup(g, available, store.ExpandOpts{
+				PreferredRoots: req.PreferredRoots,
+				ProjectRoot:    req.ProjectRoot,
+			})
+			if err != nil {
+				return nil, "", nil, err
+			}
+			return expanded, storeGroupKey(g), store.MemberRoleByRoot(g), nil
+		}
+	}
+	return inf.Roots, inf.KnowledgeGroup, nil, nil
+}
+
+func storeGroupKey(g *store.RootGroup) string {
+	if g == nil {
+		return ""
+	}
+	if strings.TrimSpace(g.ID) != "" {
+		return g.ID
+	}
+	return g.Name
 }
 
 func symbolTokens(task string) []string {
@@ -523,23 +639,6 @@ func attachLibraryDocsCitation(cit *Citation, h store.SearchHit) {
 			cit.DocStatus = "inferred"
 		}
 	}
-}
-
-func dedupeCitations(in []Citation) []Citation {
-	seen := map[string]struct{}{}
-	var out []Citation
-	for _, c := range in {
-		key := c.URI + "|" + c.Lines
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, c)
-		if len(out) >= 12 {
-			break
-		}
-	}
-	return out
 }
 
 func coverageOf(r *Response) string {

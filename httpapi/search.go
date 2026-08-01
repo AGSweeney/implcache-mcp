@@ -7,6 +7,7 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"implcache-mcp/implctx"
@@ -163,7 +164,8 @@ type searchContextRequest struct {
 	Version          string   `json:"version,omitempty"`
 	ProjectRoot      string   `json:"projectRoot,omitempty"`
 	PreferredRoots   []string `json:"preferredRoots,omitempty"`
-	RootGroup        string   `json:"rootGroup,omitempty"`
+	KnowledgeGroup   string   `json:"knowledgeGroup,omitempty"`
+	RootGroup        string   `json:"rootGroup,omitempty"` // deprecated alias
 	MaxContextTokens int      `json:"maxContextTokens,omitempty"`
 	Semantic         bool     `json:"semantic,omitempty"`
 	Debug            bool     `json:"debug,omitempty"`
@@ -176,6 +178,10 @@ func (h *handler) handleSearchContext(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
+	kg := strings.TrimSpace(req.KnowledgeGroup)
+	if kg == "" {
+		kg = strings.TrimSpace(req.RootGroup)
+	}
 	res, err := implctx.Get(r.Context(), h.opt.Store, implctx.Request{
 		Task:             req.Task,
 		Language:         req.Language,
@@ -183,6 +189,7 @@ func (h *handler) handleSearchContext(w http.ResponseWriter, r *http.Request) {
 		Version:          req.Version,
 		ProjectRoot:      req.ProjectRoot,
 		PreferredRoots:   req.PreferredRoots,
+		KnowledgeGroup:   kg,
 		RootGroup:        req.RootGroup,
 		MaxContextTokens: req.MaxContextTokens,
 		Semantic:         req.Semantic || h.opt.EnableSemantic,

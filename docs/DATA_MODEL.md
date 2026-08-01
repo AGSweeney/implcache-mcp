@@ -1,6 +1,6 @@
 # Data model
 
-Schema version: **11** (`PRAGMA user_version`). `store/schema.sql` is the single canonical schema, embedded by `store/schema.go`: new databases are created directly at version 11 in one transaction. `user_version` is a schema identity check, not a migration ladder — there is no upgrade path during pre-release development.
+Schema version: **12** (`PRAGMA user_version`). `store/schema.sql` is the single canonical schema, embedded by `store/schema.go`: new databases are created directly at version 12. Version **11→12** is an additive migrator for knowledge-group columns (`id`, `policies_json`, member `role`) that preserves corpus tables. Other mismatched versions are refused.
 
 Ingest extracts symbols from Go, C/C++/C#, Python, JavaScript/TypeScript, and Java only. Runtime **freshness** (`current` / `version-specific` / `mixed` / `stale` / `unknown`) is computed separately from document **authority**. Implementation-context responses include a **`contextFingerprint`** of the final trimmed payload (see [TOOLS.md](TOOLS.md)).
 
@@ -172,9 +172,19 @@ Lineage: `(entry_id, source_uri)` + optional note. Required so generated recipes
 
 Controlled query expansion: `alias` → `canonical`, optional `technology` / `root_name`.
 
-### `root_groups` / `root_group_members`
+### `root_groups` / `root_group_members` (Knowledge Groups)
 
-Named groups of roots with integer `priority` (higher first). Used by `get_implementation_context` via `rootGroup`.
+Trusted families of roots that may be searched together. API name: **knowledge group** (`knowledgeGroup`); tables keep the `root_groups` prefix.
+
+| Column / field | Notes |
+|----------------|-------|
+| `root_groups.id` | Stable API id (e.g. `netburner`) |
+| `root_groups.name` | Display name / primary key |
+| `root_groups.policies_json` | Combination policies (cross-root, related-project cap, …) |
+| `root_group_members.role` | Participation role: `official_documentation`, `official_example`, `current_project`, `related_project`, `curated_knowledge` |
+| `priority` | Ordering within the group (higher first) |
+
+Configure via `config/knowledge-groups.yaml` and `go run ./cmd/rootgroups`, or server `-knowledge-groups`. Document **authority** remains ingest-grounded; member **role** guides group expansion and soft ranking within authority tiers.
 
 ### `web_sources` / `web_pages`
 
@@ -256,8 +266,9 @@ Runtime structure `store.ContextBudget` limits how much text `implctx` returns. 
 
 One canonical schema, no migration ladder:
 
-- **Version matches** (`user_version == 11`): run a lightweight `sqlite_master` check for required objects (`documents`, `chunks`, `chunks_fts`, `symbols`, semantic tables, `web_sources`/`web_pages`, `pdf_sources`/`pdf_pages`, `repo_sources`/`repo_files`), then open. Missing objects are refused with rebuild instructions — the file is not repaired.
-- **Empty/new database**: create the full v11 schema directly from `store/schema.sql`, then set `user_version = 11`.
+- **Version matches** (`user_version == 12`): run a lightweight `sqlite_master` check for required objects (`documents`, `chunks`, `chunks_fts`, `symbols`, semantic tables, `web_sources`/`web_pages`, `pdf_sources`/`pdf_pages`, `repo_sources`/`repo_files`, knowledge-group tables), then open. Missing objects are refused with rebuild instructions — the file is not repaired.
+- **Empty/new database**: create the full v12 schema directly from `store/schema.sql`, then set `user_version = 12`.
+- **v11 database**: additive migrate knowledge-group columns to v12 (corpus preserved).
 - **Any other version** (or an unversioned non-empty file): refuse to open without modifying the file. The error reports the database path, the found version, and the expected version, and instructs the developer to delete the database (and its `-wal`/`-shm` sidecars) and re-ingest.
 
 During development, delete and recreate databases after schema changes; no time is spent backfilling old versions or testing historical upgrades.
@@ -266,7 +277,7 @@ During development, delete and recreate databases after schema changes; no time 
 
 ### When migrations begin (post-deployment cutover)
 
-Treat the **first deployed schema version** (currently v11 in development) as the baseline once any deployed database must be preserved. At that point:
+Treat the **first deployed schema version** (currently v12 in development) as the baseline once any deployed database must be preserved. At that point:
 
 1. Stop deleting incompatible databases by policy; introduce an explicit migration ladder from that baseline `user_version` forward.
 2. Keep `store/schema.sql` as the canonical *fresh* schema for new installs at the latest version.

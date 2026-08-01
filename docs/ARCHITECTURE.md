@@ -19,7 +19,7 @@ Primary goal: reduce the tokens, retrieval time, web searches, file reads, compi
 7. **No CGO** — SQLite via `modernc.org/sqlite` for portable builds.
 8. **FTS-first search** — authority/root ranking by default; optional sparse term-vector semantic uses indexed term postings with persisted DF for query-time IDF (`-enable-semantic`); neural embeddings and classic per-chunk TF-IDF remain deferred.
 
-**Schema** is `PRAGMA user_version = 11` (canonical schema in `store/schema.sql`, created directly on open; incompatible databases are refused — delete and re-ingest). Includes web, PDF, and Git `repo_sources`/`repo_files` tables. **Symbol languages:** Go, C/C++/C#, Python, JS/TS, Java. **Freshness** is independent of authority. **`contextFingerprint`** hashes the final trimmed response (not pre-trim candidates).
+**Schema** is `PRAGMA user_version = 12` (canonical schema in `store/schema.sql`). Version **11→12** migrates knowledge-group columns only; other mismatched versions are refused. Includes web, PDF, Git sources, and knowledge groups (`root_groups` with member roles + policies). **Symbol languages:** Go, C/C++/C#, Python, JS/TS, Java. **Freshness** is independent of authority. **`contextFingerprint`** hashes the final trimmed response (not pre-trim candidates).
 
 Known limitations: [OPERATIONS.md](OPERATIONS.md#limitations-and-risks).
 
@@ -27,7 +27,7 @@ Known limitations: [OPERATIONS.md](OPERATIONS.md#limitations-and-risks).
 
 ```text
 Task identified (technology, language, project)
-  → select knowledge roots / root group / preferredRoots
+  → select knowledge roots / knowledgeGroup / preferredRoots
   → get_implementation_context (budgeted package)
   → agent writes code
   → staged follow-ups only if needed:
@@ -74,8 +74,8 @@ Task identified (technology, language, project)
 ## Data flow: implementation context
 
 ```text
-Request{task, language, technology, preferredRoots|rootGroup|projectRoot, maxContextTokens}
-  → resolve roots (explicit / group / infer / needsChoice)
+Request{task, language, technology, preferredRoots|knowledgeGroup|projectRoot, maxContextTokens}
+  → resolve roots (explicit / knowledge group / infer / needsChoice)
   → search knowledge_entries (recipes; human_reviewed preferred)
   → find symbols from identifier-like task tokens
   → FTS search: authority-tier sort, then composite score (BM25 + boost + path/title bias)
@@ -114,15 +114,16 @@ Defaults (`store.DefaultContextBudget`):
 
 Token estimate in API responses is **labeled as estimate** (`utf8_runes / 4`).
 
-## Root resolution
+## Root and knowledge-group resolution
 
-Search and context tools scope by `root_name`:
+Search and context tools scope by `root_name`, optionally via a **knowledge group**:
 
-1. Explicit `rootName` / `preferredRoots` / `projectRoot` / `rootGroup`
+1. Explicit `rootName` / `preferredRoots` / `projectRoot` / `knowledgeGroup` (`rootGroup` is a deprecated alias)
 2. Else cue matching against known aliases (e.g. `control-app`, `RegisterHandler`, `plugin-sdk`)
-3. If multiple product families match → `needsChoice` + `availableRoots` (agent must ask the user)
+3. If matches span **multiple knowledge groups** (or ungrouped product families) → `needsChoice` + `availableRoots` / `availableGroups`
+4. If matches share **one knowledge group** with `allowCrossRootRetrieval` → expand that group (member roles + policies)
 
-Roots are never silently merged across conflicting product families.
+Roots stay independently indexed. Cross-root retrieval requires a configured knowledge group. Unrelated corpora (e.g. NetBurner vs ClearCore) are never silently mixed.
 
 ## Recipe compiler (`vomit`)
 

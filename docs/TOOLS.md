@@ -4,7 +4,7 @@ All tools are registered by `tools.RegisterWithOptions`. Default **`-mode agent`
 
 When root scope is ambiguous, several tools return a JSON payload with `needsChoice`, `message`, and `availableRoots` (often as an error-shaped MCP result). Ask the user, then retry with an explicit root.
 
-Schema: `PRAGMA user_version = 11`. Symbol extraction at ingest supports: Go, C/C++/C#, Python, JavaScript/TypeScript, Java. Unsupported languages yield no symbols. Web fetch/crawl, PDF, and Git repo tools are **admin-only** (never registered in agent mode).
+Schema: `PRAGMA user_version = 12`. Symbol extraction at ingest supports: Go, C/C++/C#, Python, JavaScript/TypeScript, Java. Unsupported languages yield no symbols. Web fetch/crawl, PDF, and Git repo tools are **admin-only** (never registered in agent mode).
 
 ---
 
@@ -21,7 +21,8 @@ Schema: `PRAGMA user_version = 11`. Symbol extraction at ingest supports: Go, C/
 | `technology` | string | no | e.g. Example Plugin SDK |
 | `projectRoot` | string | no | Preferred current-project root name |
 | `preferredRoots` | string[] | no | Ordered roots to search |
-| `rootGroup` | string | no | Named root group (DB) |
+| `knowledgeGroup` | string | no | Knowledge group id (e.g. `netburner`) for trusted cross-root retrieval |
+| `rootGroup` | string | no | Deprecated alias for `knowledgeGroup` |
 | `maxContextTokens` | int | no | Soft budget (default ~2500) |
 | `semantic` | bool | no | Supplement FTS with sparse term vectors and indexed term postings (`-enable-semantic`) |
 | `debug` | bool | no | Include `debugTaskTokens` (identifier-like tokens pulled from `task`) |
@@ -38,10 +39,10 @@ Schema: `PRAGMA user_version = 11`. Symbol extraction at ingest supports: Go, C/
 - `webSearchRecommended` (from coverage + freshness)
 - `contextFingerprint` (hash of the **final trimmed** payload the client receives)
 - `missingInformation`, `recommendedFollowUp` (staged next tools when coverage is low)
-- `rootsUsed`, `recipeReviewStatus`, `estimatedTokens`, `chars`, `tokenEstimateNote`
+- `rootsUsed` (roots searched), `rootContribution` (searched vs contributing roots, citations-by-root, related over-limit, near-duplicate pairs), `recipeReviewStatus`, `estimatedTokens`, `chars`, `tokenEstimateNote`
 - `debugTaskTokens` when `debug=true` — tokens matching CamelCase / `snake_case` / `ns::name` / `obj.method` heuristics
 
-`preferredRoots` / `rootGroup` / `projectRoot` must resolve to a **single product family**; otherwise the tool returns `needsChoice` + `availableRoots` (do not silently mix corpora).
+`preferredRoots` / `knowledgeGroup` / `projectRoot` must resolve to a **single knowledge group** (or a single ungrouped product family). Multiple roots in one configured knowledge group are searchable together. Roots spanning unrelated groups return `needsChoice` + `availableRoots` / `availableGroups`.
 
 ---
 
@@ -55,7 +56,7 @@ Staged lookup of APIs, functions, and types from the `symbols` table:
 |----------|------|----------|-------------|
 | `name` | string | yes | Symbol name (e.g. `RegisterCommand`) |
 | `rootName` | string | no | Single root filter |
-| `preferredRoots` | string[] | no | Multi-root filter (same product family) |
+| `preferredRoots` | string[] | no | Multi-root filter (same knowledge group / family) |
 | `limit` | int | no | Default 20 |
 
 **Returns:** `{ symbols: Symbol[], count }` or `{ needsChoice, message, availableRoots }` when root scope is missing/ambiguous. Empty roots are never searched globally.
@@ -222,7 +223,7 @@ The **browser Librarian** (`-enable-librarian`) is the primary GUI: REST `/api/v
 | `search_playground` | Search with optional `explain` (query plan) |
 | `get_operation` / `list_operations` | In-process job progress (`opId` on site/repo ingest and refresh) |
 
-Progress is process-local (not persisted across restarts). Schema remains `user_version = 11`.
+Progress is process-local (not persisted across restarts). Schema remains `user_version = 12`.
 
 ### `delete_document`
 

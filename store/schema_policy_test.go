@@ -16,9 +16,9 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func TestCurrentSchemaVersionEleven(t *testing.T) {
-	if currentSchemaVersion != 11 {
-		t.Fatalf("currentSchemaVersion=%d want 11", currentSchemaVersion)
+func TestCurrentSchemaVersionTwelve(t *testing.T) {
+	if currentSchemaVersion != 12 {
+		t.Fatalf("currentSchemaVersion=%d want 12", currentSchemaVersion)
 	}
 	// Canonical DDL must declare every required object name (identity check source of truth).
 	for _, name := range requiredSchemaObjects {
@@ -26,8 +26,11 @@ func TestCurrentSchemaVersionEleven(t *testing.T) {
 			t.Fatalf("canonical schema.sql missing required object %q", name)
 		}
 	}
-	if !strings.Contains(canonicalSchema, "PRAGMA user_version = 11") {
-		t.Fatal("schema.sql header must document PRAGMA user_version = 11")
+	if !strings.Contains(canonicalSchema, "PRAGMA user_version = 12") {
+		t.Fatal("schema.sql header must document PRAGMA user_version = 12")
+	}
+	if !strings.Contains(canonicalSchema, "policies_json") || !strings.Contains(canonicalSchema, "role TEXT") {
+		t.Fatal("schema.sql must include knowledge-group role and policies_json columns")
 	}
 }
 
@@ -86,6 +89,7 @@ func TestReopenCurrentVersionIsIdempotent(t *testing.T) {
 }
 
 func TestOpenRefusesMismatchedSchemaVersion(t *testing.T) {
+	// v11 is migratable to v12; other versions (except 0 empty) are refused.
 	for _, version := range []int{1, 5, 6, 7, 8, 9, 10, currentSchemaVersion + 1} {
 		dbPath := filepath.Join(t.TempDir(), fmt.Sprintf("v%d.db", version))
 		db, err := sql.Open("sqlite", dbPath)

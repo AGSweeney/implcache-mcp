@@ -730,6 +730,12 @@ func applyVersionPreference(hits []SearchHit, preferred string) {
 	}
 }
 
+// RankSearchHits orders by authority tier first (lower AuthorityRank wins),
+// then composite Score, then BM25 Rank. Path/title biases cannot invert tiers.
+func RankSearchHits(hits []SearchHit) {
+	sortSearchHits(hits)
+}
+
 // sortSearchHits orders by authority tier first (lower AuthorityRank wins),
 // then composite Score, then BM25 Rank. Path/title biases cannot invert tiers.
 func sortSearchHits(hits []SearchHit) {
@@ -1079,6 +1085,24 @@ func diversifyHits(hits []SearchHit, limit, maxPerDoc int) []SearchHit {
 		}
 	}
 	return out
+}
+
+// GetChunk loads one chunk by id.
+func (s *Store) GetChunk(ctx context.Context, id int64) (*Chunk, error) {
+	if id <= 0 {
+		return nil, fmt.Errorf("chunk id required")
+	}
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, document_id, ordinal, heading, body, start_line, end_line, start_page, end_page
+		FROM chunks WHERE id = ?`, id)
+	var c Chunk
+	if err := row.Scan(&c.ID, &c.DocumentID, &c.Ordinal, &c.Heading, &c.Body, &c.StartLine, &c.EndLine, &c.StartPage, &c.EndPage); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("chunk not found")
+		}
+		return nil, err
+	}
+	return &c, nil
 }
 
 func (s *Store) chunksForDocument(ctx context.Context, docID int64) ([]Chunk, error) {

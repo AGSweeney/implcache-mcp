@@ -1,0 +1,193 @@
+# Knowledge groups: trusted families of roots that may be searched together.
+# Root names MUST match store rootName values (see list_roots).
+groups:
+  - id: netburner
+    name: NetBurner
+    description: NetBurner official docs + examples + related app corpora
+    policies:
+      allowCrossRootRetrieval: true
+      preserveAuthorityRoles: true
+      preferCurrentProjectWhenSpecified: true
+      preferOfficialDocsForApiDefinitions: true
+      preferOfficialExamplesForUsage: true
+      includeRelatedProjectsForPatterns: true
+      maxRelatedProjects: 3
+    members:
+      - rootName: NetBurner Examples
+        role: official_example
+        priority: 100
+      - rootName: NetBurner Documents
+        role: official_documentation
+        priority: 90
+      - rootName: NetBurner_MQTT_Broker
+        role: related_project
+        priority: 80
+      - rootName: NetBurner_MSSQL_Client
+        role: related_project
+        priority: 80
+      - rootName: NetBurner_Micro800_MQTT_Gateway
+        role: related_project
+        priority: 80
+      - rootName: NetBurner_TDSLite_TLS
+        role: related_project
+        priority: 75
+      - rootName: OpENer4NetBurner
+        role: related_project
+        priority: 70
+
+  - id: clearcore
+    name: ClearCore
+    description: Teknic ClearCore library, examples, and EIP bridge work
+    policies:
+      allowCrossRootRetrieval: true
+      preserveAuthorityRoles: true
+      preferCurrentProjectWhenSpecified: true
+      preferOfficialDocsForApiDefinitions: true
+      preferOfficialExamplesForUsage: true
+      includeRelatedProjectsForPatterns: true
+      maxRelatedProjects: 3
+    members:
+      - rootName: EnhancedClearCoreLibrary
+        role: current_project
+        priority: 100
+      - rootName: Teknic_ClearCore_OpENer_EIP
+        role: related_project
+        priority: 80
+
+  - id: leap
+    name: LEAP
+    description: LEAP protocol and related gateways
+    policies:
+      allowCrossRootRetrieval: true
+      preserveAuthorityRoles: true
+      preferCurrentProjectWhenSpecified: true
+      preferOfficialDocsForApiDefinitions: true
+      preferOfficialExamplesForUsage: true
+      includeRelatedProjectsForPatterns: true
+      maxRelatedProjects: 3
+    members:
+      - rootName: LEAP_Protocol
+        role: current_project
+        priority: 100
+      - rootName: Micro800_ReaJet_Gateway
+        role: related_project
+        priority: 80
+
+  - id: creo
+    name: Creo
+    description: Creo Pro/TOOLKIT + OTK help and includes
+    policies:
+      allowCrossRootRetrieval: true
+      preserveAuthorityRoles: true
+      preferCurrentProjectWhenSpecified: true
+      preferOfficialDocsForApiDefinitions: true
+      preferOfficialExamplesForUsage: true
+      includeRelatedProjectsForPatterns: true
+      maxRelatedProjects: 3
+    members:
+      - rootName: Creo ProToolkit
+        role: official_documentation
+        priority: 100
+      - rootName: Creo otk_cpp help
+        role: official_documentation
+        priority: 90
+      - rootName: Creo otk_cpp includes
+        role: official_documentation
+        priority: 85
+
+  - id: ethernetip
+    name: EtherNet/IP
+    description: CIP / EtherNet/IP stacks, scanners, adapters, and ground truth
+    policies:
+      allowCrossRootRetrieval: true
+      preserveAuthorityRoles: true
+      preferCurrentProjectWhenSpecified: true
+      preferOfficialDocsForApiDefinitions: true
+      preferOfficialExamplesForUsage: true
+      includeRelatedProjectsForPatterns: true
+      maxRelatedProjects: 4
+    members:
+      - rootName: EIP_GROUND_TRUTH
+        role: curated_knowledge
+        priority: 100
+      - rootName: SimpleCIP
+        role: related_project
+        priority: 90
+      - rootName: OpENer-Enhanced
+        role: related_project
+        priority: 85
+      - rootName: OpENer_EnIP_KC868A16
+        role: related_project
+        priority: 80
+      - rootName: ESP32_ENIPScanner
+        role: related_project
+        priority: 75
+      - rootName: EnIP-QuinLED_PentaPlus
+        role: related_project
+        priority: 70
+      - rootName: EnIP_DX200_Simulator
+        role: related_project
+        priority: 70
+      - rootName: EthernetIP-Scale
+        role: related_project
+        priority: 70
+      - rootName: FusionCoreEnIP
+        role: related_project
+        priority: 70
+      - rootName: Motoman_EnIP_ToolChanger
+        role: related_project
+        priority: 65
+
+  - id: esp32
+    name: ESP32
+    description: ESP32 application corpora (MSSQL client and related)
+    policies:
+      allowCrossRootRetrieval: true
+      preserveAuthorityRoles: true
+      preferCurrentProjectWhenSpecified: true
+      preferOfficialDocsForApiDefinitions: true
+      preferOfficialExamplesForUsage: true
+      includeRelatedProjectsForPatterns: true
+      maxRelatedProjects: 3
+    members:
+      - rootName: esp32-mssql-client
+        role: current_project
+        priority: 100
+      - rootName: ESP32_ENIPScanner
+        role: related_project
+        priority: 80
+
+  - id: sparkplug
+    name: Sparkplug
+    description: Sparkplug B client UI and related MQTT industrial patterns
+    policies:
+      allowCrossRootRetrieval: true
+      preserveAuthorityRoles: true
+      preferCurrentProjectWhenSpecified: true
+      preferOfficialDocsForApiDefinitions: true
+      preferOfficialExamplesForUsage: true
+      includeRelatedProjectsForPatterns: true
+      maxRelatedProjects: 2
+    members:
+      - rootName: SparkPlugBClientUI
+        role: current_project
+        priority: 100
+
+  - id: drivers
+    name: Drivers
+    description: Standalone sensor/driver libraries
+    policies:
+      allowCrossRootRetrieval: true
+      preserveAuthorityRoles: true
+      preferCurrentProjectWhenSpecified: true
+      preferOfficialDocsForApiDefinitions: true
+      preferOfficialExamplesForUsage: true
+      includeRelatedProjectsForPatterns: true
+      maxRelatedProjects: 2
+    members:
+      - rootName: LSM6DS3Driver
+        role: current_project
+        priority: 100
+      - rootName: MPLC
+        role: related_project
+        priority: 80

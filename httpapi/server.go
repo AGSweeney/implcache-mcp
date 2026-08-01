@@ -9,6 +9,8 @@ import (
 	"crypto/subtle"
 	"net/http"
 	"strings"
+
+	"implcache-mcp/store"
 )
 
 const apiPrefix = "/api/v1/"
@@ -160,6 +162,10 @@ func (h *handler) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+apiPrefix+"root-groups", h.handleListRootGroups)
 	mux.HandleFunc("PUT "+apiPrefix+"root-groups/{name}", h.handleUpsertRootGroup)
 	mux.HandleFunc("DELETE "+apiPrefix+"root-groups/{name}", h.handleDeleteRootGroup)
+	// Knowledge Group aliases (same handlers; preferred API name).
+	mux.HandleFunc("GET "+apiPrefix+"knowledge-groups", h.handleListRootGroups)
+	mux.HandleFunc("PUT "+apiPrefix+"knowledge-groups/{name}", h.handleUpsertRootGroup)
+	mux.HandleFunc("DELETE "+apiPrefix+"knowledge-groups/{name}", h.handleDeleteRootGroup)
 
 	mux.HandleFunc("POST "+apiPrefix+"search", h.handleSearchPlayground)
 	mux.HandleFunc("POST "+apiPrefix+"search/symbols", h.handleSearchSymbols)
@@ -221,8 +227,8 @@ type serverCapabilities struct {
 	MaxDocumentBytes      int64    `json:"maxDocumentBytes"`
 	MaxIngestFiles        int      `json:"maxIngestFiles"`
 	Role                  string   `json:"role"`
-	AnalyticsEnabled      bool     `json:"analyticsEnabled"`
-	AnalyticsAvailable    bool     `json:"analyticsAvailable"`
+	AnalyticsEnabled   bool `json:"analyticsEnabled"`
+	AnalyticsAvailable bool `json:"analyticsAvailable"`
 }
 
 func (h *handler) handleServer(w http.ResponseWriter, r *http.Request) {
@@ -234,7 +240,7 @@ func (h *handler) handleServer(w http.ResponseWriter, r *http.Request) {
 	if authMode == "none" && (h.opt.ReadOnly || (!h.opt.AllowIngest && !h.opt.AllowDelete)) {
 		role = "viewer"
 	}
-	schema := 11
+	schema := store.CurrentSchemaVersion()
 	if h.opt.Store != nil {
 		if v, err := h.opt.Store.SchemaVersion(r.Context()); err == nil {
 			schema = v
@@ -261,7 +267,7 @@ func (h *handler) handleServer(w http.ResponseWriter, r *http.Request) {
 		MaxDocumentBytes:     h.opt.MaxDocumentBytes,
 		MaxIngestFiles:       h.opt.MaxIngestFiles,
 		Role:                 role,
-		AnalyticsEnabled:     analyticsEnabled,
-		AnalyticsAvailable:   analyticsAvailable,
+		AnalyticsEnabled:   analyticsEnabled,
+		AnalyticsAvailable: analyticsAvailable,
 	})
 }

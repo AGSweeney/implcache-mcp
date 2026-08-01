@@ -186,7 +186,7 @@ Treat ImplCache as **pre-1.0**: schema, ranking, and tool contracts can still ch
 | `implcache.db` | Main SQLite DB |
 | `implcache.db-wal` / `-shm` | WAL mode sidecars when present |
 
-New databases are created at the canonical schema (**`PRAGMA user_version = 11`**) on open. A database with a different `user_version` is refused: delete `implcache.db` (and `-wal`/`-shm`) and re-ingest (see [DATA_MODEL.md](DATA_MODEL.md)).
+New databases are created at the canonical schema (**`PRAGMA user_version = 12`**) on open. Version **11→12** migrates knowledge-group columns (corpus preserved). Other `user_version` values are refused: delete `implcache.db` (and `-wal`/`-shm`) and re-ingest (see [DATA_MODEL.md](DATA_MODEL.md)). Apply groups with `-knowledge-groups config/knowledge-groups.yaml` or `go run ./cmd/rootgroups`.
 
 ## Real-source validation
 

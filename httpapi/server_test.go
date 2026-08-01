@@ -53,7 +53,7 @@ func TestHandleServer(t *testing.T) {
 	if got.ServerVersion != "test" {
 		t.Fatalf("serverVersion=%q", got.ServerVersion)
 	}
-	if got.APIVersion != 1 || got.SchemaVersion != 11 {
+	if got.APIVersion != 1 || got.SchemaVersion != 12 {
 		t.Fatalf("api/schema=%d/%d", got.APIVersion, got.SchemaVersion)
 	}
 	if !got.AllowIngest || !got.AllowDelete {

@@ -65,3 +65,16 @@ tmp_*.go
 /_scratch/
 /_Scratch/
 
+# Autoresearch Lab (local-only; not part of the product tree)
+.autoresearch/
+/autoresearch/
+/cmd/implcache-eval/
+/cmd/packagesufficiency/
+/internal/autoresearch/
+/httpapi/autoresearch.go
+/frontend/src/pages/Autoresearch.tsx
+/docs/AUTORESEARCH.md
+/docs/AUTORESEARCH_*.md
+/testdata/packagesufficiency/
+*.snapshot.db
+

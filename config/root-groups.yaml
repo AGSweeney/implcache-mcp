@@ -1,0 +1,36 @@
+# Deprecated: use config/knowledge-groups.yaml
+# Kept as a thin pointer for older command lines.
+groups:
+  - id: netburner
+    name: NetBurner
+    description: NetBurner official docs + examples + related app corpora (explicit join only)
+    policies:
+      allowCrossRootRetrieval: true
+      preserveAuthorityRoles: true
+      preferCurrentProjectWhenSpecified: true
+      preferOfficialDocsForApiDefinitions: true
+      preferOfficialExamplesForUsage: true
+      includeRelatedProjectsForPatterns: true
+      maxRelatedProjects: 3
+    members:
+      - rootName: NetBurner Examples
+        role: official_example
+        priority: 100
+      - rootName: NetBurner Documents
+        role: official_documentation
+        priority: 90
+      - rootName: NetBurner_MQTT_Broker
+        role: related_project
+        priority: 80
+      - rootName: NetBurner_MSSQL_Client
+        role: related_project
+        priority: 80
+      - rootName: NetBurner_Micro800_MQTT_Gateway
+        role: related_project
+        priority: 80
+      - rootName: NetBurner_TDSLite_TLS
+        role: related_project
+        priority: 80
+      - rootName: OpENer4NetBurner
+        role: related_project
+        priority: 70

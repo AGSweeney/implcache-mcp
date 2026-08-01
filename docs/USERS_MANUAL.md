@@ -22,7 +22,7 @@ ImplCache MCP is a **local, SQLite-backed implementation-context server** for co
 
 **Status (pre-1.0)**
 
-- Schema identity: `PRAGMA user_version = 11`. There are **no migrations**. An incompatible DB is refused—delete it (and `-wal`/`-shm`) and re-ingest.
+- Schema identity: `PRAGMA user_version = 12`. Version 11→12 migrates knowledge-group columns only; other incompatible DBs are refused—delete and re-ingest.
 - Tool contracts and ranking can still evolve.
 - License: MIT. Module `implcache-mcp`, **Go 1.25+**, pure-Go SQLite (`modernc.org/sqlite`; no CGO for normal builds).
 
@@ -32,7 +32,7 @@ ImplCache MCP is a **local, SQLite-backed implementation-context server** for co
 
 ### Knowledge roots
 
-A **root** (`rootName`) is a stable corpus id, e.g. `my_app`, `example-device-sdk`. Keep product families in **separate** roots. Ambiguous queries return `needsChoice` + `availableRoots`—ask the user; do not guess across families.
+A **root** (`rootName`) is a stable corpus id, e.g. `my_app`, `example-device-sdk`. A **knowledge group** (`knowledgeGroup`, e.g. `netburner`) is an explicit trusted family of related roots (docs, examples, projects) that may be searched together. Ambiguous queries that span **unrelated groups** return `needsChoice` + `availableRoots` / `availableGroups`—ask the user; do not guess across groups.
 
 ### Portable URIs
 

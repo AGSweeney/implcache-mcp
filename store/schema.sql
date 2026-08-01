@@ -2,10 +2,10 @@
 -- Use of this source code is governed by an MIT-style
 -- license that can be found in the LICENSE file.
 
--- Canonical schema (PRAGMA user_version = 11). New databases are created
--- directly from this file (embedded via store/schema.go). There is no
--- migration ladder during pre-release development: incompatible databases
--- must be deleted and re-ingested.
+-- Canonical schema (PRAGMA user_version = 12). New databases are created
+-- directly from this file (embedded via store/schema.go). Version 11→12 is
+-- an additive migrator for knowledge-group columns only; other mismatched
+-- versions must be deleted and re-ingested.
 
 CREATE TABLE documents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,15 +114,20 @@ CREATE TABLE aliases (
 
 CREATE TABLE root_groups (
     name TEXT PRIMARY KEY,
-    description TEXT NOT NULL DEFAULT ''
+    description TEXT NOT NULL DEFAULT '',
+    id TEXT NOT NULL DEFAULT '',
+    policies_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE root_group_members (
     group_name TEXT NOT NULL REFERENCES root_groups(name) ON DELETE CASCADE,
     root_name TEXT NOT NULL,
     priority INTEGER NOT NULL DEFAULT 0,
+    role TEXT NOT NULL DEFAULT '',
     PRIMARY KEY(group_name, root_name)
 );
+
+CREATE UNIQUE INDEX idx_root_groups_id ON root_groups(id) WHERE id != '';
 
 CREATE INDEX idx_documents_source_type ON documents(source_type);
 CREATE INDEX idx_chunks_document_id ON chunks(document_id);

@@ -29,13 +29,14 @@ Pass one of:
 
 - `projectRoot` — current app corpus  
 - `preferredRoots` — ordered list, e.g. `["my_app", "example-device-sdk"]`  
-- `rootGroup` — named DB group  
+- `knowledgeGroup` — trusted family id (e.g. `netburner`) for docs+examples+related projects  
+- `rootGroup` — deprecated alias for `knowledgeGroup`  
 
-If the tool returns `needsChoice` / `availableRoots`:
+If the tool returns `needsChoice` / `availableRoots` / `availableGroups`:
 
-1. Ask the user which corpus applies  
-2. Retry with explicit `rootName` or `preferredRoots`  
-3. Do **not** guess across product families (e.g. example-control-app vs example-device-sdk)
+1. Ask the user which corpus or knowledge group applies  
+2. Retry with explicit `rootName`, `preferredRoots`, or `knowledgeGroup`  
+3. Do **not** guess across unrelated knowledge groups (e.g. NetBurner vs ClearCore)
 
 ## Reading the package
 

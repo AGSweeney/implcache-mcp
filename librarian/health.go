@@ -32,10 +32,11 @@ func LibraryHealth(ctx context.Context, st *store.Store) ([]HealthIssue, error) 
 			Severity: "error", Code: "schema_read_failed",
 			Description: err.Error(), Action: "Inspect database file and reopen",
 		})
-	} else if v != 11 {
+	} else if v != store.CurrentSchemaVersion() {
 		issues = append(issues, HealthIssue{
 			Severity: "error", Code: "schema_mismatch",
-			Description: "schema version is not 11", Action: "Delete DB and re-ingest",
+			Description: fmt.Sprintf("schema version is not %d (found %d)", store.CurrentSchemaVersion(), v),
+			Action:      "Delete DB and re-ingest, or open with a build that migrates this schema",
 		})
 	}
 

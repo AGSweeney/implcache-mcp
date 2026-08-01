@@ -13,11 +13,13 @@ import (
 
 // RootInference is the result of resolving which knowledge root(s) to search.
 type RootInference struct {
-	Roots          []string `json:"roots,omitempty"`
-	NeedsChoice    bool     `json:"needsChoice"`
-	Message        string   `json:"message,omitempty"`
-	AvailableRoots []string `json:"availableRoots,omitempty"`
-	MatchedHints   []string `json:"matchedHints,omitempty"`
+	Roots            []string `json:"roots,omitempty"`
+	NeedsChoice      bool     `json:"needsChoice"`
+	Message          string   `json:"message,omitempty"`
+	AvailableRoots   []string `json:"availableRoots,omitempty"`
+	AvailableGroups  []string `json:"availableGroups,omitempty"`
+	KnowledgeGroup   string   `json:"knowledgeGroup,omitempty"` // resolved group id when expanded
+	MatchedHints     []string `json:"matchedHints,omitempty"`
 }
 
 // rootAlias maps a lowercase cue to preferred root names (intersected with DB).
@@ -104,6 +106,45 @@ func (s *Store) ListRootNames(ctx context.Context) ([]string, error) {
 	return out, rows.Err()
 }
 
+// ListDocumentURIs returns all document URIs (for benchmark evidence resolution).
+func (s *Store) ListDocumentURIs(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT uri FROM documents ORDER BY uri`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// ListSymbolNames returns distinct symbol names (for benchmark evidence resolution).
+func (s *Store) ListSymbolNames(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT name FROM symbols
+		WHERE name IS NOT NULL AND name != ''
+		ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
 // ResolveRoots picks knowledge roots from an optional explicit list and/or
 // query/subject context. When the space is ambiguous, NeedsChoice is set.
 func (s *Store) ResolveRoots(ctx context.Context, query string, explicit []string) (RootInference, error) {
@@ -137,12 +178,25 @@ func (s *Store) ResolveRoots(ctx context.Context, query string, explicit []strin
 	}
 	if len(explicitClean) > 0 {
 		inf.MatchedHints = []string{"explicit rootName"}
-		scoped := ValidateRootScope(explicitClean, available)
+		scoped, err := s.ValidateRootScope(ctx, explicitClean, available)
+		if err != nil {
+			return RootInference{}, err
+		}
 		if scoped.NeedsChoice {
 			scoped.MatchedHints = inf.MatchedHints
 			return scoped, nil
 		}
+		// Multiple roots in one knowledge group → expand to group policy set.
+		if expanded, kg, ok, err := s.maybeExpandSharedGroup(ctx, scoped.Roots, available, ExpandOpts{}); err != nil {
+			return RootInference{}, err
+		} else if ok {
+			inf.Roots = expanded
+			inf.KnowledgeGroup = kg
+			inf.MatchedHints = append(inf.MatchedHints, "knowledgeGroup:"+kg)
+			return inf, nil
+		}
 		inf.Roots = scoped.Roots
+		inf.KnowledgeGroup = scoped.KnowledgeGroup
 		return inf, nil
 	}
 
@@ -168,21 +222,52 @@ func (s *Store) ResolveRoots(ctx context.Context, query string, explicit []strin
 		return inf, nil
 	}
 
-	families := map[string]struct{}{}
-	for _, r := range inferred {
-		families[rootFamily(r)] = struct{}{}
+	scoped, err := s.ValidateRootScope(ctx, inferred, available)
+	if err != nil {
+		return RootInference{}, err
 	}
-	if len(families) > 1 {
-		inf.NeedsChoice = true
-		inf.Message = formatRootPrompt(
-			"Query matches multiple product families — pick a root.",
-			query, available)
-		inf.MatchedHints = hints
+	if scoped.NeedsChoice {
+		scoped.MatchedHints = hints
+		return scoped, nil
+	}
+	if expanded, kg, ok, err := s.maybeExpandSharedGroup(ctx, scoped.Roots, available, ExpandOpts{}); err != nil {
+		return RootInference{}, err
+	} else if ok {
+		inf.Roots = expanded
+		inf.KnowledgeGroup = kg
+		inf.MatchedHints = append(hints, "knowledgeGroup:"+kg)
 		return inf, nil
 	}
-
-	inf.Roots = inferred
+	inf.Roots = scoped.Roots
+	inf.KnowledgeGroup = scoped.KnowledgeGroup
 	return inf, nil
+}
+
+// maybeExpandSharedGroup expands when 2+ roots share exactly one knowledge group
+// that allows cross-root retrieval. A single root is left unchanged (narrow search).
+func (s *Store) maybeExpandSharedGroup(ctx context.Context, roots, available []string, opt ExpandOpts) (expanded []string, groupID string, ok bool, err error) {
+	if len(roots) < 2 {
+		return nil, "", false, nil
+	}
+	groups, err := s.DistinctKnowledgeGroups(ctx, roots)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if len(groups) != 1 {
+		return nil, "", false, nil
+	}
+	g, err := s.LookupKnowledgeGroup(ctx, groups[0])
+	if err != nil || g == nil {
+		return nil, "", false, err
+	}
+	if !g.Policies.Normalize().AllowCrossRootRetrieval {
+		return nil, "", false, nil
+	}
+	out, err := ExpandKnowledgeGroup(g, available, opt)
+	if err != nil {
+		return nil, "", false, err
+	}
+	return out, groupKey(g), true, nil
 }
 
 func inferRootsFromText(query string, avail map[string]struct{}) (roots []string, hints []string) {
@@ -269,9 +354,57 @@ func uniqueSorted(in []string) []string {
 	return out
 }
 
-// ValidateRootScope ensures roots are known and belong to a single product family.
-// Empty roots yield NeedsChoice (callers must ResolveRoots or pass AllRoots for admin).
+// ValidateRootScope ensures roots are known and share a single product family
+// (legacy heuristic, no knowledge-group lookup). Prefer Store.ValidateRootScope.
 func ValidateRootScope(roots []string, available []string) RootInference {
+	return validateRootScopeFamilies(roots, available)
+}
+
+// ValidateRootScope checks roots against knowledge groups first, then product-family
+// heuristics for ungrouped roots. Multiple roots in one knowledge group with
+// allowCrossRootRetrieval are allowed; roots spanning multiple groups needChoice.
+func (s *Store) ValidateRootScope(ctx context.Context, roots []string, available []string) (RootInference, error) {
+	inf := validateRootScopeBasics(roots, available)
+	if inf.NeedsChoice || len(inf.Roots) <= 1 {
+		return inf, nil
+	}
+	groups, err := s.DistinctKnowledgeGroups(ctx, inf.Roots)
+	if err != nil {
+		return RootInference{}, err
+	}
+	if len(groups) > 1 {
+		inf.NeedsChoice = true
+		inf.AvailableGroups = groups
+		inf.Message = formatGroupPrompt(
+			"Selected roots span multiple knowledge groups — pick a knowledgeGroup or a single root.",
+			strings.Join(inf.Roots, ", "), groups, available)
+		return inf, nil
+	}
+	if len(groups) == 1 {
+		g, err := s.LookupKnowledgeGroup(ctx, groups[0])
+		if err != nil {
+			return RootInference{}, err
+		}
+		if g != nil && g.Policies.Normalize().AllowCrossRootRetrieval {
+			inf.KnowledgeGroup = groupKey(g)
+			inf.NeedsChoice = false
+			inf.Message = ""
+			return inf, nil
+		}
+		if g != nil && !g.Policies.Normalize().AllowCrossRootRetrieval {
+			inf.NeedsChoice = true
+			inf.AvailableGroups = groups
+			inf.Message = formatGroupPrompt(
+				fmt.Sprintf("Knowledge group %q forbids automatic cross-root retrieval — pick a single rootName.", groupKey(g)),
+				strings.Join(inf.Roots, ", "), groups, available)
+			return inf, nil
+		}
+	}
+	// No shared group: fall back to product-family heuristic.
+	return validateRootScopeFamilies(inf.Roots, available), nil
+}
+
+func validateRootScopeBasics(roots []string, available []string) RootInference {
 	availSet := map[string]struct{}{}
 	for _, r := range available {
 		availSet[r] = struct{}{}
@@ -302,20 +435,55 @@ func ValidateRootScope(roots []string, available []string) RootInference {
 			"", available)
 		return inf
 	}
+	inf.Roots = clean
+	return inf
+}
+
+func validateRootScopeFamilies(roots []string, available []string) RootInference {
+	inf := validateRootScopeBasics(roots, available)
+	if inf.NeedsChoice {
+		return inf
+	}
 	families := map[string]struct{}{}
-	for _, r := range clean {
+	for _, r := range inf.Roots {
 		families[rootFamily(r)] = struct{}{}
 	}
 	if len(families) > 1 {
 		inf.NeedsChoice = true
-		inf.Roots = clean
 		inf.Message = formatRootPrompt(
-			"Selected roots span multiple product families — pick a single family or one rootName.",
-			strings.Join(clean, ", "), available)
+			"Selected roots span multiple product families — pick a single family, one rootName, or a knowledgeGroup.",
+			strings.Join(inf.Roots, ", "), available)
 		return inf
 	}
-	inf.Roots = clean
 	return inf
+}
+
+func formatGroupPrompt(lead, query string, groups, available []string) string {
+	var b strings.Builder
+	b.WriteString(lead)
+	b.WriteString("\n\n")
+	if strings.TrimSpace(query) != "" {
+		b.WriteString("Roots: ")
+		b.WriteString(query)
+		b.WriteString("\n\n")
+	}
+	if len(groups) > 0 {
+		b.WriteString("Available knowledge groups:\n")
+		for _, g := range groups {
+			b.WriteString("  - ")
+			b.WriteString(g)
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("Available knowledge roots:\n")
+	for _, r := range available {
+		b.WriteString("  - ")
+		b.WriteString(r)
+		b.WriteString("\n")
+	}
+	b.WriteString("\nRe-run with knowledgeGroup or a single rootName.")
+	return b.String()
 }
 
 // ErrNeedsRoot is returned by helpers that refuse to search without a root.

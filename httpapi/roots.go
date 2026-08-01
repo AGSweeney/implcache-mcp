@@ -27,12 +27,19 @@ func (h *handler) handleListRootGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	groups = nonNilSlice(groups)
-	WriteJSON(w, http.StatusOK, map[string]any{"rootGroups": groups, "groups": groups, "count": len(groups)})
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"knowledgeGroups": groups,
+		"rootGroups":      groups,
+		"groups":          groups,
+		"count":           len(groups),
+	})
 }
 
 type upsertRootGroupRequest struct {
-	Description string                  `json:"description"`
-	Members     []store.RootGroupMember `json:"members"`
+	ID          string                      `json:"id,omitempty"`
+	Description string                      `json:"description"`
+	Policies    *store.KnowledgeGroupPolicies `json:"policies,omitempty"`
+	Members     []store.RootGroupMember     `json:"members"`
 }
 
 func (h *handler) handleUpsertRootGroup(w http.ResponseWriter, r *http.Request) {
@@ -45,11 +52,26 @@ func (h *handler) handleUpsertRootGroup(w http.ResponseWriter, r *http.Request) 
 		WriteError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
-	if err := h.opt.Store.UpsertRootGroup(r.Context(), name, req.Description, req.Members); err != nil {
+	g := store.RootGroup{
+		ID:          req.ID,
+		Name:        name,
+		Description: req.Description,
+		Members:     req.Members,
+	}
+	if req.Policies != nil {
+		g.Policies = *req.Policies
+	} else {
+		g.Policies = store.DefaultKnowledgeGroupPolicies()
+	}
+	if err := h.opt.Store.UpsertKnowledgeGroup(r.Context(), g); err != nil {
 		WriteError(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"name": name, "ok": true})
+	id := req.ID
+	if id == "" {
+		id = name
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"name": name, "id": id, "ok": true})
 }
 
 func (h *handler) handleDeleteRootGroup(w http.ResponseWriter, r *http.Request) {

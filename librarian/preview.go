@@ -134,7 +134,10 @@ func SearchPlayground(ctx context.Context, st *store.Store, opt SearchPlayground
 			if err != nil {
 				return nil, err
 			}
-			inf := store.ValidateRootScope(roots, available)
+			inf, err := st.ValidateRootScope(ctx, roots, available)
+			if err != nil {
+				return nil, err
+			}
 			if inf.NeedsChoice {
 				return nil, &store.ErrNeedsRoot{Inference: inf}
 			}
