@@ -128,9 +128,13 @@ pack_one() {
   write_helpers "$out_dir"
 
   echo "Packed $out_name/:"
-  find "$out_dir" -maxdepth 1 -type f -printf '  %f\n' | sort
+  # Portable listing (avoid GNU find -printf; breaks under some Windows bash envs).
+  (cd "$out_dir" && ls -1) | while IFS= read -r f; do
+    [[ -f "$out_dir/$f" ]] && echo "  $f"
+  done
   if [[ -d "$out_dir/docs" ]]; then
-    echo "  docs/  ($(find "$out_dir/docs" -type f | wc -l) files)"
+    doc_count="$(find "$out_dir/docs" -type f 2>/dev/null | wc -l | tr -d ' ')"
+    echo "  docs/  (${doc_count:-?} files)"
   fi
 }
 

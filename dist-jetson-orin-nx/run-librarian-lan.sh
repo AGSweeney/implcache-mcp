@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Bind Librarian + MCP Streamable HTTP on all interfaces for LAN clients
-# (Cursor mcp.json "url": "http://<jetson-ip>:8080/mcp").
-# Requires a trusted network; see docs/REMOTE.md.
+# (Cursor mcp.json "url": "http://<host-ip>:8080/mcp"). See docs/REMOTE.md.
 set -euo pipefail
 cd "$(dirname "$0")"
 DB="$(pwd)/implcache.db"
